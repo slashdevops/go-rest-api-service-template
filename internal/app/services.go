@@ -534,6 +534,18 @@ func (a *App) initAuthServices(
 		return fmt.Errorf("error creating projects service: %w", err)
 	}
 
+	// Products service. Deliberately without a CacheService: its reads are
+	// tenant-scoped in SQL, which leaves no cache key that is both tenant-safe
+	// and invalidatable (docs/architecture/caching.md).
+	a.services.Products, err = usecase.NewProductsService(usecase.ProductsServiceConf{
+		Repository:      a.repositories.Products,
+		ResourcesLimits: a.services.ResourcesLimits,
+		OT:              a.telemetry,
+	})
+	if err != nil {
+		return fmt.Errorf("error creating products service: %w", err)
+	}
+
 	// Resources service
 	a.services.Resources, err = usecase.NewResourcesService(usecase.ResourcesServiceConf{
 		Repository:   a.repositories.Resources,

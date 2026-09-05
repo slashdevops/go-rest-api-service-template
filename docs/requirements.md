@@ -11,7 +11,9 @@ run or be developed on. It is the first page to read;
 | **Go** | `1.27.0`+ | Building and running |
 | **macOS** | 13 Ventura+ | Building Go 1.27 itself, on Apple hardware |
 | **podman** | any recent | The development environment and the container image |
-| **OpenSSL** | 3.x | The JWT pair, the AES key and every TLS certificate |
+| **OpenSSL** | 3.x | The JWT pair, the AES key and every TLS certificate (`make dev-certs`) |
+| **envsubst** | any, from gettext | Rendering the dev pod file. Not on a stock macOS: `brew install gettext` |
+| **make, git, curl** | any | The Makefile, `rename-project`, and checking a running service |
 | **PostgreSQL** | 18 | Supplied by the dev environment; a hard dependency in production. 18 specifically, for native `uuidv7()` |
 | **Valkey** | any recent | Optional — `cache.enabled=false` is a supported mode |
 
@@ -40,9 +42,18 @@ toolchain and leaves everything else alone.
 
 ## podman on Apple Silicon
 
-By default the podman machine mounts only `$HOME` into the VM. The development
-environment writes outside it, so the machine has to be recreated with the extra
-mounts.
+podman runs its containers in a Linux VM. It has to exist and be running:
+
+```bash
+podman machine init      # once
+podman machine start     # after every reboot
+```
+
+By default the machine mounts your home directory into the VM, and everything
+the development environment writes lives under it: the data in
+`$HOME/tmp/<project>` and the TLS material in the repository's `certs/`. So the
+default machine is enough **as long as the repository is cloned somewhere under
+`$HOME`**. If it is not, the machine has to be recreated with the extra mount.
 
 > **This destroys the current machine and all its containers.**
 
@@ -60,7 +71,14 @@ Reference: <https://github.com/containers/podman/issues/14815>
 ## Key material
 
 Three pieces are mandatory and **none has a working default** — the defaults
-name files that do not exist. Generating them is covered in
+name files that do not exist. For development, one target creates all of them,
+plus the TLS material below, and never overwrites what is already there:
+
+```bash
+make dev-certs
+```
+
+Generating them by hand, and what production should do instead, is covered in
 [certificates.md](./certificates/certificates.md); which setting consumes each
 and how it fails is in
 [running-the-service.md](./operations/running-the-service.md).
@@ -105,10 +123,12 @@ source of truth; what follows is the entry point.
 
 ### The development stack does it for you
 
-`make start-dev-env` generates one CA and one server certificate covering both
-databases, and starts both with TLS on:
+`make dev-certs` generates one CA and one server certificate covering both
+databases (alongside the JWT pair and the AES key), and `make start-dev-env`,
+which runs it first, starts both databases with TLS on:
 
 ```bash
+make dev-certs
 make start-dev-env
 ```
 
@@ -167,9 +187,13 @@ is a code path nobody has tested.
 
 ```bash
 make tools                 # rebuild any tool older than the current Go
-make start-dev-env         # every dependency, with TLS material generated
+make dev-certs             # JWT pair, AES key, dev TLS CA -- only what is missing
+make start-dev-env         # every dependency, TLS on
 air                        # in another terminal
 ```
+
+The step-by-step version, with a check after every command and a table of what
+each failure looks like, is [Getting started](./getting-started.md).
 
 Then check it is alive:
 

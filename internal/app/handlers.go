@@ -62,6 +62,15 @@ func (a *App) initHandlers() error {
 		return fmt.Errorf("could not create projects handler: %w", err)
 	}
 
+	// Create products handler
+	a.handlers.Products, err = handler.NewProductsHandler(handler.ProductsHandlerConf{
+		Service: a.services.Products,
+		OT:      a.telemetry,
+	})
+	if err != nil {
+		return fmt.Errorf("could not create products handler: %w", err)
+	}
+
 	// Create policies handler
 	a.handlers.Policies, err = handler.NewPoliciesHandler(handler.PoliciesHandlerConf{
 		Service: a.services.Policies,

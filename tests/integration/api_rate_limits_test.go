@@ -33,7 +33,7 @@ func validRateLimitBody(id uuid.UUID) map[string]any {
 		"name":        "test " + id.String(),
 		"description": "created by the integration suite",
 		"target_kind": "endpoint",
-		"target":      "/models",
+		"target":      "/products",
 		"methods":     []string{"GET"},
 		"scope":       "ip",
 		"audience":    "any",
@@ -124,7 +124,7 @@ func TestRateLimitsCRUD(t *testing.T) {
 		require.NoError(t, json.NewDecoder(resp.Body).Decode(&got))
 
 		assert.Equal(t, "endpoint", got.TargetKind)
-		assert.Equal(t, "/models", got.Target)
+		assert.Equal(t, "/products", got.Target)
 		assert.Equal(t, "token_bucket", got.Strategy)
 		require.Len(t, got.Windows, 1, "the window must come back with the rule; a rule with no window has no budget")
 		// A duration string, not seconds: seconds are what the column holds,

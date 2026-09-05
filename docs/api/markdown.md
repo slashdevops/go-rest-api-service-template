@@ -8049,7 +8049,7 @@ Resolve which rules apply to a method and endpoint, one per scope, most specific
 | Name | Source | Type | Go type | Separator | Required | Default | Description |
 |------|--------|------|---------|-----------| :------: |---------|-------------|
 | authenticated | `query` | boolean | `bool` |  |  |  | Whether to resolve as an authenticated caller. Defaults to true |
-| endpoint | `query` | string | `string` |  | ✓ |  | Route template, for example /projects/{project_id}/generate |
+| endpoint | `query` | string | `string` |  | ✓ |  | Route template, for example /projects/{project_id}/products |
 | method | `query` | string | `string` |  | ✓ |  | HTTP method, uppercase |
 
 #### All responses

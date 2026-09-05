@@ -97,13 +97,79 @@ jobs:
           path: ./dist/
           retention-days: 1
 
+  # Builds one image per CONTAINER_OS x CONTAINER_ARCH from the binaries the
+  # build job produced, assembles them into a multi-arch manifest, and pushes
+  # it to this repository's GitHub Container Registry as
+  #   ghcr.io/<owner>/<repo>:<tag>  and  ghcr.io/<owner>/<repo>:latest
+  #
+  # This used to be `uses: slashdevops/gha-workflows/.../container-image.yml`.
+  # The steps below are that workflow's steps, inlined for two reasons:
+  #
+  #   - it ran `make container-build | tee ...` WITHOUT `pipefail`, so make's
+  #     exit code was replaced by tee's. Every release reported this job green
+  #     while `podman build --platform darwin/arm64` had failed (distroless has
+  #     no darwin image) and nothing had been pushed. `defaults.run.shell: bash`
+  #     at the top of this file brings pipefail, and `MAKE_STOP_ON_ERRORS`
+  #     makes the Makefile propagate the failure in the first place.
+  #   - a template should not depend on a reusable workflow in another
+  #     organisation to publish its own image.
+  #
+  # `packages: write` above is what lets GITHUB_TOKEN push to ghcr.io; the
+  # image is private until it is made public in the package settings.
   containers:
     name: Publish container images
     needs: build
-    # The reusable workflow lives in slashdevops/gha-workflows. The previous
-    # slashdevops/... path with SHA 9dcaafa resolved to that repo's `v1` tag; this
-    # pins the current release instead.
-    uses: slashdevops/gha-workflows/.github/workflows/container-image.yml@v1.0.2
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # ubuntu-latest ships podman; the install is a no-op there and a
+      # safeguard on a runner image that does not.
+      - name: Install podman
+        run: |
+          command -v podman >/dev/null || { sudo apt-get update && sudo apt-get install -y podman; }
+          podman --version
+
+      - name: Summary Information
+        run: |
+          echo "# Container Image Summary" > $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Podman:** $(podman --version | awk '{print $3}')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      # The Containerfile COPYs dist/<service>-<os>-<arch>, so the image is
+      # built from exactly the binaries the release ships, not a second build.
+      - name: Download Distribution files
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: ./dist/
+
+      - name: Make container-build
+        run: |
+          echo "## Make container-build" >> $GITHUB_STEP_SUMMARY
+          GIT_VERSION=${{ github.ref_name }} MAKE_DEBUG=true make container-build | tee -a $GITHUB_STEP_SUMMARY
+
+      - name: Show container images
+        run: |
+          echo "## Container images" >> $GITHUB_STEP_SUMMARY
+          podman images | tee -a $GITHUB_STEP_SUMMARY
+
+      - name: Make container-login
+        env:
+          REPOSITORY_REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY_REGISTRY_USERNAME: ${{ github.actor }}
+        run: |
+          echo "## Make container-login" >> $GITHUB_STEP_SUMMARY
+          make container-login | tee -a $GITHUB_STEP_SUMMARY
+
+      - name: Make container-publish
+        run: |
+          echo "## Make container-publish" >> $GITHUB_STEP_SUMMARY
+          GIT_VERSION=${{ github.ref_name }} MAKE_DEBUG=true make container-publish | tee -a $GITHUB_STEP_SUMMARY
 
   release:
     name: Release

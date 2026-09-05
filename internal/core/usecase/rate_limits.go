@@ -403,7 +403,7 @@ func (ref *RateLimitsService) validateTarget(ctx context.Context, kind domain.Ra
 	if !ok {
 		return &domain.InvalidRateLimitTargetError{
 			Target: target,
-			Reason: "no route matches this path. It must be the route template as registered, for example /projects/{project_id}/generate",
+			Reason: "no route matches this path. It must be the route template as registered, for example /projects/{project_id}/products",
 		}
 	}
 

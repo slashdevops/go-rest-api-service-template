@@ -39,7 +39,8 @@ description — and it exercises every convention in the repository:
 | Repository | `internal/adapter/driven/repositorypg/products.go` |
 | Handler + payload | `internal/adapter/driving/http/{handler,payload}/products.go` |
 | Mock | `mocks/service/products.go` (generated) |
-| Migration | `database/migrations/4000_products_tables.sql` |
+| Migration | `database/migrations/00009_products_tables.sql` |
+| Composition root | `internal/app/{dependencies,repositories,services,handlers,server}.go` |
 | Integration test | `tests/integration/api_products_test.go` |
 
 Two things about it are worth reading before you copy it:
@@ -132,7 +133,7 @@ internal/
 | New HTTP route                                     | `internal/adapter/driving/http/handler/<entity>.go` (define/extend the matching `internal/core/port/driving/<entity>.go` interface) |
 | New repository method                              | `internal/adapter/driven/repositorypg/<entity>.go` (and add to the `internal/core/port/driven/repository/<entity>.go` interface)    |
 | New outbound integration (e.g. SMS, S3, an LLM provider) | Define a port in `internal/core/port/driven/<concept>/` and an adapter in `internal/adapter/driven/<concept>_<tech>/`               |
-| Database migration                                 | `database/migrations/` (managed by `goose`) — **number it above every applied migration**, see below                                |
+| Database migration                                 | `database/migrations/` (managed by `goose`) — **the next number in the sequence, never a gap**, see below                          |
 | Mock for a port or service interface               | Add a `//go:generate go tool mockgen` stanza to the file declaring the interface; output to `mocks/{service,handler}/<entity>.go`   |
 
 ### Hard rules
@@ -141,6 +142,12 @@ internal/
 - **Handlers (`internal/adapter/driving/http/handler/`) never import use-cases directly.** They depend on driving ports — `driving.Authn`, `driving.Users`, etc. Same composition-root wiring.
 - **Domain types are pure.** They may have struct tags (json, swagger), but they never import a transport package.
 - **When generating handlers/code, use `uuidgen` for V7 IDs**: `go run cmd/uuidgen/main.go -n 1 -v 7`.
+- **A handler that exists is registered.** The composition root is the one
+  place an entity can be forgotten without a compile error, and `products`
+  was: every layer existed and every route answered `404`, with every gate
+  green, because no gate looks at `internal/app` and CI never runs the
+  integration suite. `TestEveryHandlerIsRegistered` now fails for any field of
+  `app.Handlers` with no `RegisterRoutes` call in `server.go`.
 
 ## Configuration
 
@@ -527,19 +534,25 @@ reasoning, with the request-lifecycle diagram, is in
 ## Database migrations
 
 The migration set was consolidated into a first-version schema: the increments
-that had accumulated on top of it (`20002`–`20010`) were folded back into the
-files they amended, leaving **27 files** at that point (26, plus
-`200_shared_functions.sql`) — the set has grown since, and that number is a
-record of the consolidation rather than a count to check against. That was only possible because nothing
-is in production. **From the first production deploy, migrations are additive
-again** and every rule below about ordering applies without exception.
+that had accumulated on top of it were folded back into the files they amended,
+and the survivors were then **renumbered contiguously**, `00001` to `00016`, in
+the order goose applies them. The old numbering (`200`, `1000`, … `20004`) left
+gaps "to slot a file between two topics", and that invitation was the bug: a
+file slotted below the highest applied version is a missing migration and stops
+the service. Both steps were only possible because nothing is in production.
+**From the first production deploy, migrations are additive again** and every
+rule below about ordering applies without exception.
 
-- **A new migration must sort after every already-applied one.** The service runs
+- **A new migration takes the next number, never a gap.** The service runs
   `goose.UpContext` with no `AllowMissing`, so a file numbered below the current
-  DB version is rejected as a missing migration and **startup fails**. The
-  filenames look domain-grouped (`4000` products, `20000` limits), but goose
-  only cares about numeric order — check the highest existing number and go above
-  it, whatever the topic.
+  DB version is rejected as a missing migration and **startup fails**. Whatever
+  the topic, the new file goes at the end:
+  `goose -dir database/migrations -s create <name> sql` writes it with the
+  right number.
+- **Renumbering means every existing database is recreated.** goose stores the
+  version number, so a database at `20004` sees every file below it and refuses
+  to start the service: `make rm-dev-env && make start-dev-env` after pulling
+  the renumbering, and never renumber again once real data exists.
 - **Editing an applied migration fails silently, it does not error.** goose
   tracks versions by number and does **not** checksum file contents, so an
   existing database neither re-runs a rewritten file nor notices a deleted one —
@@ -551,9 +564,9 @@ again** and every rule below about ordering applies without exception.
   UPDATE and DELETE — so a down migration cannot clear the flag first. It must
   `ALTER TABLE … DISABLE TRIGGER`, delete, then re-enable.
 - **All twenty of those triggers share one function**,
-  `fn_restrict_delete_update_on_system()` in `200_shared_functions.sql`, which
+  `fn_restrict_delete_update_on_system()` in `00001_shared_functions.sql`, which
   names the table with `TG_TABLE_NAME`. Do not add a per-table copy; attach a
-  trigger to the shared function. It lives at `200` so it is created before the
+  trigger to the shared function. It is `00001` so it is created before the
   first table that needs it and dropped after the last — a shared object must
   sort below everything that depends on it, because goose applies Down in
   descending order.
@@ -1097,7 +1110,7 @@ so a wrong `@Failure` silently ships as the published contract and no gate fails
 ### Swagger changes feed the authz seed data — regenerate it
 
 The `resources` rows in
-`database/migrations/3100_roles_policies_tables_upsert.sql` are **one row per API
+`database/migrations/00008_roles_policies_tables_upsert.sql` are **one row per API
 endpoint**, generated from `docs/api/swagger.json`. Each row's id is the
 operation's `@ID`, its name is `@Summary`, its description is `@Description`, and
 its action/resource are the method and path. Those rows are what the policies
@@ -1113,7 +1126,7 @@ go run cmd/apiendpoints/main.go      # emits the resources rows
 ```
 
 Paste the output over the generated block in
-`3100_roles_policies_tables_upsert.sql` — it starts after the
+`00008_roles_policies_tables_upsert.sql` — it starts after the
 `-- automatic generate with the program apiendpoints` marker (line 35) and runs
 to the row ending in `;`. Leave everything above the marker alone.
 
@@ -1190,11 +1203,39 @@ copy problem is actually visible.
 ### The core dev environment (Postgres, Valkey, Prometheus, Grafana, Tempo, Mailpit)
 
 ```bash
+make dev-certs       # JWT pair, AES key and dev TLS CA under certs/; creates only
+                     # what is missing, never overwrites. start-dev-env runs it
 make start-dev-env   # provision and start it. Runs stop-dev-env first, and
                      # RECREATES the data -- see the warning below
 make stop-dev-env    # stop the containers, keep the volumes
 make rm-dev-env      # stop and remove the environment entirely
 ```
+
+**`make dev-certs` never overwrites.** A regenerated `jwt.key` invalidates every
+token issued, a regenerated AES key makes every stored IdP secret unreadable,
+and a regenerated CA is not trusted by the service that already loaded the old
+one. To rotate, delete the file and run it again; `jwt.pub` is re-derived from
+whatever `jwt.key` is there, and the script warns when the pair does not match.
+
+**`PROJECT_NAME` is split from the `module` directive, never grepped.** It used
+to be `grep module go.mod | cut -d / -f 3`, which matches every line containing
+the word "module" -- so the comment about "the module graph" added to go.mod
+turned the name into two lines of prose, the backticks in it ran as a command,
+and every dev-env target failed with `/bin/sh: -u: command not found` and
+`Error 127`. A guard in the Makefile now refuses a name that is not exactly one
+word. When a Makefile variable comes from a file, parse the directive, do not
+grep for a word.
+
+**`make rename-project` reads owner and name from the origin remote**, in both
+the ssh and https shapes (the old `cut -d / -f 2` produced an empty name on an
+https URL and would have replaced the template name with nothing). It rewrites
+`slashdevops/go-rest-api-service-template`, then the bare name, then the
+underscored name -- longest first, and only the full owner/name pair, because
+go.mod also requires `github.com/slashdevops/{c3e,httpx,mailer,...}` which must
+stay. `--null`, not `-Z`, on the grep: on macOS `-Z` means decompress, and the
+file list reached xargs as one newline-joined name while the target still
+printed ✅. With no remote: `GIT_REPOSITORY_OWNER=<o> GIT_REPOSITORY_NAME=<n>
+make rename-project`.
 
 **`start-dev-env` destroys the database.** It is how a migration change is
 picked up (goose does not checksum, so an edited file is never re-applied to an

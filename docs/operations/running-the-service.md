@@ -31,6 +31,10 @@ have defaults that do not exist** (`jwt.key`, `jwt.pub`,
 `aes-256-symmetric.key` relative to the working directory), and the mail
 settings default to empty, which fails validation.
 
+For development, `make dev-certs` creates #1, #2 and #3 under `certs/`, plus
+the CA for #7, and `.air.toml` and `run.sh` already point at those paths. A
+deployment generates its own; see [Certificates](../certificates/certificates.md).
+
 ## The smallest command line that starts
 
 Against a stock `make start-dev-env` stack, with cache and TLS off:
@@ -147,7 +151,7 @@ also creates the schema and the seed rows:
 
 ```text
 INFO running database migrations
-INFO goose: successfully migrated database to version: 20002
+INFO goose: successfully migrated database to version: 16
 INFO database migrations completed successfully
 ```
 
@@ -244,8 +248,10 @@ liveness must check nothing, is in
       or deliberately empty.
 - [ ] `http.server.tls.enabled=true` with a certificate and key, unless
       something in front terminates TLS.
-- [ ] `authn.access.token.duration` left short. It is the residual-access window
-      after a logout, because access tokens are deliberately not denylisted.
+- [ ] `authn.access.token.duration` left short. With
+      `authn.access.token.revocation.enabled` off it is the whole residual-access
+      window after a logout; with it on, the default, it still bounds what a
+      leaked token is worth.
 - [ ] Liveness pointed at `/health/live` and readiness at `/health/detailed`.
 
 ## Rotating the signing key without downtime

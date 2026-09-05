@@ -656,7 +656,7 @@ cases, so the swagger contract did not change.
 | `projects` | `user` | the owning user | 100 / 120 |
 | `products` | `project` | the owning project | 200 / 250 |
 
-The defaults come from `20001_limits_upsert.sql` and are deliberately generous:
+The defaults come from `00013_limits_upsert.sql` and are deliberately generous:
 that migration turns the *mechanism* on without changing what an existing
 deployment can do. Real ceilings arrive with the licence file.
 
@@ -686,6 +686,6 @@ deployment can do. Real ceilings arrive with the licence file.
 | Persistence port, signer and verifier contracts | `internal/core/port/driven/repository/resources_limits.go` |
 | Shared resolution SQL, transactional counters | `internal/adapter/driven/repositorypg/resources_limits.go` |
 | `GET /resources_limits` | `internal/adapter/driving/http/handler/resources_limits.go` |
-| Tables, indexes, system-row trigger | `database/migrations/20000_limits.sql` |
-| Default limits | `database/migrations/20001_limits_upsert.sql` |
+| Tables, indexes, system-row trigger | `database/migrations/00012_limits.sql` |
+| Default limits | `database/migrations/00013_limits_upsert.sql` |
 | Tests | `tests/integration/api_resources_limits_test.go` |

@@ -466,7 +466,7 @@ func (ref *RateLimitsHandler) deleteByID(w http.ResponseWriter, r *http.Request)
 //	@Accept			json
 //	@Produce		json
 //	@Param			method			query		string								true	"HTTP method, uppercase"	Enums(GET,POST,PUT,PATCH,DELETE,OPTIONS,HEAD)
-//	@Param			endpoint		query		string								true	"Route template, for example /projects/{project_id}/generate"
+//	@Param			endpoint		query		string								true	"Route template, for example /projects/{project_id}/products"
 //	@Param			authenticated	query		bool								false	"Whether to resolve as an authenticated caller. Defaults to true"
 //	@Success		200				{object}	payload.EffectiveRateLimitsResponse	"Effective rules resolved"
 //	@Failure		400				{object}	payload.HTTPMessage					"method or endpoint missing or invalid"

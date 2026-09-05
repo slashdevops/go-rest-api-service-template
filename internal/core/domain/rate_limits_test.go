@@ -138,7 +138,7 @@ func TestUnknownStrategyErrorListsTheValidOnes(t *testing.T) {
 func TestRateLimitStrategiesMatchTheMigrationCheckConstraint(t *testing.T) {
 	t.Parallel()
 
-	b, err := os.ReadFile("../../../database/migrations/20003_rate_limits.sql")
+	b, err := os.ReadFile("../../../database/migrations/00015_rate_limits.sql")
 	if err != nil {
 		t.Fatalf("read migration: %v", err)
 	}
@@ -173,7 +173,7 @@ func TestRateLimitStrategiesMatchTheMigrationCheckConstraint(t *testing.T) {
 func TestRateLimitEnumsMatchTheMigrationCheckConstraints(t *testing.T) {
 	t.Parallel()
 
-	b, err := os.ReadFile("../../../database/migrations/20003_rate_limits.sql")
+	b, err := os.ReadFile("../../../database/migrations/00015_rate_limits.sql")
 	if err != nil {
 		t.Fatalf("read migration: %v", err)
 	}

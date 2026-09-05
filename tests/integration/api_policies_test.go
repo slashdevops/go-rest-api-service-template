@@ -419,20 +419,6 @@ func TestPolicyCreate(t *testing.T) {
 				allowedResource: "/auth/verify/confirm",
 				description:     "Policy for verifying user account",
 			},
-			// Generate config endpoints
-			{
-				name:            "List generate configs resource",
-				allowedAction:   "GET",
-				allowedResource: "/generate_config",
-				description:     "Policy for listing generate configs",
-			},
-			// Personal access tokens endpoints
-			{
-				name:            "List all tokens resource",
-				allowedAction:   "GET",
-				allowedResource: "/pa_tokens",
-				description:     "Policy for listing all personal access tokens",
-			},
 			// Policy endpoints
 			{
 				name:            "List policies resource",
@@ -513,36 +499,42 @@ func TestPolicyCreate(t *testing.T) {
 				allowedResource: "/projects/019826a1-081e-7b42-9525-c406b0d7f453",
 				description:     "Policy for getting specific project",
 			},
-			// Project generate config endpoints
+			// Product endpoints (the worked example)
 			{
-				name:            "Create generate config resource",
-				allowedAction:   "POST",
-				allowedResource: "/projects/019826a1-081e-7ba8-ba82-ea9db2b30508/generate_config",
-				description:     "Policy for creating generate config",
-			},
-			{
-				name:            "Delete generate config resource",
-				allowedAction:   "DELETE",
-				allowedResource: "/projects/019826a1-081e-7bac-b1a7-06e9893a666b/generate_config/019826a1-081e-7bb0-a51d-1bd68f38790e",
-				description:     "Policy for deleting generate config",
-			},
-			{
-				name:            "Update generate config resource",
-				allowedAction:   "PUT",
-				allowedResource: "/projects/019826a1-081e-7bb4-8903-15438e852e6c/generate_config/019826a1-081e-7bb8-a643-c20ac816ad8a",
-				description:     "Policy for updating generate config",
-			},
-			{
-				name:            "Get generate config resource",
+				name:            "List products resource",
 				allowedAction:   "GET",
-				allowedResource: "/projects/019826a1-081e-7bbb-bb4b-32672d21427f/generate_config/019826a1-081e-7bbf-9db2-873524c335ea",
-				description:     "Policy for getting generate config",
+				allowedResource: "/products",
+				description:     "Policy for listing products across projects",
 			},
 			{
-				name:            "Generate response resource",
+				name:            "List products by project resource",
+				allowedAction:   "GET",
+				allowedResource: "/projects/01a07117-c545-7595-8025-6c04d5cba26f/products",
+				description:     "Policy for listing the products of a project",
+			},
+			{
+				name:            "Create product resource",
 				allowedAction:   "POST",
-				allowedResource: "/projects/019826a1-081e-7bc3-82d4-19380a272113/generate_config/019826a1-081e-7bc7-85f8-63d5bf4a3ca2/generate",
-				description:     "Policy for generating responses",
+				allowedResource: "/projects/01a07117-c545-7645-81c9-1c904b9c9c7f/products",
+				description:     "Policy for creating products",
+			},
+			{
+				name:            "Get product resource",
+				allowedAction:   "GET",
+				allowedResource: "/projects/01a07117-c545-7649-bcec-9b7d74125b3c/products/01a07117-c545-764d-891e-cc6092620502",
+				description:     "Policy for getting a product",
+			},
+			{
+				name:            "Update product resource",
+				allowedAction:   "PUT",
+				allowedResource: "/projects/01a07117-c545-765e-8003-cfb29ee8b555/products/01a07117-c545-7662-bb59-7aa249796bce",
+				description:     "Policy for updating a product",
+			},
+			{
+				name:            "Delete product resource",
+				allowedAction:   "DELETE",
+				allowedResource: "/projects/01a07117-c545-7666-9fe0-396f46e72097/products/01a07117-c545-7667-bcf6-34f6003fc54f",
+				description:     "Policy for deleting a product",
 			},
 			// Resource endpoints
 			{
@@ -666,37 +658,6 @@ func TestPolicyCreate(t *testing.T) {
 				allowedAction:   "GET",
 				allowedResource: "/users/019826a1-081e-7d81-ae85-60d1ce3d66f5/authz",
 				description:     "Policy for getting user authorization",
-			},
-			// Personal access token endpoints (global scope)
-			{
-				name:            "Create personal access token resource",
-				allowedAction:   "POST",
-				allowedResource: "/pa_tokens",
-				description:     "Policy for creating personal access tokens",
-			},
-			{
-				name:            "List user tokens resource",
-				allowedAction:   "GET",
-				allowedResource: "/users/019826a1-081e-7d88-a292-42a7e402d9c6/pa_tokens",
-				description:     "Policy for listing user tokens",
-			},
-			{
-				name:            "Get personal access token resource",
-				allowedAction:   "GET",
-				allowedResource: "/pa_tokens/019826a1-081e-7d90-8c62-1f15e877908e",
-				description:     "Policy for getting personal access token",
-			},
-			{
-				name:            "Update personal access token resource",
-				allowedAction:   "PUT",
-				allowedResource: "/pa_tokens/019826a1-081e-7d98-8e2f-710586facc40",
-				description:     "Policy for updating personal access token",
-			},
-			{
-				name:            "Delete personal access token resource",
-				allowedAction:   "DELETE",
-				allowedResource: "/pa_tokens/019826a1-081e-7da0-bdbb-4a4818426a60",
-				description:     "Policy for deleting personal access token",
 			},
 			// User role management endpoints
 			{

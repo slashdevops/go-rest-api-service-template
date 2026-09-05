@@ -394,7 +394,10 @@ func TestProductsResourceLimit(t *testing.T) {
 
 	productsType := domain.ResourcesLimitsResourceTypeProducts.String()
 
-	before := getUsageFromDB(t, string(domain.ResourcesLimitsScopeTypeProject), project.ID, productsType)
+	// A fresh project has no resources_usage row until the first increment
+	// creates it, and getUsageFromDB reports "no row" as -1. That is zero
+	// usage, not minus one.
+	before := max(getUsageFromDB(t, string(domain.ResourcesLimitsScopeTypeProject), project.ID, productsType), 0)
 
 	createProduct(t, adminToken, project.ID, generateRandomName(t, "product"), "counted")
 

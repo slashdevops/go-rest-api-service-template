@@ -825,8 +825,8 @@ func TestResourcesLimitsStatus(t *testing.T) {
 			types = append(types, resource.ResourceType)
 		}
 
-		assert.ElementsMatch(t, []string{"models", "embedding_config", "generate_config"}, types,
-			"A project scope governs exactly these three")
+		assert.ElementsMatch(t, []string{"products"}, types,
+			"A project scope governs exactly the project-scoped resource types seeded in 00013_limits_upsert.sql")
 	})
 
 	t.Run("a_malformed_project_id_is_refused", func(t *testing.T) {

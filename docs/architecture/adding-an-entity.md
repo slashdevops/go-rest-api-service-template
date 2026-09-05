@@ -9,7 +9,7 @@ name everywhere you see `Widget` / `widget` / `widgets`.
 > repository and it does every step below for real: `domain/products.go`,
 > both ports, `usecase/products.go`, `repositorypg/products.go` (tenant
 > scoping and keyset pagination), `handler/products.go`,
-> `payload/products.go`, a generated mock, `4000_products_tables.sql`, a
+> `payload/products.go`, a generated mock, `00009_products_tables.sql`, a
 > seeded resource limit, and `tests/integration/api_products_test.go`.
 > Copying it and renaming is usually faster than following the prose.
 
@@ -698,6 +698,14 @@ paths in `RegisterRoutes`):
 ```go
 a.handlers.Widgets.RegisterRoutes(mux, middlewares...)
 ```
+
+**This is the step that gets skipped**, because nothing forces it: every other
+step fails to compile when it is missing, while a handler that is never
+constructed or never registered compiles cleanly and answers `404` on every
+route. `products` shipped exactly like that. `TestEveryHandlerIsRegistered` in
+`internal/app` now fails for any field of `Handlers` with no matching
+`RegisterRoutes` call in `server.go`, so declaring the slot in
+`dependencies.go` without finishing the wiring breaks `make test`.
 
 ---
 

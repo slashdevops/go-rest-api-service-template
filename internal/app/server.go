@@ -211,6 +211,7 @@ func (a *App) initHTTPServer(ctx context.Context) error {
 	// Register protected routes
 	a.handlers.Users.RegisterRoutes(apiRouter, accessTokenMiddlewares)
 	a.handlers.Projects.RegisterRoutes(apiRouter, accessTokenMiddlewares)
+	a.handlers.Products.RegisterRoutes(apiRouter, accessTokenMiddlewares)
 	a.handlers.Policies.RegisterRoutes(apiRouter, accessTokenMiddlewares)
 	a.handlers.Resources.RegisterRoutes(apiRouter, accessTokenMiddlewares)
 	a.handlers.Roles.RegisterRoutes(apiRouter, accessTokenMiddlewares)

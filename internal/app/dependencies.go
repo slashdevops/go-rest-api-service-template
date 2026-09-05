@@ -19,6 +19,7 @@ type Repositories struct {
 	Health          *repositorypg.HealthRepository
 	Users           *repositorypg.UsersRepository
 	Projects        *repositorypg.ProjectsRepository
+	Products        *repositorypg.ProductsRepository
 	Policies        *repositorypg.PoliciesRepository
 	Resources       *repositorypg.ResourcesRepository
 	Roles           *repositorypg.RolesRepository
@@ -50,6 +51,7 @@ type Services struct {
 	Health          *usecase.HealthService
 	Users           *usecase.UsersService
 	Projects        *usecase.ProjectsService
+	Products        *usecase.ProductsService
 	Policies        *usecase.PoliciesService
 	Resources       *usecase.ResourcesService
 	Roles           *usecase.RolesService
@@ -88,6 +90,7 @@ type Handlers struct {
 	Health          *handler.HealthHandler
 	Users           *handler.UsersHandler
 	Projects        *handler.ProjectsHandler
+	Products        *handler.ProductsHandler
 	Policies        *handler.PoliciesHandler
 	Resources       *handler.ResourcesHandler
 	Roles           *handler.RolesHandler
