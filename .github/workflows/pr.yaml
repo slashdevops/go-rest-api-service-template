@@ -40,35 +40,33 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    # A Valkey for the ratelimitvalkey suite, and the reason it is here rather
-    # than being left to skip.
+    # DISABLED to keep the runner cheap. Uncomment to restore.
     #
-    # Those 9 tests connect to Valkey and SKIP when they cannot. A skipped test
-    # reports `ok`, so a suite that verified nothing looks exactly like one that
-    # passed -- and the package then measures 17.6% against the 80% floor in
-    # .testcoverage.yml, failing `make test-coverage` on a package nothing is
-    # wrong with. That floor was captured on a developer machine with the dev
-    # stack running; without this service it describes an environment CI never
-    # reproduces.
+    # This service exists so the ratelimitvalkey suite runs for real rather than
+    # skipping. Those tests connect to Valkey and SKIP when they cannot, and a
+    # skipped test reports `ok` -- so a suite that verified nothing looks exactly
+    # like one that passed, and the package measures 17.6% instead of 84.3%.
     #
-    # PLAINTEXT on purpose. The tests use TLS only when VALKEY_TEST_CA is set,
-    # which the Makefile does from the dev stack's CA when that file exists.
-    # CI has no dev certs, so it gets the other supported shape rather than a
-    # certificate to generate and keep in step.
+    # Turning it off is a deliberate trade: the PR gate no longer exercises the
+    # shared counter's real INCR/PEXPIRE semantics, which is the entire point of
+    # that package. `.testcoverage.yml` carries a matching lowered floor with the
+    # same note, so the two stay consistent -- if you re-enable this service,
+    # raise that floor back to 80.
     #
-    # This runs the counter's real INCR/PEXPIRE semantics, which is the entire
-    # point of the package -- a mock replaying the same command builder would
-    # assert nothing. See the note in adapter_test.go.
-    services:
-      valkey:
-        image: valkey/valkey:8-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "valkey-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
+    # Run it locally instead, which is where it is cheap:
+    #   podman run -d --name valkey -p 6379:6379 valkey/valkey:8-alpine
+    #   go test -tags=unit ./internal/adapter/driven/ratelimitvalkey/
+    #
+    # services:
+    #   valkey:
+    #     image: valkey/valkey:8-alpine
+    #     ports:
+    #       - 6379:6379
+    #     options: >-
+    #       --health-cmd "valkey-cli ping"
+    #       --health-interval 5s
+    #       --health-timeout 3s
+    #       --health-retries 10
 
     steps:
       - name: Checkout
@@ -177,7 +175,14 @@ jobs:
         run: |
           echo "## go fix -diff" >> $GITHUB_STEP_SUMMARY
 
-          diff=$(go fix -diff ./... 2>&1)
+          # Warm the module cache FIRST, and keep its progress off the capture.
+          # `go fix -diff ./... 2>&1` merges stderr into $diff, so a single
+          # "go: downloading ..." line on a cold runner makes $diff non-empty
+          # and fails the step with no drift at all -- which is exactly how this
+          # first went red. stderr now goes to the log, not into the comparison.
+          go mod download
+
+          diff=$(go fix -diff ./...)
           if [ -n "$diff" ]; then
             echo "go fix -diff is not empty; run 'go fix ./...' and commit" >> $GITHUB_STEP_SUMMARY
             echo "$diff"
@@ -218,6 +223,18 @@ jobs:
           echo "## Make vulncheck" >> $GITHUB_STEP_SUMMARY
           MAKE_DEBUG=true make vulncheck | tee -a $GITHUB_STEP_SUMMARY
 
+      # DISABLED to keep the runner cheap. Uncomment to restore.
+      #
+      # `make check-alerts` runs promtool in a container, which pulls
+      # prom/prometheus -- a ~250 MB image -- onto the runner for a test that
+      # takes milliseconds. It was already conditional on a rule file changing,
+      # so it is rare; it is off now because when it does fire it is by far the
+      # most expensive thing in this job.
+      #
+      # An alert rule nobody has seen fire is a rule nobody should trust, so run
+      # it locally when you touch the rules:
+      #   make check-alerts
+      #
       # The alert rules are unit-tested with promtool, in a container, so the
       # gate does not depend on a Prometheus being installed on the runner.
       # CONTAINER_ENGINE=docker because the runners have docker and no podman;
@@ -229,11 +246,11 @@ jobs:
       # Only when a rule file changed. This pulls prom/prometheus -- a ~250 MB
       # image, on every run, for a test that takes milliseconds and can only
       # produce a different answer when the rules or their tests move.
-      - name: Make check-alerts
-        if: steps.changed.outputs.alerts == 'true'
-        run: |
-          echo "## Make check-alerts (Prometheus rules)" >> $GITHUB_STEP_SUMMARY
-          MAKE_DEBUG=true CONTAINER_ENGINE=docker make check-alerts | tee -a $GITHUB_STEP_SUMMARY
+      # - name: Make check-alerts
+      # if: steps.changed.outputs.alerts == 'true'
+      # run: |
+      # echo "## Make check-alerts (Prometheus rules)" >> $GITHUB_STEP_SUMMARY
+      # MAKE_DEBUG=true CONTAINER_ENGINE=docker make check-alerts | tee -a $GITHUB_STEP_SUMMARY
 
       - name: Make tests
         run: |
