@@ -29,7 +29,7 @@ recreates the stack's data.
 ```bash
 make rename-project   # 1. once, right after creating your repository from the template
 make tools            # 2. air, swag, goose, golangci-lint, ... (rebuilt whenever Go is upgraded)
-make dev-certs        # 3. JWT signing pair, AES key and a dev TLS CA under certs/ (git-ignored)
+make dev-certs        # 3. JWT signing pair, AES key, the server TLS pair and a dev TLS CA under certs/ (git-ignored)
 make start-dev-env    # 4. PostgreSQL, Valkey, Grafana, Tempo, Prometheus and Mailpit, in a podman pod
 air                   # 5. build and run the service with live reload
 ```
@@ -175,7 +175,7 @@ details and the macOS notes.
 ```bash
 make rename-project    # rename module, binary, pod and database after creating a repo from the template
 make tools             # install or rebuild every Go tool this repo uses
-make dev-certs         # generate the JWT pair, the AES key and the dev TLS CA (idempotent)
+make dev-certs         # generate the JWT pair, the AES key, the server TLS pair and the dev TLS CA (idempotent)
 make start-dev-env     # start the dev stack. WARNING: recreates its data
 make stop-dev-env      # stop it, keep the data
 make rm-dev-env        # stop it and delete the data

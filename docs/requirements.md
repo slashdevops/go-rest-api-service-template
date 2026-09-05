@@ -11,7 +11,7 @@ run or be developed on. It is the first page to read;
 | **Go** | `1.27.0`+ | Building and running |
 | **macOS** | 13 Ventura+ | Building Go 1.27 itself, on Apple hardware |
 | **podman** | any recent | The development environment and the container image |
-| **OpenSSL** | 3.x | The JWT pair, the AES key and every TLS certificate (`make dev-certs`) |
+| **OpenSSL** | 3.x | The JWT pair, the AES key, the HTTP server's TLS pair and every database TLS certificate (`make dev-certs`) |
 | **envsubst** | any, from gettext | Rendering the dev pod file. Not on a stock macOS: `brew install gettext` |
 | **make, git, curl** | any | The Makefile, `rename-project`, and checking a running service |
 | **PostgreSQL** | 18 | Supplied by the dev environment; a hard dependency in production. 18 specifically, for native `uuidv7()` |
@@ -124,7 +124,9 @@ source of truth; what follows is the entry point.
 ### The development stack does it for you
 
 `make dev-certs` generates one CA and one server certificate covering both
-databases (alongside the JWT pair and the AES key), and `make start-dev-env`,
+databases (alongside the JWT pair, the AES key, and a self-signed pair for the
+HTTP server itself, `certs/goapitemplate.local.{crt,key}` — the dev stack runs
+with TLS off but the flags that name those files open them), and `make start-dev-env`,
 which runs it first, starts both databases with TLS on:
 
 ```bash
