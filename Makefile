@@ -511,9 +511,13 @@ check-dev-env-tools: ## Verify the tools the dev-env targets need are on PATH (o
 # one unreadable; a new CA is not trusted by the service that already loaded
 # the old one. To rotate on purpose, delete the file and run this again.
 .PHONY: dev-certs
-dev-certs: check-dev-env-tools ## Generate the JWT pair, the AES key and the dev TLS CA under certs/ (idempotent, never overwrites)
+# The host the HTTP server's dev certificate is issued for. It has to match the
+# filename .air.toml and run.sh pass to http.server.tls.cert.file.
+DEV_TLS_HOST ?= goapitemplate.local
+
+dev-certs: check-dev-env-tools ## Generate the JWT pair, the AES key, the HTTP server's TLS pair and the dev TLS CA under certs/ (idempotent, never overwrites)
 	@printf "👉 Generating development key material under certs/...\n"
-		$(call exec_cmd, ./dev-env/scripts/generate-dev-keys.sh $(CURDIR)/certs )
+		$(call exec_cmd, ./dev-env/scripts/generate-dev-keys.sh $(CURDIR)/certs $(DEV_TLS_HOST) )
 		$(call exec_cmd, ./dev-env/scripts/generate-dev-certs.sh $(CURDIR)/certs/dev )
 	@printf "  certs/: %s\n" "$$(cd certs && ls -1 | tr '\n' ' ')"
 	@printf "  certs/dev/: %s\n" "$$(cd certs/dev && ls -1 | tr '\n' ' ')"

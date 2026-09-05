@@ -147,3 +147,65 @@ func repoRootFrom(t *testing.T) string {
 		dir = parent
 	}
 }
+
+// TestEveryDevStackCertIsGenerated pins that every file under certs/ that
+// .air.toml or run.sh names is produced by `make dev-certs`.
+//
+// A file-valued flag is OPENED while the flags are parsed, so a path the dev
+// stack names but nothing generates is not a warning at startup -- it is
+// "invalid value ... no such file or directory" followed by the usage text,
+// before the service has read anything else, and with http.server.tls.enabled
+// set to false. A fresh checkout could not run `air` that way for as long as
+// the HTTP server's certificate was named in .air.toml and produced by nothing.
+//
+// The check is textual: the basename must appear in one of the two generator
+// scripts. That is deliberately weak -- it does not run the scripts -- and
+// deliberately enough: the failure mode is a path that nothing mentions.
+func TestEveryDevStackCertIsGenerated(t *testing.T) {
+	t.Parallel()
+
+	root := repoRootFrom(t)
+
+	generators := ""
+
+	for _, script := range []string{"generate-dev-keys.sh", "generate-dev-certs.sh"} {
+		b, err := os.ReadFile(filepath.Join(root, "dev-env", "scripts", script))
+		if err != nil {
+			t.Fatalf("read %s: %v", script, err)
+		}
+
+		generators += string(b)
+	}
+
+	// The server pair is named through a variable in the script; the Makefile
+	// pins the host, and it is the host that has to match the filenames.
+	devTLSHost := regexp.MustCompile(`(?m)^DEV_TLS_HOST \?= (\S+)`)
+
+	mk, err := os.ReadFile(filepath.Join(root, "Makefile"))
+	if err != nil {
+		t.Fatalf("read Makefile: %v", err)
+	}
+
+	host := devTLSHost.FindStringSubmatch(string(mk))
+	if host == nil {
+		t.Fatal("Makefile no longer declares DEV_TLS_HOST; the server certificate's filename has nothing to match against")
+	}
+
+	generators = strings.ReplaceAll(generators, "$HOST", host[1])
+
+	ref := regexp.MustCompile(`\./certs/([A-Za-z0-9_./-]+)`)
+
+	for _, f := range []string{".air.toml", "run.sh"} {
+		b, err := os.ReadFile(filepath.Join(root, f))
+		if err != nil {
+			t.Fatalf("read %s: %v", f, err)
+		}
+
+		for _, m := range ref.FindAllStringSubmatch(string(b), -1) {
+			base := filepath.Base(m[1])
+			if !strings.Contains(generators, base) {
+				t.Errorf("%s names ./certs/%s, and neither dev-env script generates a file called %s; a fresh checkout will refuse to start on that flag", f, m[1], base)
+			}
+		}
+	}
+}

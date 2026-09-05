@@ -9,6 +9,7 @@ flowchart LR
         PRIV["jwt.key<br/><i>EC private</i>"]
         PUB["jwt.pub<br/><i>EC public</i>"]
         AES["aes-256-symmetric-hex.key<br/><i>32-byte hex</i>"]
+        SRV["goapitemplate.local.crt / .key<br/><i>server TLS, self-signed in dev</i>"]
     end
 
     PRIV -->|signs JWTs| SIGN["tokenjwt<br/><i>driven adapter</i>"]
@@ -18,9 +19,14 @@ flowchart LR
     SIGN --> TOK(["access / refresh / reset tokens"])
     VAL --> TOK
     CIPH --> STORE[("IdP client_secret<br/>at rest in PostgreSQL")]
+    SRV -->|http.server.tls.*| HTTP["the HTTP server<br/><i>only when http.server.tls.enabled</i>"]
 ```
 
 - The **EC key pair** (`jwt.key` / `jwt.pub`) signs and validates JWTs.
+- The **HTTP server's TLS pair** is what `http.server.tls.cert.file` and
+  `.key.file` name. `make dev-certs` self-signs one for the dev stack, which
+  runs with `http.server.tls.enabled=false` but still opens the files while
+  parsing the flags; production supplies a real one, see below.
 - The **AES-256 symmetric key** encrypts the third-party credentials this
   service has to be able to *replay*: an
   identity provider's `client_secret`. Both are decrypted on use, which is why
