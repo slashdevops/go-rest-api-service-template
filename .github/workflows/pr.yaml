@@ -16,12 +16,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Least privilege: this workflow only reads the repository. `pull-requests: read`
-# is for the changed-file query below, which decides whether the two expensive
-# conditional gates need to run at all.
+# Least privilege: this workflow only reads the repository.
 permissions:
   contents: read
-  pull-requests: read
 
 env:
   MAKE_STOP_ON_ERRORS: true
@@ -104,37 +101,6 @@ jobs:
           restore-keys: |
             gotools-${{ runner.os }}-
 
-      # Which of the two expensive conditional gates below need to run.
-      #
-      # One API call, rather than deepening the checkout: `git diff` against the
-      # base needs history this job has no other use for, and fetching it costs
-      # more than the query.
-      - name: Changed files
-        id: changed
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          files=$(gh api --paginate \
-            "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
-            --jq '.[].filename')
-
-          # Fail OPEN. If the query returns nothing -- an API hiccup, a
-          # permissions change -- run both gates rather than skip them. A
-          # cost optimisation must never be able to silently drop a gate.
-          if [ -z "$files" ]; then
-            echo "could not determine changed files; running every gate"
-            echo "deps=true"   >> $GITHUB_OUTPUT
-            echo "alerts=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          grep -qE '^go\.(mod|sum)$' <<<"$files" && d=true || d=false
-          grep -qE '^dev-env/configuration/prometheus/' <<<"$files" && a=true || a=false
-
-          echo "deps=$d"   >> $GITHUB_OUTPUT
-          echo "alerts=$a" >> $GITHUB_OUTPUT
-          echo "dependency files changed: $d | alert rules changed: $a"
-
       - name: Summary Information
         run: |
           echo "# Pull Request Summary" > $GITHUB_STEP_SUMMARY
@@ -180,35 +146,6 @@ jobs:
         run: |
           echo "## Make lint" >> $GITHUB_STEP_SUMMARY
           MAKE_DEBUG=true make lint | tee -a $GITHUB_STEP_SUMMARY
-
-      # DISABLED to keep the runner cheap. Uncomment to restore.
-      #
-      # `make check-alerts` runs promtool in a container, which pulls
-      # prom/prometheus -- a ~250 MB image -- onto the runner for a test that
-      # takes milliseconds. It was already conditional on a rule file changing,
-      # so it is rare; it is off now because when it does fire it is by far the
-      # most expensive thing in this job.
-      #
-      # An alert rule nobody has seen fire is a rule nobody should trust, so run
-      # it locally when you touch the rules:
-      #   make check-alerts
-      #
-      # The alert rules are unit-tested with promtool, in a container, so the
-      # gate does not depend on a Prometheus being installed on the runner.
-      # CONTAINER_ENGINE=docker because the runners have docker and no podman;
-      # the two are argument-compatible for what this runs.
-      #
-      # An alert rule that nobody has seen fire is a rule nobody should trust,
-      # and the only other way to exercise one is to break a dependency and
-      # wait. These tests take milliseconds.
-      # Only when a rule file changed. This pulls prom/prometheus -- a ~250 MB
-      # image, on every run, for a test that takes milliseconds and can only
-      # produce a different answer when the rules or their tests move.
-      # - name: Make check-alerts
-      # if: steps.changed.outputs.alerts == 'true'
-      # run: |
-      # echo "## Make check-alerts (Prometheus rules)" >> $GITHUB_STEP_SUMMARY
-      # MAKE_DEBUG=true CONTAINER_ENGINE=docker make check-alerts | tee -a $GITHUB_STEP_SUMMARY
 
       - name: Make tests
         run: |

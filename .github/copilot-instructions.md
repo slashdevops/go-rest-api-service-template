@@ -939,7 +939,7 @@ turning into an array of integers, which silently breaks every generated client.
 
 ### Go 1.27 baseline
 
-The module is `go 1.27.0` and `go fix -diff ./...` is **clean** — the codebase is
+The module is `go 1.27.1` and `go fix -diff ./...` is **clean** — the codebase is
 already modernised, so do not introduce pre-1.21 idioms.
 
 > The patch version in `go.mod` is load-bearing, not cosmetic. CI resolves its
@@ -1316,7 +1316,7 @@ make go-betteralign      # Re-align struct fields for optimal memory layout (rew
 make lint                # Lint (formatting + vet + staticcheck SA* + errcheck + ineffassign + unused)
 make build               # Build (also runs swag fmt + swag init + swagger markdown)
 make test                # Unit tests with race detector + coverage
-make vulncheck           # govulncheck — gated in CI
+make vulncheck           # govulncheck — weekly in security-scan.yaml, not on the PR
 make licenses-check      # Third-party license allow-list check
 
 # If touching tests/integration/ — bring the dev env up and run with the integration tag.
@@ -1343,18 +1343,25 @@ Notes:
 That split is the rule to keep — a gate belongs on the PR only if it can
 answer differently because of the change under review.
 
-`.github/workflows/pr.yaml` runs, in order: `go build ./...`, `go fix -diff`
-(must be empty), `make arch-test`, `make lint`, `make test`,
-`make test-coverage` — plus two that run **only when their inputs moved**:
+`.github/workflows/pr.yaml` runs, in order: `go build ./...`,
+`make arch-test`, `make lint`, `make test`, `make test-coverage`. Nothing
+else. The Valkey service container is deliberately **off** to keep the runner
+cheap, so the two Valkey-backed suites (`ratelimitvalkey`,
+`changenotifyvalkey`) skip in CI and `.testcoverage.yml` carries lowered
+floors with the same note; run them locally against the dev stack, where the
+Makefile sets `VALKEY_TEST_CA` for you.
 
-| Gate | Runs when | Why conditional |
-| ---- | --------- | --------------- |
-| `make vulncheck`    | `go.mod` or `go.sum` changed | a per-PR scan answers "did THIS change introduce a vulnerable dependency", and nothing else can change that answer |
-| `make check-alerts` | a file under `dev-env/configuration/prometheus/` changed | it pulls `prom/prometheus`, ~250 MB, for a test that takes milliseconds |
+Three gates were removed because each was cost with no answer the change
+under review could alter:
 
-**The changed-file query fails OPEN.** If it cannot tell what moved, both run.
-A cost optimisation must never be able to silently drop a gate — keep that
-property in anything added here.
+| Removed gate        | Why it went, and where the check lives now |
+| ------------------- | ------------------------------------------ |
+| `go fix -diff`      | a modernizer drift is style, not a defect; it stays on the post-change checklist and `go fix ./...` is a one-liner locally |
+| `make vulncheck`    | a per-PR scan only ever answered "did this PR add a vulnerable dependency"; the weekly `security-scan.yaml` covers that and the advisory published against a dependency nobody touched |
+| `make check-alerts` | pulled a ~250 MB `prom/prometheus` image for a test that takes milliseconds; run `make check-alerts` locally whenever `dev-env/configuration/prometheus/` changes |
+
+The changed-file query that gated the last two conditionally went with them,
+and so did the `pull-requests: read` permission it needed.
 
 **`go build ./...`, not `make build`.** `make build` installs `swag` and
 `go-swagger` and regenerates `docs/api`, and the PR job then discards the
