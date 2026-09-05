@@ -18,7 +18,7 @@ CREATE TABLE IF NOT EXISTS products (
     id uuid PRIMARY KEY NOT NULL UNIQUE DEFAULT uuidv7(),
 
     -- ON DELETE CASCADE: a product cannot outlive its project. The resource-limit counter for the
-    -- project is removed by the same cascade (see 20000_limits.sql), so a deleted project does not
+    -- project is removed by the same cascade (see 00012_limits.sql), so a deleted project does not
     -- leave a counter behind claiming its products still exist.
     projects_id uuid NOT NULL REFERENCES projects (id) ON DELETE CASCADE ON UPDATE CASCADE,
 

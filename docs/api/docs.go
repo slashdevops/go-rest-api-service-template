@@ -3844,7 +3844,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Route template, for example /projects/{project_id}/generate",
+                        "description": "Route template, for example /projects/{project_id}/products",
                         "name": "endpoint",
                         "in": "query",
                         "required": true

@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-const rateLimitsMigration = "../../../../database/migrations/20003_rate_limits.sql"
+const rateLimitsMigration = "../../../../database/migrations/00015_rate_limits.sql"
 
 func readRateLimitsMigration(t *testing.T) string {
 	t.Helper()

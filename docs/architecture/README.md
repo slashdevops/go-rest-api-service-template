@@ -280,7 +280,8 @@ Read it alongside [Adding a new entity](./adding-an-entity.md).
   token is single-use and what a replayed one costs, the single verification
   routine and the claims it checks, how a signing key is rotated without
   downtime, and why no credential travels in a URL.
-- [Database migrations](./database-migrations.md) — the 27-file set, why editing
+- [Database migrations](./database-migrations.md) — the 16-file set and why it
+  is numbered contiguously, why editing
   an applied migration fails silently, the one shared system-row guard, the
   63-character identifier limit that has caused two bugs, and how to prove a
   migration change did not alter the schema.

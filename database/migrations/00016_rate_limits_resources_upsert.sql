@@ -4,14 +4,14 @@
 ---------------------------------------------------------------------------------------------------
 -- The authz resource rows for the rate-limit endpoints.
 --
--- WHY A SEPARATE MIGRATION, when 3100_roles_policies_tables_upsert.sql already carries them.
+-- WHY A SEPARATE MIGRATION, when 00008_roles_policies_tables_upsert.sql already carries them.
 --
 -- That file is what a FRESHLY CREATED database gets. An existing one never re-runs it -- goose
 -- tracks versions by number and does not checksum contents -- so without this migration every
 -- deployment that already exists would have six endpoints with no resource to authorise against,
 -- and every request to them would be refused for a reason nothing explains.
 --
--- ON CONFLICT DO NOTHING because a fresh database gets these from 3100 first, and this must then
+-- ON CONFLICT DO NOTHING because a fresh database gets these from 00008 first, and this must then
 -- be a no-op rather than a duplicate-key failure at startup.
 --
 -- No new POLICY rows: the seeded 'Full Access' policy is ('*', '*'), so it already authorises

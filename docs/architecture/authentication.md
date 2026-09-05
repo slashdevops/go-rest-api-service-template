@@ -182,7 +182,7 @@ real one.
 
 ## Revocation
 
-[`revoked_tokens`](../../database/migrations/20002_revoked_tokens.sql) is a
+[`revoked_tokens`](../../database/migrations/00014_revoked_tokens.sql) is a
 denylist of `jti` claims. Only revoked-and-unexpired tokens have rows, so it
 holds one row per logout rather than one per live session, and rows are swept
 once the token they name has expired anyway.

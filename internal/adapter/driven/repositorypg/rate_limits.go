@@ -30,7 +30,7 @@ import (
 // migration without changing the constant here does not break the build and does
 // not fail a test that only exercises the happy path -- it turns a documented
 // 409 or 403 back into a 500, discovered by a user. TestConstraintNamesExistInTheMigration
-// parses 20003_rate_limits.sql and fails if any of these disappears.
+// parses 00015_rate_limits.sql and fails if any of these disappears.
 const (
 	constraintRateLimitName          = "unique_rate_limit_name"
 	constraintRateLimitWindowPeriod  = "unique_rate_limit_window_period"

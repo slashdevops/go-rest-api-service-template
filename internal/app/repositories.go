@@ -63,6 +63,18 @@ func (a *App) initRepositories() error {
 		return fmt.Errorf("failed to create projects repository: %w", err)
 	}
 
+	a.repositories.Products, err = repositorypg.NewProductsRepository(
+		repositorypg.ProductsRepositoryConfig{
+			DB:              a.dbPool,
+			MaxPingTimeout:  a.configs.Database.MaxPingTimeout.Value,
+			MaxQueryTimeout: a.configs.Database.MaxQueryTimeout.Value,
+			OT:              a.telemetry,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create products repository: %w", err)
+	}
+
 	a.repositories.Policies, err = repositorypg.NewPoliciesRepository(
 		repositorypg.PoliciesRepositoryConfig{
 			DB:              a.dbPool,

@@ -12,21 +12,40 @@ rather than loud.
 
 ## The file set
 
-17 files, numbered with deliberate gaps so a new one can be slotted between two
-existing topics. The convention is a `_tables` file that creates structure and a
+16 files, numbered **contiguously** from `00001` in the order goose applies
+them. The convention is a `_tables` file that creates structure followed by a
 matching `_upsert` file that seeds it:
 
 ```text
-200    shared functions        the system-row guard, once
-1000   users                   1100  seed
-2000   projects                2100  projects_users   2200  seed
-3000   roles / policies        3100  seed  ← generated in part by cmd/apiendpoints
-4000   products                ← the worked example entity
-10000  idps                    10001 seed
-20000  resource limits         20001 seed
-20002  revoked tokens          ← the logout/rotation denylist
-20003  rate limits             20004 seed  ← rules + windows, and their authz rows
+00001  shared functions        the system-row guard, once; everything below depends on it
+00002  users                   00003  seed  ← the development administrator
+00004  projects                00005  projects_users   00006  seed
+00007  roles / policies        00008  seed  ← generated in part by cmd/apiendpoints
+00009  products                ← the worked example entity
+00010  idps                    00011  seed
+00012  resource limits         00013  seed
+00014  revoked tokens          ← the logout/rotation denylist
+00015  rate limits             00016  seed  ← rules + windows, and their authz rows
 ```
+
+The set used to be numbered with gaps (`200`, `1000`, `1100`, … `20004`) so a
+file could be slotted between two topics. It was renumbered to a closed
+sequence before the first production deploy, because the gaps invited exactly
+the mistake the ordering rule below forbids: a "products" migration numbered
+`4001` to sit beside `4000_products_tables.sql` sorts below the applied `20004`,
+and goose rejects it at startup as a missing migration. With a contiguous
+sequence there is one place a new file can go, the end, and `goose create`
+puts it there:
+
+```bash
+goose -dir database/migrations -s create add_widgets sql   # writes 00017_add_widgets.sql
+```
+
+**Every database built from the old numbering has to be recreated** —
+`make rm-dev-env && make start-dev-env` — because goose tracks versions by
+number: a database at version `20004` sees sixteen files below it and refuses
+to start the service. Nothing was in production when the renumbering happened,
+which is the only reason it was possible; see the next section.
 
 There is no `100_extensions.sql`. The schema needs no PostgreSQL extension: `uuidv7()`
 is **native in PostgreSQL 18**, which is why [requirements](../requirements.md)
@@ -75,13 +94,14 @@ mitigation is procedural: recreate the database.
 
 A new migration must sort **after every already-applied one**. `goose.UpContext`
 runs without `AllowMissing`, so a file numbered below the current database
-version is rejected as a missing migration and **startup fails**. The filenames
-look domain-grouped, but goose only compares numbers — check the highest
-existing number and go above it whatever the topic.
+version is rejected as a missing migration and **startup fails**. The sequence
+is contiguous, so a new file takes the next number whatever its topic —
+`goose -dir database/migrations -s create <name> sql` computes it — and it is
+never slotted between two existing files, however related they look.
 
 The one exception is a **shared object**, which must sort *below* everything
 that depends on it. goose applies Up ascending and Down descending, so
-`200_shared_functions.sql` is created before the first table that uses its
+`00001_shared_functions.sql` is created before the first table that uses its
 function and dropped after the last one is gone.
 
 ### System rows are guarded by a trigger, and it blocks UPDATE too
@@ -242,7 +262,7 @@ differences.
   schema is a UUIDv7.
 - Secrets are never seeded. An `idps` row's `client_secret` is seeded empty and
   supplied per deployment, stored encrypted.
-- The `resources` rows in `3100` are generated from `docs/api/swagger.json` by
+- The `resources` rows in `00008` are generated from `docs/api/swagger.json` by
   `cmd/apiendpoints`. Regenerate rather than hand-edit that block; everything
   above its marker, and the hand-written `policies` and `roles_policies` blocks
   below it, are maintained by hand.

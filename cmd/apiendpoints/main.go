@@ -186,7 +186,7 @@ func main() {
 	// Sort on (Path, Method), not Path alone.
 	//
 	// The output of this program is pasted into
-	// database/migrations/3100_roles_policies_tables_upsert.sql, so the ordering
+	// database/migrations/00008_roles_policies_tables_upsert.sql, so the ordering
 	// has to be a function of the swagger spec and nothing else. Two things
 	// conspired against that:
 	//

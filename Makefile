@@ -4,12 +4,28 @@ EXECUTABLES = go zip shasum podman
 K := $(foreach exec,$(EXECUTABLES),\
   $(if $(shell which $(exec)),some string,$(error "No $(exec) in PATH)))
 
+# Needed only by the dev-env targets, so they are checked there rather than on
+# every `make`: CI runs lint and test without ever rendering the pod file.
+# envsubst is not on a stock macOS -- it comes with gettext.
+DEV_ENV_EXECUTABLES = openssl envsubst
+
 # Add .SHELLFLAGS to ensure that shell errors are propagated
 .SHELLFLAGS := -e -c
 
-# this is used to rename the repository when is created from the template
-# we will use the git remote url to get the repository name
-GIT_REPOSITORY_NAME            ?= $(shell git remote get-url origin | cut -d '/' -f 2 | cut -d '.' -f 1)
+# Used by rename-project: the owner and name of the repository that was created
+# from the template, read from the origin remote. Both URL shapes GitHub hands
+# out are handled -- `git@github.com:owner/name.git` and
+# `https://github.com/owner/name.git`. The old `cut -d '/' -f 2` handled only
+# the first: on an https URL the second slash-separated field is EMPTY, so the
+# rename would have replaced the template name with nothing at all.
+#
+# Override both when there is no remote (a zip download, a fresh `git init`):
+#   GIT_REPOSITORY_OWNER=acme GIT_REPOSITORY_NAME=my-api make rename-project
+GIT_REPOSITORY_URL             := $(shell git remote get-url origin 2>/dev/null)
+# No parentheses in these sed expressions: make counts them inside $(shell)
+# and a capture group reads as an unterminated call.
+GIT_REPOSITORY_OWNER           ?= $(shell echo '$(GIT_REPOSITORY_URL)' | sed -E 's|\.git$$||; s|/[^/]*$$||; s|^.*[:/]||')
+GIT_REPOSITORY_NAME            ?= $(shell echo '$(GIT_REPOSITORY_URL)' | sed -E 's|\.git$$||; s|^.*/||')
 GIT_REPOSITORY_NAME_UNDERSCORE := $(subst -,_,$(GIT_REPOSITORY_NAME))
 
 # PROJECT_MODULE is the full module path, major-version suffix included
@@ -18,13 +34,31 @@ GIT_REPOSITORY_NAME_UNDERSCORE := $(subst -,_,$(GIT_REPOSITORY_NAME))
 # path exactly: a stale path names a symbol that does not exist, the linker ignores it
 # silently, and the binaries ship reporting version 0.0.0.
 PROJECT_MODULE    ?= $(shell awk '/^module /{print $$2}' go.mod)
-PROJECT_NAME      ?= $(shell grep module go.mod | cut -d '/' -f 3)
-PROJECT_NAMESPACE ?= $(shell grep module go.mod | cut -d '/' -f 2 )
+# The name and namespace are the third and second segments of the module path
+# (github.com/<namespace>/<name>[/vN]), split from PROJECT_MODULE rather than
+# grepped out of go.mod. They used to be `grep module go.mod | cut ...`, which
+# matches EVERY line containing the word "module" -- and the day a comment
+# mentioning "the module graph" was added to go.mod, PROJECT_NAME became two
+# lines of prose, the backticks in it ran as a command, and every dev-env
+# target died with `/bin/sh: -u: command not found` and `Error 127`. The guard
+# turns that class of mistake into a message naming the variable.
+PROJECT_NAME      ?= $(word 3,$(subst /, ,$(PROJECT_MODULE)))
+PROJECT_NAMESPACE ?= $(word 2,$(subst /, ,$(PROJECT_MODULE)))
+ifneq ($(words $(PROJECT_NAME)),1)
+$(error PROJECT_NAME resolved to "$(PROJECT_NAME)"; expected exactly one word from the module line of go.mod)
+endif
 PROJECT_MODULES_PATH := $(shell ls -d cmd/*)
 PROJECT_MODULES_NAME := $(foreach dir_name, $(PROJECT_MODULES_PATH), $(shell basename $(dir_name)) )
 PROJECT_DEPENDENCIES := $(shell go list -m -f '{{if not (or .Indirect .Main)}}{{.Path}}{{end}}' all)
 
-TEMPLATE_NAME	           := api-business
+# What rename-project replaces: the template's own owner/name. Kept as ONE
+# string on purpose -- the rename rewrites this line along with every other
+# occurrence, so after a rename it names the new repository and the target
+# becomes a no-op the second time. It had drifted to a name that appeared
+# nowhere in the tree, so the target renamed nothing and then failed moving a
+# cmd/ directory that did not exist.
+TEMPLATE_REPOSITORY      := slashdevops/go-rest-api-service-template
+TEMPLATE_NAME            := $(notdir $(TEMPLATE_REPOSITORY))
 TEMPLATE_NAME_UNDERSCORE := $(subst -,_,$(TEMPLATE_NAME))
 
 BUILD_DIR       := ./build
@@ -68,7 +102,14 @@ GO_GRAPH_FILE  := $(BUILD_DIR)/go-mod-graph.txt
 
 CONTAINER_NAMESPACE  ?= $(PROJECT_NAMESPACE)
 CONTAINER_IMAGE_NAME ?= $(PROJECT_NAME)
-CONTAINER_OS         ?= linux darwin
+# linux ONLY. The release binaries ship for darwin too (GO_OS above), but a
+# container image is a Linux artefact: gcr.io/distroless/base has no darwin
+# manifest, so `podman build --platform darwin/arm64` fails to pull the base
+# and `podman manifest add --os=darwin` fails after it. This carried
+# `linux darwin` for a long time and every release "succeeded" with no image
+# published: the workflow piped make into tee without pipefail, so the Error
+# 125 from both targets was invisible.
+CONTAINER_OS         ?= linux
 CONTAINER_ARCH       ?= arm64 amd64
 # CONTAINER_REPOS     ?= docker.io ghcr.io public.ecr.aws
 CONTAINER_REPOS      ?= ghcr.io
@@ -399,13 +440,13 @@ docs-swagger: install-swag install-go-swagger ## Generate swagger documentation
 	)
 
 .PHONY: docs-api-resources
-docs-api-resources: docs-swagger ## Generate the authz resource rows from swagger.json, for 3100_roles_policies_tables_upsert.sql
+docs-api-resources: docs-swagger ## Generate the authz resource rows from swagger.json, for 00008_roles_policies_tables_upsert.sql
 	@printf "👉 Generating the authz resource rows from ./docs/api/swagger.json...\n"
 	@printf "   Paste the block below over the generated rows in\n"
-	@printf "   database/migrations/3100_roles_policies_tables_upsert.sql, after the\n"
+	@printf "   database/migrations/00008_roles_policies_tables_upsert.sql, after the\n"
 	@printf "   '-- automatic generate with the program apiendpoints' marker.\n"
 	@printf "   A new endpoint also needs its row added by a NEW migration: an existing\n"
-	@printf "   database will not re-run 3100.\n\n"
+	@printf "   database will not re-run 00008.\n\n"
 	@go run ./cmd/apiendpoints/main.go
 
 ###############################################################################
@@ -419,11 +460,11 @@ install-swag: ## Install swag for swagger documentation (https://github.com/swag
 	$(call ensure_tool,swag,github.com/swaggo/swag/cmd/swag@latest)
 
 .PHONY: install-go-swagger
-install-go-swagger: ## Install swag for swagger documentation (https://github.com/swaggo/http-swagger)
+install-go-swagger: ## Install go-swagger, used to render the API reference as markdown (https://goswagger.io/)
 	$(call ensure_tool,swagger,github.com/go-swagger/go-swagger/cmd/swagger@latest)
 
 .PHONY: install-goose
-install-goose: ## Install goose for database migrations (
+install-goose: ## Install goose for database migrations (https://github.com/pressly/goose)
 	$(call ensure_tool,goose,github.com/pressly/goose/v3/cmd/goose@latest)
 
 .PHONY: install-go-test-coverage
@@ -452,15 +493,40 @@ tools: install-air install-swag install-go-swagger install-goose install-go-test
 
 ###############################################################################
 ##@ Development commands
+.PHONY: check-dev-env-tools
+check-dev-env-tools: ## Verify the tools the dev-env targets need are on PATH (openssl, envsubst)
+	@for tool in $(DEV_ENV_EXECUTABLES); do \
+		command -v $$tool >/dev/null 2>&1 || { \
+			printf "  $$tool not found in PATH ❌ -- on macOS: brew install gettext openssl; on Debian/Ubuntu: apt install gettext-base openssl\n"; exit 1; }; \
+	done
+
+# Everything under certs/ that the dev stack needs, generated only when missing:
+#
+#   certs/jwt.key, certs/jwt.pub              signs and verifies every token
+#   certs/aes-256-symmetric-hex.key           encrypts IdP client secrets at rest
+#   certs/dev/{ca.crt,server.crt,server.key}  TLS for PostgreSQL and Valkey
+#
+# Never overwrites. A new jwt.key invalidates every token the running service
+# has issued; a new AES key makes every secret already encrypted with the old
+# one unreadable; a new CA is not trusted by the service that already loaded
+# the old one. To rotate on purpose, delete the file and run this again.
+.PHONY: dev-certs
+dev-certs: check-dev-env-tools ## Generate the JWT pair, the AES key and the dev TLS CA under certs/ (idempotent, never overwrites)
+	@printf "👉 Generating development key material under certs/...\n"
+		$(call exec_cmd, ./dev-env/scripts/generate-dev-keys.sh $(CURDIR)/certs )
+		$(call exec_cmd, ./dev-env/scripts/generate-dev-certs.sh $(CURDIR)/certs/dev )
+	@printf "  certs/: %s\n" "$$(cd certs && ls -1 | tr '\n' ' ')"
+	@printf "  certs/dev/: %s\n" "$$(cd certs/dev && ls -1 | tr '\n' ' ')"
+
 .PHONY: stop-dev-env
-stop-dev-env: ## Run the application in development mode
-	@printf "👉 Stopping application in development mode...\n"
+stop-dev-env: check-dev-env-tools ## Stop the development environment pod (PostgreSQL, Valkey, Grafana, Tempo, Prometheus, Mailpit). Keeps the data
+	@printf "👉 Stopping the development environment...\n"
 		$(call exec_cmd, PROJECT_NAME=$(PROJECT_NAME) CERTS_DIR=$(CURDIR)/certs/dev envsubst < ./dev-env/provisioning/dev-service-pod.yaml.tmpl > ./dev-env/provisioning/dev-service-pod.yaml)
 		$(call exec_cmd, podman play kube --down ./dev-env/provisioning/dev-service-pod.yaml )
 
 .PHONY: start-dev-env
-start-dev-env: stop-dev-env install-air install-swag install-goose ## Run the application in development mode.  WARNING: This will stop the current running application deleting the data
-	@printf "👉 Running application in development mode...\n"
+start-dev-env: stop-dev-env dev-certs install-air install-swag install-goose ## Start the development environment pod. WARNING: stops the running one and RECREATES its data
+	@printf "👉 Starting the development environment...\n"
 		$(call exec_cmd, PROJECT_NAME=$(PROJECT_NAME) CERTS_DIR=$(CURDIR)/certs/dev envsubst < ./dev-env/provisioning/dev-service-pod.yaml.tmpl > ./dev-env/provisioning/dev-service-pod.yaml)
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/db-volume-host )
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/tempo-volume-host )
@@ -470,7 +536,6 @@ start-dev-env: stop-dev-env install-air install-swag install-goose ## Run the ap
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/grafana-dashboard-config )
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/grafana-dashboard )
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/dev-env)
-		$(call exec_cmd, ./dev-env/scripts/generate-dev-certs.sh $(CURDIR)/certs/dev )
 		$(call exec_cmd, chmod 777 $(HOME)/tmp/$(PROJECT_NAME)/tempo-volume-host )
 		$(call exec_cmd, chmod 777 $(HOME)/tmp/$(PROJECT_NAME)/prometheus-volume-host )
 
@@ -483,23 +548,53 @@ start-dev-env: stop-dev-env install-air install-swag install-goose ## Run the ap
 		$(call exec_cmd, cp ./dev-env/configuration/tempo/tempo-local-config.yaml $(HOME)/tmp/$(PROJECT_NAME)/dev-env/tempo-local-config.yaml )
 
 		$(call exec_cmd, podman play kube ./dev-env/provisioning/dev-service-pod.yaml )
+	@printf "👉 Development environment is up. Data lives under $(HOME)/tmp/$(PROJECT_NAME). Next: air\n"
 
 .PHONY: rm-dev-env
-rm-dev-env: stop-dev-env  ## Stop the application and remove the development environment
+rm-dev-env: stop-dev-env  ## Stop the development environment pod and delete its data under $HOME/tmp/<project>
 	@printf "👉 Removing development environment...\n"
 		$(call exec_cmd, rm -rf $(HOME)/tmp/$(PROJECT_NAME) 2>/dev/null )
 
+# Three substitutions, longest first, so each one leaves the next its input:
+#
+#   slashdevops/go-rest-api-service-template  -> <owner>/<name>   module path, badges, image name
+#   go-rest-api-service-template              -> <name>           binary, pod, database, docs
+#   go_rest_api_service_template              -> <name>           identifiers that cannot carry a dash
+#
+# Only the FULL owner/name pair is replaced, never the bare owner: go.mod also
+# requires github.com/slashdevops/{c3e,httpx,mailer,...}, which must stay.
+#
+# .git is excluded because rewriting packed refs and logs corrupts the clone;
+# build, dist and certs are generated or secret and are not sources.
+#
+# `--null`, not `-Z`: on BSD grep (macOS) `-Z` means "decompress", so the file
+# list reached xargs as one newline-joined name and every sed failed with
+# "File name too long" -- while the target still reported success.
+RENAME_GREP := grep -rlI --null --exclude-dir=.git --exclude-dir=build --exclude-dir=dist --exclude-dir=certs --exclude-dir=node_modules
+
 .PHONY: rename-project
-rename-project: clean ## Rename the project.  This must be the first command to run after cloning the repository created from the template
+rename-project: clean ## Rename the project after creating a repository from the template (owner/name come from the origin remote)
 	@printf "👉 Renaming project...\n"
-	$(if $(filter $(TEMPLATE_NAME), $(GIT_REPOSITORY_NAME)), \
-		$(call exec_cmd, echo project has the right name ) \
-	, \
-		$(call exec_cmd, grep -rl '$(TEMPLATE_NAME)' | xargs $(SED_CMD) 's|$(TEMPLATE_NAME)|$(GIT_REPOSITORY_NAME)|g' ) \
-		$(call exec_cmd, grep -rl '$(TEMPLATE_NAME_UNDERSCORE)' | xargs $(SED_CMD) 's|$(TEMPLATE_NAME_UNDERSCORE)|$(GIT_REPOSITORY_NAME_UNDERSCORE)|g' ) \
-		$(call exec_cmd, find . -name '*.removeit' -exec rm -f {} + ) \
-		$(call exec_cmd, mv cmd/$(TEMPLATE_NAME) cmd/$(GIT_REPOSITORY_NAME) ) \
-	)
+	$(if $(or $(findstring /,$(GIT_REPOSITORY_OWNER)$(GIT_REPOSITORY_NAME)),$(findstring :,$(GIT_REPOSITORY_OWNER)$(GIT_REPOSITORY_NAME)),$(findstring @,$(GIT_REPOSITORY_OWNER)$(GIT_REPOSITORY_NAME)),$(filter-out 1,$(words $(GIT_REPOSITORY_OWNER))),$(filter-out 1,$(words $(GIT_REPOSITORY_NAME)))), \
+		$(error could not read the repository owner and name from the origin remote ("$(GIT_REPOSITORY_URL)"). Set them by hand: GIT_REPOSITORY_OWNER=<owner> GIT_REPOSITORY_NAME=<name> make rename-project))
+	@set -e; if [ "$(GIT_REPOSITORY_OWNER)/$(GIT_REPOSITORY_NAME)" = "$(TEMPLATE_REPOSITORY)" ]; then \
+		printf "  the project is already named $(TEMPLATE_REPOSITORY) ✅\n"; \
+	else \
+		$(RENAME_GREP) "$(TEMPLATE_REPOSITORY)" . | xargs -0 -r $(SED_CMD) "s|$(TEMPLATE_REPOSITORY)|$(GIT_REPOSITORY_OWNER)/$(GIT_REPOSITORY_NAME)|g"; \
+		printf "  🤞 $(TEMPLATE_REPOSITORY) -> $(GIT_REPOSITORY_OWNER)/$(GIT_REPOSITORY_NAME) ✅\n"; \
+		$(RENAME_GREP) "$(TEMPLATE_NAME)" . | xargs -0 -r $(SED_CMD) "s|$(TEMPLATE_NAME)|$(GIT_REPOSITORY_NAME)|g"; \
+		printf "  🤞 $(TEMPLATE_NAME) -> $(GIT_REPOSITORY_NAME) ✅\n"; \
+		$(RENAME_GREP) "$(TEMPLATE_NAME_UNDERSCORE)" . | xargs -0 -r $(SED_CMD) "s|$(TEMPLATE_NAME_UNDERSCORE)|$(GIT_REPOSITORY_NAME_UNDERSCORE)|g"; \
+		printf "  🤞 $(TEMPLATE_NAME_UNDERSCORE) -> $(GIT_REPOSITORY_NAME_UNDERSCORE) ✅\n"; \
+		find . -name "*.removeit" -not -path "./.git/*" -exec rm -f {} +; \
+		if [ -d "cmd/$(TEMPLATE_NAME)" ]; then \
+			mv "cmd/$(TEMPLATE_NAME)" "cmd/$(GIT_REPOSITORY_NAME)"; \
+			printf "  🤞 cmd/$(TEMPLATE_NAME) -> cmd/$(GIT_REPOSITORY_NAME) ✅\n"; \
+		fi; \
+		go mod tidy; \
+		printf "  🤞 go mod tidy ✅\n"; \
+	fi
+	@printf "👉 Project is $(GIT_REPOSITORY_OWNER)/$(GIT_REPOSITORY_NAME). Review with 'git diff', commit, then: make tools && make dev-certs && make start-dev-env\n"
 
 .PHONY: start-integration-test
 start-integration-test:rm-dev-env stop-integration-test container-build-integration-test ## Start the integration test

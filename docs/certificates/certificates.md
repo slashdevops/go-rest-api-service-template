@@ -30,6 +30,27 @@ Certificates for the **outbound connections** are a separate concern with their
 own walkthroughs — see [Valkey TLS](./valkey-tls.md) and
 [PostgreSQL TLS](./postgres-tls.md).
 
+## The quick way, for development
+
+```bash
+make dev-certs
+```
+
+One target creates everything below under `certs/` (git-ignored), and the TLS
+CA and server certificate the development PostgreSQL and Valkey present under
+`certs/dev/`. It runs `dev-env/scripts/generate-dev-keys.sh` for the keys and
+`dev-env/scripts/generate-dev-certs.sh` for the TLS material, and it **never
+overwrites** an existing file: a new `jwt.key` invalidates every token the
+running service has issued, a new AES key makes every secret already encrypted
+unreadable, and a new CA is not trusted by a service that already loaded the old
+one. To rotate on purpose, delete the file and run the target again.
+`make start-dev-env` depends on it, so a stack started that way always has its
+material.
+
+Everything after this heading is the manual route: what each file is, how to
+generate it yourself, and what a production deployment does instead of reusing
+development material.
+
 ## Asymmetric Private & Public Key Pair for JWT
 
 This service use a `private and public key pair` to `sign and validate` JWT tokens.
@@ -38,7 +59,7 @@ This service use a `private and public key pair` to `sign and validate` JWT toke
 
 - [OpenSSL 3.x](https://www.openssl.org/)
 
-### Ed25519 Key Pair
+### EC P-256 key pair
 
 Generate the private and public key pair:
 

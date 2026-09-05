@@ -4988,7 +4988,7 @@ paths:
         name: method
         required: true
         type: string
-      - description: Route template, for example /projects/{project_id}/generate
+      - description: Route template, for example /projects/{project_id}/products
         in: query
         name: endpoint
         required: true
