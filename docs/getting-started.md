@@ -142,14 +142,15 @@ make dev-certs
 ```
 
 The service will not start without three files, and none of them has a working
-default. This target creates them, plus the TLS material the dev stack's
-PostgreSQL and Valkey present:
+default. This target creates them, plus the HTTP server's own TLS pair and the
+TLS material the dev stack's PostgreSQL and Valkey present:
 
 | File | What it is | Used by |
 | --- | --- | --- |
 | `certs/jwt.key` | EC P-256 private key | signs every access, refresh and reset token |
 | `certs/jwt.pub` | its public half | verifies them |
 | `certs/aes-256-symmetric-hex.key` | 32 random bytes, hex encoded | encrypts identity-provider client secrets at rest |
+| `certs/goapitemplate.local.crt`, `.key` | a self-signed pair for the HTTP server | named by `.air.toml` and `run.sh`; the flags that name a file open it, so the pair must exist even though the dev stack runs with TLS off |
 | `certs/dev/ca.crt` | a one-year development CA | trusted by the service for both database connections |
 | `certs/dev/server.crt`, `server.key` | the server certificate both containers present | PostgreSQL and Valkey |
 
@@ -180,7 +181,7 @@ flowchart LR
 
     subgraph host["your machine"]
         API["the service<br/><i>:8080, run by air</i>"]
-        CERTS[/"certs/<br/><i>jwt.key · jwt.pub · aes key<br/>dev/ca.crt · server.crt · server.key</i>"/]
+        CERTS[/"certs/<br/><i>jwt.key · jwt.pub · aes key<br/>goapitemplate.local.{crt,key}<br/>dev/ca.crt · server.crt · server.key</i>"/]
     end
 
     subgraph pod["podman pod · make start-dev-env"]

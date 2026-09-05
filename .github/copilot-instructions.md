@@ -1231,6 +1231,16 @@ and a regenerated CA is not trusted by the service that already loaded the old
 one. To rotate, delete the file and run it again; `jwt.pub` is re-derived from
 whatever `jwt.key` is there, and the script warns when the pair does not match.
 
+**Every `certs/` path `.air.toml` or `run.sh` names must be something
+`dev-certs` generates.** A file-valued flag is opened while the flags are
+parsed, so a named-but-missing file is not a warning: the binary prints
+`invalid value ... no such file or directory` and its usage before reading
+anything else, even with the feature that uses the file switched off. That is
+how a fresh checkout could not run `air` for as long as the HTTP server's
+`goapitemplate.local.{crt,key}` was named and produced by nothing. The pair is
+generated now (self-signed, `DEV_TLS_HOST` in the Makefile), and
+`TestEveryDevStackCertIsGenerated` fails on the next such path.
+
 **`PROJECT_NAME` is split from the `module` directive, never grepped.** It used
 to be `grep module go.mod | cut -d / -f 3`, which matches every line containing
 the word "module" -- so the comment about "the module graph" added to go.mod
