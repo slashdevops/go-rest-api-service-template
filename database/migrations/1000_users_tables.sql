@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     disabled BOOLEAN DEFAULT TRUE,
     admin BOOLEAN DEFAULT FALSE,
+    local_account BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
 
@@ -23,25 +24,18 @@ CREATE TABLE IF NOT EXISTS users (
 );
 
 -- indexes for users
-CREATE INDEX "idx_users_id" ON users (id);
-CREATE INDEX "idx_users_email" ON users (email);
-CREATE INDEX "idx_users_created_at" ON users (created_at);
-CREATE INDEX "idx_users_updated_at" ON users (updated_at);
 CREATE INDEX "idx_users_pagination" ON users (serial_id, id);
 
 -- +goose StatementEnd
 --
+
 -- +goose Down
 -- +goose StatementBegin
 
--- drop indexes for users
-DROP INDEX IF EXISTS "idx_users_id";
-DROP INDEX IF EXISTS "idx_users_email";
-DROP INDEX IF EXISTS "idx_users_created_at";
-DROP INDEX IF EXISTS "idx_users_updated_at";
-DROP INDEX IF EXISTS "idx_users_pagination";
+-- CASCADE because these tables reference one another and the drop order would otherwise
+-- have to be maintained by hand; dropping a table takes its indexes and triggers with it.
+-- The trigger FUNCTIONS are schema-level objects and survive the table, so they are named.
 
--- drop users table
-DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS users CASCADE;
 
 -- +goose StatementEnd

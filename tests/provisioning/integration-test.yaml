@@ -20,7 +20,8 @@ metadata:
 spec:
   containers:
     - name: postgres
-      image: docker.io/library/postgres:17
+      # PostgreSQL 18 for native uuidv7(); no pgvector needed.
+      image: docker.io/library/postgres:18
       args:
         - postgres
       env:
@@ -37,6 +38,9 @@ spec:
       ports:
         - containerPort: 5432
           hostPort: 5432
+      # volumeMounts:
+      #   - name: db-volume-host
+      #     mountPath: /var/lib/postgresq/data
 
     - name: valkey
       image: docker.io/valkey/valkey:latest
@@ -45,23 +49,29 @@ spec:
           hostPort: 6379
           protocol: TCP
     - name: go-rest-api-service-template
-      image: localhost/p2p-b2b/go-rest-api-service-template:test-integration
+      image: localhost/slashdevops/go-rest-api-service-template:test-integration
       args:
         - "-debug"
         - "-log.add.source=true"
         - "-opentelemetry.trace.exporter=noop"
         - "-opentelemetry.metric.exporter=noop"
-        - "-authn.access.token.duration=24h"
-        - "-authn.refresh.token.duration=720h"
+        # No token-lifetime overrides: the suite runs the shipped defaults, the
+        # same as the dev stack and production. A 24h access token here meant
+        # the containerised run never exercised refresh at all, so it could not
+        # have caught the rotation contract or the frontend's refresh path.
         - "-authn.private.key.file=/app/certs/jwt.key"
         - "-authn.public.key.file=/app/certs/jwt.pub"
         - "-authn.symmetric.key.file=/app/certs/aes-256-symmetric-hex.key"
         - "-http.server.cors.enabled=true"
         - "-http.server.cors.allowed.origins=http://localhost:8080,http://localhost:5173"
         - "-http.server.pprof.enabled=false"
-        - "-http.server.ip.rate.limiter.enabled=false"
+        # Rate limiting off: the suite fires many requests from one address, and
+        # a limit would make failures depend on test ORDER rather than on the code.
+        - "-ratelimit.enabled=false"
         - "-http.server.port=8080"
         - "-http.server.address=0.0.0.0"
+        # mailpit accepts plaintext on :1025, so opt out of the secure-by-default TLS requirement
+        - "-mail.smtp.require.tls=false"
       ports:
         - containerPort: 8080
           hostPort: 8080
@@ -80,3 +90,9 @@ spec:
         - containerPort: 1025
           hostPort: 1025
           protocol: TCP
+
+  # volumes:
+  #   - name: db-volume-host
+  #     hostPath:
+  #       path: /tmp/go-rest-api-service-template/db-volume-host
+  #       type: DirectoryOrCreate

@@ -1,0 +1,116 @@
+{
+    "permissions": {
+        "users": {
+            "4a620ccb-6593-4989-bcd9-94ab84589023": {
+                "*": [
+                    "*"
+                ],
+                "/auth/login": [
+                    "POST"
+                ],
+                "/auth/logout": [
+                    "DELETE"
+                ],
+                "/auth/refresh": [
+                    "POST"
+                ],
+                "/embeddings": [
+                    "GET"
+                ],
+                "/llm_engines/4359b3cc-2d8d-4c4f-a2e6-63b11215c92f": [
+                    "GET"
+                ],
+                "/llm_engine_types": [
+                    "GET"
+                ],
+                "/llm_engine_types/*": [
+                    "GET"
+                ],
+                "/models": [
+                    "GET"
+                ],
+                "/model_types": [
+                    "GET"
+                ],
+                "/model_types/*": [
+                    "GET"
+                ],
+                "/permissions": [
+                    "GET"
+                ],
+                "/permissions/b3bb1465-ace7-4bec-88c5-ad93876964e4": [
+                    "GET"
+                ],
+                "/projects": [
+                    "GET",
+                    "POST"
+                ],
+                "/projects/550e8400-e29b-41d4-a716-446655440000": [
+                    "GET"
+                ],
+                "/projects/550e8400-e29b-41d4-a716-446655440000/embeddings": [
+                    "POST"
+                ],
+                "/projects/550e8400-e29b-41d4-a716-446655440000/embeddings/*": [
+                    "DELETE",
+                    "GET",
+                    "PUT"
+                ],
+                "/projects/550e8400-e29b-41d4-a716-446655440000/llm_engines": [
+                    "GET",
+                    "POST"
+                ],
+                "/projects/550e8400-e29b-41d4-a716-446655440000/llm_engines/4359b3cc-2d8d-4c4f-a2e6-63b11215c92f": [
+                    "PUT"
+                ],
+                "/projects/550e8400-e29b-41d4-a716-446655440000/models/*": [
+                    "DELETE",
+                    "GET",
+                    "PUT"
+                ],
+                "/projects/550e8400-e29b-41d4-a716-446655440000/roles/ecdce4b2-7dad-4bd0-8109-2ccfcde5442f": [
+                    "PUT"
+                ],
+                "/projects/a0b35e96-f37b-451c-8f2a-cbfd1bd1711d": [
+                    "GET"
+                ],
+                "/projects/a0b35e96-f37b-451c-8f2a-cbfd1bd1711d/embeddings": [
+                    "POST"
+                ],
+                "/projects/a0b35e96-f37b-451c-8f2a-cbfd1bd1711d/embeddings/*": [
+                    "DELETE",
+                    "GET",
+                    "PUT"
+                ],
+                "/projects/a0b35e96-f37b-451c-8f2a-cbfd1bd1711d/llm_engines": [
+                    "GET",
+                    "POST"
+                ],
+                "/projects/a0b35e96-f37b-451c-8f2a-cbfd1bd1711d/llm_engines/4359b3cc-2d8d-4c4f-a2e6-63b11215c92f": [
+                    "PUT"
+                ],
+                "/projects/a0b35e96-f37b-451c-8f2a-cbfd1bd1711d/models/*": [
+                    "DELETE",
+                    "GET",
+                    "PUT"
+                ],
+                "/projects/a0b35e96-f37b-451c-8f2a-cbfd1bd1711d/roles/ecdce4b2-7dad-4bd0-8109-2ccfcde5442f": [
+                    "PUT"
+                ],
+                "/roles": [
+                    "GET"
+                ],
+                "/roles/*": [
+                    "GET"
+                ],
+                "/roles/e3742e8d-aa63-46dc-a35a-834c5bad4ea5/permissions": [
+                    "POST"
+                ],
+                "/roles/*/users": [
+                    "DELETE",
+                    "POST"
+                ]
+            }
+        }
+    }
+}

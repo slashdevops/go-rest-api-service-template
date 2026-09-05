@@ -1,11 +1,22 @@
 global:
   scrape_interval: 1m
 
+# Alert rules live in their own file so they can be copied into a production
+# Prometheus unchanged. See alerts.yaml for the thresholds and what each one
+# means.
+rule_files:
+  - /etc/prometheus/alerts.yml
+
 scrape_configs:
   - job_name: "prometheus"
     scrape_interval: 1m
     static_configs:
       - targets: ["localhost:9090"]
+    metric_relabel_configs:
+      # Replace dots with underscores in label keys
+      - action: labelmap
+        regex: '(.+)\.(.+)'
+        replacement: "${1}_${2}"
 
 storage:
   tsdb:
@@ -19,7 +30,7 @@ storage:
 
 otlp:
   keep_identifying_resource_attributes: true
-  translation_strategy: NoUTF8EscapingWithSuffixes
+  translation_strategy: UnderscoreEscapingWithSuffixes
   promote_resource_attributes:
     - service.instance.id
     - service.name

@@ -113,8 +113,7 @@ func TestValidate_opentelemetry(t *testing.T) {
 	// Test invalid trace exporter
 	config.TraceExporter.Value = "invalid"
 	err = config.Validate()
-	var invalidErr *InvalidConfigurationError
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "opentelemetry.trace.exporter" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "opentelemetry.trace.exporter" {
 		t.Errorf("Expected InvalidConfigurationError with field 'opentelemetry.trace.exporter', got %v", err)
 	}
 	config.TraceExporter.Value = DefaultTraceExporter
@@ -122,7 +121,7 @@ func TestValidate_opentelemetry(t *testing.T) {
 	// Test invalid metric exporter
 	config.MetricExporter.Value = "invalid"
 	err = config.Validate()
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "opentelemetry.metric.exporter" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "opentelemetry.metric.exporter" {
 		t.Errorf("Expected InvalidConfigurationError with field 'opentelemetry.metric.exporter', got %v", err)
 	}
 	config.MetricExporter.Value = DefaultMetricExporter
@@ -130,14 +129,14 @@ func TestValidate_opentelemetry(t *testing.T) {
 	// Test invalid trace sampling (too low)
 	config.TraceSampling.Value = -1
 	err = config.Validate()
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "opentelemetry.trace.sampling" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "opentelemetry.trace.sampling" {
 		t.Errorf("Expected InvalidConfigurationError with field 'opentelemetry.trace.sampling', got %v", err)
 	}
 
 	// Test invalid trace sampling (too high)
 	config.TraceSampling.Value = 101
 	err = config.Validate()
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "opentelemetry.trace.sampling" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "opentelemetry.trace.sampling" {
 		t.Errorf("Expected InvalidConfigurationError with field 'opentelemetry.trace.sampling', got %v", err)
 	}
 	config.TraceSampling.Value = DefaultTraceSampling
@@ -145,7 +144,7 @@ func TestValidate_opentelemetry(t *testing.T) {
 	// Test invalid metric interval (too short)
 	config.MetricInterval.Value = 500 * time.Millisecond
 	err = config.Validate()
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "opentelemetry.metric.interval" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "opentelemetry.metric.interval" {
 		t.Errorf("Expected InvalidConfigurationError with field 'opentelemetry.metric.interval', got %v", err)
 	}
 	config.MetricInterval.Value = DefaultMetricInterval
@@ -153,7 +152,7 @@ func TestValidate_opentelemetry(t *testing.T) {
 	// Test invalid metric port (too low)
 	config.MetricPort.Value = 0
 	err = config.Validate()
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "opentelemetry.metric.port" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "opentelemetry.metric.port" {
 		t.Errorf("Expected InvalidConfigurationError with field 'opentelemetry.metric.port', got %v", err)
 	}
 	config.MetricPort.Value = DefaultMetricPort
@@ -161,7 +160,7 @@ func TestValidate_opentelemetry(t *testing.T) {
 	// Test invalid trace port (too high)
 	config.TracePort.Value = 99999
 	err = config.Validate()
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "opentelemetry.trace.port" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "opentelemetry.trace.port" {
 		t.Errorf("Expected InvalidConfigurationError with field 'opentelemetry.trace.port', got %v", err)
 	}
 	config.TracePort.Value = DefaultTracePort

@@ -1,30 +1,60 @@
 root         = "."
 testdata_dir = "testdata"
-tmp_dir      = "tmp"
+tmp_dir      = "build/tmp"
 
 [build]
 args_bin = [
-  "-debug",
+  "-log.level=ctrace",
   "-log.add.source=true",
   "-opentelemetry.trace.exporter=otlp-http",
   "-opentelemetry.metric.exporter=otlp-http",
-  "-authn.access.token.duration=24h",
-  "-authn.refresh.token.duration=720h",
+  # No token-lifetime overrides. Dev runs the shipped defaults -- a 5 minute
+  # access token and a 24 hour refresh token -- because the access token's
+  # lifetime IS the residual-access window after a logout, and a 24h override
+  # hid every consequence of that locally: refresh was never exercised, and
+  # the frontend bug that made refresh 404 survived because nothing reached it.
   "-authn.private.key.file=./certs/jwt.key",
   "-authn.public.key.file=./certs/jwt.pub",
   "-authn.symmetric.key.file=./certs/aes-256-symmetric-hex.key",
   "-http.server.pprof.enabled=false",
   "-http.server.cors.enabled=true",
-  "-http.server.cors.allowed.origins=http://localhost:8080,http://localhost:5173",
-  "-http.server.ip.rate.limiter.enabled=true",
-  "-http.server.ip.rate.limiter.burst=400",
-  "-http.server.ip.rate.limiter.limit=100.0",
+  "-http.server.cors.allowed.origins=*",
+  # The dev stack talks to the API directly, so nothing is trusted to
+  # forward for it. Leaving this empty is what the integration suite
+  # asserts: a rotating X-Forwarded-For must not multiply the budget.
+  "-http.server.trusted.proxies=",
+  "-http.server.address=0.0.0.0",
   "-http.server.port=8080",
+  "-http.server.tls.enabled=false",
+  "-http.server.tls.cert.file=./certs/goapitemplate.local.crt",
+  "-http.server.tls.key.file=./certs/goapitemplate.local.key",
+  "-mail.smtp.host=localhost",
+  "-mail.smtp.port=1025",
+  "-mail.smtp.username=welcome@goapitemplate.local",
+  "-mail.smtp.password=new_secure_password",
+  "-mail.smtp.require.tls=false",
+  "-cache.enabled=true",
+  # Rules are OFF by default so an upgrade keeps its current behaviour, but the
+  # dev stack turns them ON deliberately. A dev stack that disagrees with what
+  # is deployed hides the deployed thing's bugs -- the same rule the IP limiter
+  # and the token lifetimes are already written down for. run.sh matches, and
+  # TestRunScriptAndAirAgree fails if the two drift.
+  "-ratelimit.enabled=true",
+  "-cache.tls.enabled=true",
+  "-cache.tls.ca.file=./certs/dev/ca.crt",
+  "-database.ssl.mode=verify-full",
+  "-database.ssl.root.cert.file=./certs/dev/ca.crt",
+  "-cache.client.enabled=true",
 ]
-bin = "./build/go-rest-api-service-template"
+entrypoint = "./build/go-rest-api-service-template"
 cmd = "make build"
-delay = 200
+delay = 10
 exclude_dir = [
+  "cmd/uuidgen",
+  "cmd/saltpwd",
+  "cmd/apiendpoints",
+  "database/migrations",
+  "certs",
   "node_modules",
   "frontend",
   "assets",
@@ -36,6 +66,8 @@ exclude_dir = [
   "mocks",
   "dev-env",
   "test",
+  "tests",
+  "dist",
   "tests/integration",
 ]
 exclude_file = [
@@ -59,7 +91,7 @@ include_ext = [
 include_file = [
 ]
 kill_delay = "5s"
-log = "build-errors.log"
+log = "air-build-errors.log"
 poll = false
 poll_interval = 0
 post_cmd = [

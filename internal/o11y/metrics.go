@@ -6,24 +6,24 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/slashdevops/go-rest-api-service-template/internal/config"
 	"go.opentelemetry.io/otel"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
-	"go.opentelemetry.io/otel/metric/noop"
-
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutmetric"
 	otelMetric "go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 )
 
 // OpenTelemetryMeterConfig represents the configuration of the OpenTelemetry meter.
 type OpenTelemetryMeterConfig struct {
-	Name           string
 	Resources      *resource.Resource
+	Name           string
 	MetricEndpoint string
-	MetricPort     int
 	MetricExporter string
+	MetricPort     int
 	MetricInterval time.Duration
 }
 
@@ -31,13 +31,10 @@ type OpenTelemetryMeterConfig struct {
 // It is used to collect and export metrics using OpenTelemetry.
 // It is initialized with the OpenTelemetryMeterConfig and provides methods to set up and shutdown the metrics.
 type OpenTelemetryMeter struct {
-	ctx  context.Context
-	name string
+	ctx context.Context
 
-	metricEndpoint string
-	metricPort     int
-	metricExporter string
-	metricInterval time.Duration
+	// Meter is the OpenTelemetry metric meter.
+	Meter otelMetric.Meter
 
 	// Resource is the OpenTelemetry resource.
 	res *resource.Resource
@@ -45,8 +42,12 @@ type OpenTelemetryMeter struct {
 	// MeterProvider is the OpenTelemetry metric meter provider.
 	mp *metric.MeterProvider
 
-	// Meter is the OpenTelemetry metric meter.
-	Meter otelMetric.Meter
+	name string
+
+	metricEndpoint string
+	metricExporter string
+	metricPort     int
+	metricInterval time.Duration
 }
 
 func NewOpenTelemetryMeter(ctx context.Context, conf *OpenTelemetryMeterConfig) *OpenTelemetryMeter {
@@ -67,7 +68,7 @@ func NewOpenTelemetryMeter(ctx context.Context, conf *OpenTelemetryMeterConfig) 
 
 func (ref *OpenTelemetryMeter) SetupMetrics() error {
 	// when testing, use the noop exporter
-	if ref.metricExporter == "noop" {
+	if ref.metricExporter == config.ExporterNoop {
 		slog.Warn("No metric exporter configured, use 'noop' for testing purposes only")
 
 		mp := noop.NewMeterProvider()
@@ -99,10 +100,8 @@ func (ref *OpenTelemetryMeter) SetupMetrics() error {
 
 func (ref *OpenTelemetryMeter) Shutdown() {
 	if ref.mp != nil {
-		if ref.mp != nil {
-			if err := ref.mp.Shutdown(ref.ctx); err != nil {
-				slog.Error("failed to shutdown meter provider", "error", err)
-			}
+		if err := ref.mp.Shutdown(ref.ctx); err != nil {
+			slog.Error("failed to shutdown meter provider", "error", err)
 		}
 	}
 }
@@ -118,11 +117,13 @@ func (ref *OpenTelemetryMeter) newMetricExporter(ctx context.Context) (metric.Ex
 		if err != nil {
 			return nil, err
 		}
+
 	case "otlp-http":
 		insecureOpt := otlpmetrichttp.WithInsecure()
 		WithCompression := otlpmetrichttp.WithCompression(otlpmetrichttp.GzipCompression)
 		endpointOpt := otlpmetrichttp.WithEndpointURL(
-			fmt.Sprintf("http://%s:%d/api/v1/otlp/v1/metrics",
+			fmt.Sprintf(
+				"http://%s:%d/api/v1/otlp/v1/metrics",
 				ref.metricEndpoint,
 				ref.metricPort,
 			),
@@ -131,6 +132,7 @@ func (ref *OpenTelemetryMeter) newMetricExporter(ctx context.Context) (metric.Ex
 		if err != nil {
 			return nil, err
 		}
+
 	default:
 		return nil, fmt.Errorf("unknown metric exporter: %s", ref.metricExporter)
 	}
@@ -139,9 +141,13 @@ func (ref *OpenTelemetryMeter) newMetricExporter(ctx context.Context) (metric.Ex
 }
 
 // newMeterProvider creates a new MeterProvider with the given exporter.
+//
+// Note: dot-to-underscore normalization of attribute keys (e.g. app.layer ->
+// app_layer) is intentionally left to the exporter/backend, which applies the
+// Prometheus naming rules. A previous SDK View attempted this via an
+// AttributeFilter, but AttributeFilter is a keep/drop predicate and mutating
+// its by-value argument had no effect, so it was removed.
 func (ref *OpenTelemetryMeter) newMeterProvider(exp metric.Exporter) (*metric.MeterProvider, error) {
-	// Create resources to set service name and service version
-
 	meterProvider := metric.NewMeterProvider(
 		metric.WithResource(ref.res),
 		metric.WithReader(

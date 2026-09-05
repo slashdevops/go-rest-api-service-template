@@ -15,17 +15,30 @@ permissions:
   pull-requests: read
   packages: write
 
+defaults:
+  run:
+    # Explicit, because the runner's default is not the same shell everywhere and this one
+    # brings `pipefail` with it: a step whose pipeline fails in an earlier stage now fails
+    # the step instead of reporting the exit code of the last command in it.
+    #
+    # This matters here: every make step below is piped into `tee -a $GITHUB_STEP_SUMMARY`,
+    # and without pipefail a failing `make` is masked by tee's exit code 0.
+    shell: bash
+
 jobs:
   build:
-    name: Build and release the application
+    name: Build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v6
         with:
           go-version-file: ./go.mod
+          cache-dependency-path: |
+            **/go.sum
+            **/vendor/**/go.sum
 
       - name: Summary Information
         run: |
@@ -37,11 +50,11 @@ jobs:
         run: |
           echo "## Tools and versions" >> $GITHUB_STEP_SUMMARY
 
-          ubuntu_version=$(lsb_release -a | grep "Description" | awk '{print $2, $3, $4}')
+          ubuntu_version=$( (lsb_release -a 2>/dev/null || true) | awk -F'\t' '/Description/{print $2}')
           echo "Ubuntu version: $ubuntu_version"
           echo "**Ubuntu Version:** $ubuntu_version" >> $GITHUB_STEP_SUMMARY
 
-          bash_version=$(bash --version | head -n 1 | awk '{print $4}')
+          bash_version=$(bash --version | awk 'NR==1{print $4}')
           echo "Bash version: $bash_version"
           echo "**Bash Version:** $bash_version" >> $GITHUB_STEP_SUMMARY
 
@@ -49,7 +62,7 @@ jobs:
           echo "Git version: $git_version"
           echo "**Git Version:** $git_version" >> $GITHUB_STEP_SUMMARY
 
-          make_version=$(make --version | head -n 1 | awk '{print $3}')
+          make_version=$(make --version | awk 'NR==1{print $3}')
           echo "Make version: $make_version"
           echo "**Make Version:** $make_version" >> $GITHUB_STEP_SUMMARY
 
@@ -77,9 +90,37 @@ jobs:
           echo "## Make build-dist-zip" >> $GITHUB_STEP_SUMMARY
           GIT_VERSION=${{ github.ref_name }} make build-dist-zip | tee -a $GITHUB_STEP_SUMMARY
 
+      - name: Upload Distribution files
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: ./dist/
+          retention-days: 1
+
+  containers:
+    name: Publish container images
+    needs: build
+    # The reusable workflow lives in slashdevops/gha-workflows. The previous
+    # slashdevops/... path with SHA 9dcaafa resolved to that repo's `v1` tag; this
+    # pins the current release instead.
+    uses: slashdevops/gha-workflows/.github/workflows/container-image.yml@v1.0.2
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: [build, containers]
+    steps:
+      # - uses: actions/checkout@v7
+
+      - name: Download Distribution files
+        uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: ./dist/
+
       - name: Create Release
         id: create-github-release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
@@ -87,20 +128,5 @@ jobs:
           prerelease: false
           generate_release_notes: true
           make_latest: true
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # files: |
-          #   ./dist/assets/**
-
-      - name: Upload Distribution files
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: ./dist/
-          retention-days: 1
-
-  containers:
-    name: Create and publish container images
-    needs: build
-    uses: p2p-b2b/gha-workflows/.github/workflows/container-image.yml@main
-    secrets:
-      GH_PA_TOKEN: ${{ secrets.GH_PA_TOKEN }}
+          files: |
+            dist/assets/*.zip

@@ -1,9 +1,40 @@
+apiVersion: 1
+
 datasources:
-  - name: Traces
-    type: tempo
-    orgId: 1
-    url: http://dev-service-pod-tempo:3200
   - name: Prometheus
     type: prometheus
+    uid: prometheus
     orgId: 1
-    url: http://dev-service-pod-prometheus:9090
+    url: http://go-rest-api-service-template-prometheus:9090
+    isDefault: true
+    jsonData:
+      httpMethod: POST
+      prometheusType: Prometheus
+      # Link metric exemplars to the trace that produced them.
+      exemplarTraceIdDestinations:
+        - name: trace_id
+          datasourceUid: tempo
+
+  - name: Traces
+    type: tempo
+    uid: tempo
+    orgId: 1
+    url: http://go-rest-api-service-template-tempo:3200
+    jsonData:
+      # Render the service graph (from the Tempo metrics-generator) via Prometheus.
+      serviceMap:
+        datasourceUid: prometheus
+      # "Span metrics" RED tab in the trace view, backed by Prometheus.
+      tracesToMetrics:
+        datasourceUid: prometheus
+        spanStartTimeShift: -2m
+        spanEndTimeShift: 2m
+        queries:
+          - name: 'Span request rate'
+            query: 'sum(rate(traces_spanmetrics_calls_total{$__tags}[$__rate_interval]))'
+          - name: 'Span p95 latency'
+            query: 'histogram_quantile(0.95, sum by (le) (rate(traces_spanmetrics_latency_bucket{$__tags}[$__rate_interval])))'
+      nodeGraph:
+        enabled: true
+      search:
+        hide: false

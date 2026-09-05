@@ -1,0 +1,217 @@
+# Alert rules for go-rest-api-service-template.
+#
+# These are shipped with the dev stack so they can be VERIFIED rather than
+# merely written down — a rule nobody has ever seen fire is a rule nobody
+# should trust. Copy this file into your production Prometheus and reference it
+# from `rule_files`; nothing in it is dev-specific.
+#
+# The thresholds below assume the shipped defaults:
+#
+#   authn.access.token.duration                     5m
+#   authn.access.token.revocation.reload.interval  10s
+#
+# If you change either, change the numbers here to match — the comments on each
+# rule say which setting it is derived from.
+
+groups:
+  - name: go-rest-api-service-template-token-revocation
+    rules:
+      # The one that matters.
+      #
+      # Each replica answers "is this access token revoked?" from an in-memory
+      # set, rebuilt from Postgres every reload interval. If the reloads stop,
+      # nothing breaks and nothing looks wrong: the replica keeps answering,
+      # confidently, from a snapshot that gets older every second. A revocation
+      # made on another replica is simply not seen here.
+      #
+      # There is no other symptom. No request fails, no error rate moves, and
+      # the endpoint that would tell you is the one that has stopped working.
+      # That is why staleness is the signal to alert on and reload failures are
+      # not: failures are a cause, staleness is the consequence, and staleness
+      # covers causes nobody has thought of.
+      - alert: RevokedAccessTokenSetStale
+        # Six times the 10s reload interval. Comfortably outside the normal
+        # sawtooth (0 -> 10s) and its scrape jitter, well inside the 5m access
+        # token lifetime.
+        expr: revoked_access_tokens_staleness_seconds > 60
+        for: 2m
+        labels:
+          severity: warning
+          component: authn
+        annotations:
+          summary: "Revoked access token set is stale on {{ $labels.service_instance_id }}"
+          description: >-
+            The in-memory revocation set has not been rebuilt from the database
+            for {{ $value | humanizeDuration }}. This replica is still refusing
+            the tokens it knew about, and still revokes immediately for logouts
+            it serves itself — but a revocation made on ANOTHER replica is not
+            being seen. Check revoked_access_tokens_reload_failures_total and the
+            service log for "could not reload the revoked access token set".
+
+      # Past this point the cross-replica half of the check has effectively
+      # stopped: a token revoked elsewhere is being honoured here for longer
+      # than it would have lived anyway, so the revocation buys nothing.
+      - alert: RevokedAccessTokenSetStalerThanTheTokenLifetime
+        # The 5m access-token lifetime. Derived from
+        # authn.access.token.duration, not chosen for roundness.
+        expr: revoked_access_tokens_staleness_seconds > 300
+        for: 1m
+        labels:
+          severity: critical
+          component: authn
+        annotations:
+          summary: "Revoked access token set older than the access token lifetime on {{ $labels.service_instance_id }}"
+          description: >-
+            Staleness is {{ $value | humanizeDuration }}, longer than the 5m
+            access token lifetime. A token revoked on another replica now
+            outlives the window this check exists to close, so for tokens
+            revoked elsewhere the service is behaving as though access-token
+            revocation were switched off. The database is the usual cause: the
+            set is rebuilt from it, and the previous copy is deliberately kept
+            rather than cleared, which is why requests still succeed.
+
+      # A leading indicator, deliberately at a lower severity than the
+      # consequence above. Reloads can fail and recover without staleness ever
+      # becoming interesting, and that is not worth waking anyone for — but it
+      # is the first place to look when one of the alerts above fires.
+      - alert: RevokedAccessTokenReloadsFailing
+        expr: increase(revoked_access_tokens_reload_failures_total[10m]) > 3
+        for: 5m
+        labels:
+          severity: info
+          component: authn
+        annotations:
+          summary: "Revoked access token set reloads are failing on {{ $labels.service_instance_id }}"
+          description: >-
+            {{ $value }} reloads failed in the last 10 minutes. The set is not
+            cleared on a failed reload — an empty set would mean "nothing is
+            revoked" — so the previous copy is still serving. Watch
+            revoked_access_tokens_staleness_seconds: if it stays flat, the
+            retries are winning.
+
+  - name: go-rest-api-service-template-rate-limits
+    rules:
+      # The shared counter has stopped answering.
+      #
+      # Alert on the GAUGE, not on the fault rate. With `ratelimit.store.fail.mode
+      # = local` a sustained fault is invisible from outside: every request still
+      # succeeds, and each replica quietly enforces the full limit on its own — so
+      # N replicas allow N times the configured rate, for as long as it lasts. A
+      # fault RATE that is high but steady reads as a plateau; a gauge pinned at
+      # zero does not.
+      #
+      # With fail-mode `closed` the symptom is the opposite and just as bad:
+      # legitimate traffic is refused with RATE_LIMIT_UNAVAILABLE. Either way the
+      # limiter is not doing what the rules say, which is the thing to page on.
+      - alert: RateLimitStoreDown
+        expr: rate_limit_store_up == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "The shared rate-limit counter is not answering"
+          description: >-
+            rate_limit_store_up has been 0 for 2 minutes on {{ $labels.instance }}.
+            With store.fail.mode=local each replica is enforcing the full limit
+            independently, so N replicas allow N times the configured rate. With
+            fail.mode=closed, limited endpoints are refusing legitimate traffic
+            with RATE_LIMIT_UNAVAILABLE. Check Valkey.
+
+      # The rule set has stopped reloading.
+      #
+      # Same shape as the token-denylist staleness alert, and the same reason:
+      # nothing breaks and nothing looks wrong. The replica keeps enforcing,
+      # confidently, from a snapshot that gets older every second — so a rule
+      # written on another replica is simply never applied here, and a rule
+      # deleted elsewhere keeps refusing traffic.
+      #
+      # The threshold is 3x the shipped 30s reload interval. Two missed reloads
+      # is a blip; four is a stopped ticker.
+      - alert: RateLimitRulesStale
+        expr: rate_limit_rules_staleness_seconds > 90
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "The rate-limit rule set has stopped reloading"
+          description: >-
+            {{ $labels.instance }} has not reloaded its rate-limit rules for
+            {{ $value | humanizeDuration }}, against a 30s interval. Rules written
+            or deleted on other replicas are not being applied here. Derived from
+            ratelimit.reload.interval.
+
+      # The rule set has NEVER loaded — which should now be impossible.
+      #
+      # -1 is the deliberate sentinel: reporting 0 would look perfectly fresh,
+      # which is the exact opposite of the truth.
+      #
+      # The first load is synchronous and FATAL at startup, so a replica that is
+      # serving has rules. This firing means that invariant broke, and because
+      # there is no fallback budget any more the consequence is not "the flag
+      # defaults apply" — it is that nothing is limited at all. Critical, and
+      # fast, for exactly that reason.
+      - alert: RateLimitRulesNeverLoaded
+        expr: rate_limit_rules_staleness_seconds == -1
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Rate-limit rules have never loaded"
+          description: >-
+            {{ $labels.instance }} is serving without ever having loaded a rate-limit
+            rule set. The first load is fatal at startup, so this should be
+            unreachable. There is no fallback budget: nothing on this replica is
+            being rate limited.
+
+      # Nothing is being limited any more.
+      #
+      # Distinct from the above: the rules loaded fine, there are simply none.
+      # An operator may have deleted the last one deliberately — but it is also
+      # what a bad migration or a truncated table looks like, and the two are
+      # indistinguishable from the outside.
+      #
+      # This used to be info-level, because the flag limiter was still a real
+      # limit underneath. That floor is gone: the rate_limits table is the only
+      # source of budgets, so an empty set means NOTHING is limited. Warning,
+      # and sooner.
+      - alert: RateLimitNoRulesConfigured
+        expr: rate_limit_rules_size == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No rate-limit rules are configured"
+          description: >-
+            {{ $labels.instance }} has loaded an empty rule set for 5 minutes, and
+            there is no fallback budget behind it — no request is being rate
+            limited. Legitimate only if the rules were deliberately removed.
+
+      # A rule exists, is loaded, matches traffic — and enforces nothing.
+      #
+      # This is a MISCONFIGURATION, not an outage, and it is deliberately not the
+      # store alert. A rule the limiter cannot build carries no budget, so the
+      # traffic it names falls through to whatever matches next, or to the flag
+      # floor. Nobody is refused and nothing looks wrong; the only symptom is a
+      # limit that quietly is not there.
+      #
+      # It cannot be written through the API — validation rejects an unknown
+      # strategy — so a non-zero value here means a direct database write or a
+      # partially applied change. The mirror drops such a rule on its next
+      # reload and logs it; this fires for the window before that, and for a row
+      # that keeps being rewritten.
+      #
+      # Any occurrence is actionable, hence > 0 rather than a rate threshold:
+      # one malformed rule is one limit that does not exist.
+      - alert: RateLimitRuleUnenforceable
+        expr: increase(rate_limit_rule_faults_total[10m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "A rate-limit rule cannot be enforced"
+          description: >-
+            Rule {{ $labels.rule }} ({{ $labels.scope }} scope,
+            {{ $labels.strategy }} strategy) on {{ $labels.instance }} could not be
+            built into a limiter, so it is enforcing nothing and its traffic is
+            falling through to the next matching rule. This cannot be written
+            through the API; check for a direct write to the rate_limits table.

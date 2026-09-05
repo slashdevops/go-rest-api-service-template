@@ -8,38 +8,35 @@ import (
 )
 
 const (
-	ValidHTTPClientMaxIdleConns        = 200
-	ValidHTTPClientMinIdleConns        = 1
-	ValidHTTPClientMaxIdleConnsPerHost = 200
-	ValidHTTPClientMinIdleConnsPerHost = 1
-	ValidHTTPClientMaxIdleConnTimeout  = 120 * time.Second
-	ValidHTTPClientMinIdleConnTimeout  = 1 * time.Second
-
+	ValidHTTPClientMaxIdleConns             = 200
+	ValidHTTPClientMinIdleConns             = 1
+	ValidHTTPClientMaxIdleConnsPerHost      = 200
+	ValidHTTPClientMinIdleConnsPerHost      = 1
+	ValidHTTPClientMaxIdleConnTimeout       = 120 * time.Second
+	ValidHTTPClientMinIdleConnTimeout       = 1 * time.Second
 	ValidHTTPClientMaxTLSHandshakeTimeout   = 15 * time.Second
 	ValidHTTPClientMinTLSHandshakeTimeout   = 1 * time.Second
 	ValidHTTPClientMaxExpectContinueTimeout = 5 * time.Second
 	ValidHTTPClientMinExpectContinueTimeout = 1 * time.Second
-	ValidHTTPClientMaxTimeout               = 30 * time.Second
+	ValidHTTPClientMaxTimeout               = 600 * time.Second
 	ValidHTTPClientMinTimeout               = 1 * time.Second
+	ValidHTTPClientMaxMaxRetries            = 15
+	ValidHTTPClientMinMaxRetries            = 1
+	ValidHTTPClientRetryStrategies          = "exponential|fixed|jitter"
 
-	ValidHTTPClientMaxMaxRetries   = 15
-	ValidHTTPClientMinMaxRetries   = 1
-	ValidHTTPClientRetryStrategies = "exponential|fixed|jitter"
-
-	DefaultHTTPClientMaxIdleConns        = 100
-	DefaultHTTPClientMaxIdleConnsPerHost = 100
-	DefaultHTTPClientIdleConnTimeout     = 90 * time.Second
-
+	DefaultHTTPClientMaxIdleConns          = 100
+	DefaultHTTPClientMaxIdleConnsPerHost   = 100
+	DefaultHTTPClientIdleConnTimeout       = 90 * time.Second
 	DefaultHTTPClientTLSHandshakeTimeout   = 10 * time.Second
 	DefaultHTTPClientExpectContinueTimeout = 1 * time.Second
 	DefaultHTTPClientDisableKeepAlives     = false
-	DefaultHTTPClientTimeout               = 5 * time.Second
-
-	DefaultHTTPClientMaxRetries    = 3
-	DefaultHTTPClientRetryStrategy = "jitter"
+	DefaultHTTPClientTimeout               = 120 * time.Second
+	DefaultHTTPClientMaxRetries            = 10
+	DefaultHTTPClientRetryStrategy         = "jitter"
 )
 
 type HTTPClientConfig struct {
+	RetryStrategy         Field[string]
 	MaxIdleConns          Field[int]
 	MaxIdleConnsPerHost   Field[int]
 	IdleConnTimeout       Field[time.Duration]
@@ -48,13 +45,12 @@ type HTTPClientConfig struct {
 	DisableKeepAlives     Field[bool]
 	Timeout               Field[time.Duration]
 	MaxRetries            Field[int]
-	RetryStrategy         Field[string]
 }
 
 func NewHTTPClientConfig() *HTTPClientConfig {
 	return &HTTPClientConfig{
 		MaxIdleConns:          NewField("http.client.max.idle.conns", "HTTP_CLIENT_MAX_IDLE_CONNS", "Maximum number of idle connections", DefaultHTTPClientMaxIdleConns),
-		MaxIdleConnsPerHost:   NewField("http.client.max.idle.conns.per.host", "HTTP_CLIENT_MAX_IDLE_CONNS_PER_HOST", "Maximum number of idle connections per host", DefaultHTTPClientMaxIdleConns),
+		MaxIdleConnsPerHost:   NewField("http.client.max.idle.conns.per.host", "HTTP_CLIENT_MAX_IDLE_CONNS_PER_HOST", "Maximum number of idle connections per host", DefaultHTTPClientMaxIdleConnsPerHost),
 		IdleConnTimeout:       NewField("http.client.idle.conn.timeout", "HTTP_CLIENT_IDLE_CONN_TIMEOUT", "Idle connection timeout", DefaultHTTPClientIdleConnTimeout),
 		TLSHandshakeTimeout:   NewField("http.client.tls.handshake.timeout", "HTTP_CLIENT_TLS_HANDSHAKE_TIMEOUT", "TLS handshake timeout", DefaultHTTPClientTLSHandshakeTimeout),
 		ExpectContinueTimeout: NewField("http.client.expect.continue.timeout", "HTTP_CLIENT_EXPECT_CONTINUE_TIMEOUT", "Expect continue timeout", DefaultHTTPClientExpectContinueTimeout),

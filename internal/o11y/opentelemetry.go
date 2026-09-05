@@ -3,9 +3,10 @@ package o11y
 import (
 	"context"
 
-	"github.com/p2p-b2b/go-rest-api-service-template/internal/config"
 	"go.opentelemetry.io/otel/sdk/resource"
-	semconv "go.opentelemetry.io/otel/semconv/v1.34.0"
+	semconv "go.opentelemetry.io/otel/semconv/v1.43.0"
+
+	"github.com/slashdevops/go-rest-api-service-template/internal/config"
 )
 
 type OpenTelemetryTracerService interface {
@@ -21,6 +22,11 @@ type OpenTelemetryMeterService interface {
 type OpenTelemetry struct {
 	Traces  *OpenTelemetryTracer
 	Metrics *OpenTelemetryMeter
+
+	// Errors is what the SDK could not export. Both pipelines are batched and
+	// asynchronous, so this is the only place an export failure is visible —
+	// see [ExportErrors].
+	Errors *ExportErrors
 }
 
 func New(ctx context.Context, conf *config.OpenTelemetryConfig) (*OpenTelemetry, error) {
@@ -43,6 +49,7 @@ func New(ctx context.Context, conf *config.OpenTelemetryConfig) (*OpenTelemetry,
 		TracePort:                 conf.TracePort.Value,
 		TraceExporter:             conf.TraceExporter.Value,
 		TraceExporterBatchTimeout: conf.TraceExporterBatchTimeout.Value,
+		TraceSampling:             conf.TraceSampling.Value,
 	}
 
 	meterConf := &OpenTelemetryMeterConfig{
@@ -57,6 +64,7 @@ func New(ctx context.Context, conf *config.OpenTelemetryConfig) (*OpenTelemetry,
 	op := &OpenTelemetry{
 		Traces:  NewOpenTelemetryTracer(ctx, tracerConf),
 		Metrics: NewOpenTelemetryMeter(ctx, meterConf),
+		Errors:  SetGlobalErrorHandler(&ExportErrors{}),
 	}
 
 	return op, nil

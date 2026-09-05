@@ -105,8 +105,7 @@ func TestValidate_httpclient(t *testing.T) {
 	// Test invalid MaxIdleConns
 	config.MaxIdleConns.Value = 0
 	err = config.Validate()
-	var invalidErr *InvalidConfigurationError
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "http.client.max.idle.conns" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "http.client.max.idle.conns" {
 		t.Errorf("Expected InvalidConfigurationError with field 'http.client.max.idle.conns', got %v", err)
 	}
 	config.MaxIdleConns.Value = DefaultHTTPClientMaxIdleConns
@@ -114,7 +113,7 @@ func TestValidate_httpclient(t *testing.T) {
 	// Test invalid MaxIdleConnsPerHost
 	config.MaxIdleConnsPerHost.Value = 0
 	err = config.Validate()
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "http.client.max.idle.conns.per.host" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "http.client.max.idle.conns.per.host" {
 		t.Errorf("Expected InvalidConfigurationError with field 'http.client.max.idle.conns.per.host', got %v", err)
 	}
 	config.MaxIdleConnsPerHost.Value = DefaultHTTPClientMaxIdleConns
@@ -122,7 +121,7 @@ func TestValidate_httpclient(t *testing.T) {
 	// Test invalid IdleConnTimeout (too short)
 	config.IdleConnTimeout.Value = 500 * time.Millisecond
 	err = config.Validate()
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "http.client.idle.conn.timeout" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "http.client.idle.conn.timeout" {
 		t.Errorf("Expected InvalidConfigurationError with field 'http.client.idle.conn.timeout', got %v", err)
 	}
 	config.IdleConnTimeout.Value = DefaultHTTPClientIdleConnTimeout
@@ -130,7 +129,7 @@ func TestValidate_httpclient(t *testing.T) {
 	// Test invalid TLSHandshakeTimeout (too short)
 	config.TLSHandshakeTimeout.Value = 500 * time.Millisecond
 	err = config.Validate()
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "http.client.tls.handshake.timeout" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "http.client.tls.handshake.timeout" {
 		t.Errorf("Expected InvalidConfigurationError with field 'http.client.tls.handshake.timeout', got %v", err)
 	}
 	config.TLSHandshakeTimeout.Value = DefaultHTTPClientTLSHandshakeTimeout
@@ -138,7 +137,7 @@ func TestValidate_httpclient(t *testing.T) {
 	// Test invalid ExpectContinueTimeout (too short)
 	config.ExpectContinueTimeout.Value = 500 * time.Millisecond
 	err = config.Validate()
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "http.client.expect.continue.timeout" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "http.client.expect.continue.timeout" {
 		t.Errorf("Expected InvalidConfigurationError with field 'http.client.expect.continue.timeout', got %v", err)
 	}
 	config.ExpectContinueTimeout.Value = DefaultHTTPClientExpectContinueTimeout
@@ -146,7 +145,7 @@ func TestValidate_httpclient(t *testing.T) {
 	// Test invalid Timeout (too short)
 	config.Timeout.Value = 500 * time.Millisecond
 	err = config.Validate()
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "http.client.timeout" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "http.client.timeout" {
 		t.Errorf("Expected InvalidConfigurationError with field 'http.client.timeout', got %v", err)
 	}
 	config.Timeout.Value = DefaultHTTPClientTimeout
@@ -154,7 +153,7 @@ func TestValidate_httpclient(t *testing.T) {
 	// Test invalid RetryStrategy
 	config.RetryStrategy.Value = "invalid"
 	err = config.Validate()
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "http.client.retry.strategy" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "http.client.retry.strategy" {
 		t.Errorf("Expected InvalidConfigurationError with field 'http.client.retry.strategy', got %v", err)
 	}
 	config.RetryStrategy.Value = DefaultHTTPClientRetryStrategy
@@ -162,7 +161,7 @@ func TestValidate_httpclient(t *testing.T) {
 	// Test invalid MaxRetries (too low)
 	config.MaxRetries.Value = 0
 	err = config.Validate()
-	if err == nil || !errors.As(err, &invalidErr) || invalidErr.Field != "http.client.max.retries" {
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "http.client.max.retries" {
 		t.Errorf("Expected InvalidConfigurationError with field 'http.client.max.retries', got %v", err)
 	}
 	config.MaxRetries.Value = DefaultHTTPClientMaxRetries
