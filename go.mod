@@ -1,6 +1,6 @@
 module github.com/slashdevops/go-rest-api-service-template
 
-go 1.27.0
+go 1.27.1
 
 tool go.uber.org/mock/mockgen
 
@@ -54,11 +54,10 @@ require (
 	github.com/go-openapi/swag/stringutils v0.29.2 // indirect
 	github.com/go-openapi/swag/typeutils v0.29.2 // indirect
 	github.com/go-openapi/swag/yamlutils v0.29.2 // indirect
-	// PINNED. gobwas/glob v1.0.0 replaced the `Glob` interface with a concrete
-	// `*Pattern`, and open-policy-agent/opa still compiles against the old API --
-	// `undefined: glob.Glob` in opa/v1/bundle and opa/v1/topdown. `make
-	// go-mod-update` upgrades it every time, so if the build breaks there after a
-	// dependency bump, this is why. Unpin when OPA releases against v1.
+	// Held at v0.2.3 by the `exclude` directive at the bottom of this file.
+	// v1.0.0 replaced the `Glob` interface with a concrete `*Pattern`, and
+	// open-policy-agent/opa does not compile against it -- `undefined: glob.Glob`
+	// in opa/v1/bundle and opa/v1/topdown.
 	github.com/gobwas/glob v0.2.3 // indirect
 	github.com/goccy/go-json v0.10.6 // indirect
 	github.com/google/flatbuffers v25.12.19+incompatible // indirect
@@ -106,3 +105,12 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
+
+// `make go-mod-update` runs `go get -u` over every direct dependency, which
+// pulls indirect ones forward too -- and it re-broke the build on gobwas/glob
+// twice before this line existed, because a plain `go get glob@v0.2.3` is
+// undone by the next update run. `exclude` is what actually holds it: the
+// version is removed from the module graph, so `-u` cannot select it.
+//
+// Drop this once OPA releases against gobwas/glob v1.
+exclude github.com/gobwas/glob v1.0.0

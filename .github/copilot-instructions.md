@@ -9,41 +9,52 @@ Follows these guidelines precisely to ensure consistency and maintainability of 
 
 ## What this service is
 
-`go-rest-api-service-template` is a **multi-project RAG (Retrieval-Augmented Generation)
-platform**. Tenants ("projects") ingest text, it is chunked and embedded through
-a configurable LLM engine, stored as `pgvector` vectors in per-config tables, and
-queried back either as raw similarity hits or as a generated answer grounded in
-the retrieved chunks.
+`go-rest-api-service-template` is a **template**: a production-shaped starting
+point for a Go HTTP REST API, meant to be cloned and cut down rather than
+deployed as-is. Everything in it is real and works; nothing in it is a
+placeholder.
 
-The two request paths that define the product:
+What it ships:
 
-| Path                  | Entry point                                                   | What it does                                                                   |
-| --------------------- | ------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| **Similarity search** | `usecase.SimilaritySearchService.SimilaritySearchByProjectID` | embed query → cosine top-K → return chunks                                     |
-| **Generation (RAG)**  | `usecase.GenerateConfigService.GenerateByProjectID`           | embed query → cosine top-K → render prompt template with chunks → LLM generate |
+| Area | What is here |
+| --- | --- |
+| **Architecture** | Hexagonal (Ports & Adapters), with the invariant enforced by a test |
+| **Multi-tenancy** | Projects as the tenant boundary, with membership enforced in SQL |
+| **Authentication** | JWT access + refresh with rotation, revocation denylist, login throttle, OAuth/OIDC IdPs |
+| **Authorization** | RBAC through Open Policy Agent, with the resource catalogue generated from the OpenAPI spec |
+| **Limits** | Database-backed rate limiting, and soft/hard resource limits resolved by scope |
+| **Observability** | OpenTelemetry traces and metrics, Grafana/Tempo/Prometheus dev stack, alert rules with tests |
 
-Everything else (users, roles, policies, IdPs, PA tokens, resource limits) is the
-multi-tenant control plane around those two paths.
+### `products` is the worked example
 
-### RAG domain vocabulary
+`products` is the entity to copy when adding your own. It is deliberately the
+simplest thing that is still realistic — a project-scoped row with a name and a
+description — and it exercises every convention in the repository:
 
-| Entity                                                  | Meaning                                                                                                             |
-| ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `Project`                                               | tenant boundary; every embedding, config and limit hangs off a project                                              |
-| `EmbeddingConfig`                                       | _how_ to embed for a project: engine + model + dimension + prefix. Owns one physical vector table **per language**. |
-| `EmbeddingConfigIndex`                                  | pgvector index (HNSW/IVFFlat) on an embedding table                                                                 |
-| `Embedding`                                             | one stored chunk: `text`, `text_normalized`, `metadata` JSONB, vector                                               |
-| `GenerateConfig`                                        | _how_ to answer: generation engine + model + prompt template, optionally bound to an `EmbeddingConfig`              |
-| `GenerateTemplate`                                      | Go `text/template` rendered with `{{.Question}}` and `{{.Contexts}}`                                                |
-| `LLMEngine` / `LLMEngineType` / `LLMEngineEndpointType` | provider registry: a type (Ollama, OpenAI, …), an engine instance, and its endpoints (embed vs. generate)           |
-| `Model` / `ModelType`                                   | a model on an engine, with its embedding dimension                                                                  |
-| `VectorFunction`                                        | the pgvector distance operator used for the search                                                                  |
-| `Language`                                              | vector tables are partitioned per language; `uuid.Nil` means the default table                                      |
+| Layer | File |
+| --- | --- |
+| Domain + errors | `internal/core/domain/products{,_errors}.go` |
+| Ports | `internal/core/port/driving/products.go`, `internal/core/port/driven/repository/products.go` |
+| Use-case | `internal/core/usecase/products.go` |
+| Repository | `internal/adapter/driven/repositorypg/products.go` |
+| Handler + payload | `internal/adapter/driving/http/{handler,payload}/products.go` |
+| Mock | `mocks/service/products.go` (generated) |
+| Migration | `database/migrations/4000_products_tables.sql` |
+| Integration test | `tests/integration/api_products_test.go` |
 
-Embedding tables are **created at runtime**, named
-`domain.BuildEmbeddingTableName(<table-uuid>, prefix)` in schema
-`domain.EmbeddingConfigDBSchemaName`. That is why repository queries interpolate
-schema/table names — see the SQL rules below for how to do it safely.
+Two things about it are worth reading before you copy it:
+
+- **Its repository carries a project-membership predicate in the same statement
+  as the row it guards.** OPA authorises the *path*, so a policy granting
+  `/projects/*/products` matches every project. Without that predicate a caller
+  could read and write a project they were never added to. Done as a separate
+  `SELECT` it would be a TOCTOU window; done in the use-case it would have to be
+  repeated at six call sites and forgotten at the seventh.
+  `TestProductsProjectIsolation` fails if it is dropped.
+- **It is deliberately not cached.** Its read is a function of the *caller* as
+  well as the row, which leaves no key that is both tenant-safe and
+  invalidatable. Any entity whose read is tenant-scoped in SQL inherits this;
+  see `docs/architecture/caching.md`.
 
 ## Stack
 
@@ -57,7 +68,7 @@ schema/table names — see the SQL rules below for how to do it safely.
 - Documentation: GoDoc
 - Code Review: Pull requests on GitHub
 - CI/CD: GitHub Actions
-- Database: PostgreSQL
+- Database: PostgreSQL 18 (for native `uuidv7()`; no extension required)
 - Database Migrations: `goose` for schema migrations
 - Logging: `slog` package from the standard library
 - Containerization: `podman` for local development and testing
@@ -77,19 +88,22 @@ invariant is violated.
 ```
 internal/
 ├── adapter/              ── infrastructure
-│   ├── driven/           ── outbound: cache, mail, LLM HTTP, cipher, policy,
-│   │   │                    persistence, OAuth, JWT signer
+│   ├── driven/           ── outbound: cache, mail, cipher, policy, persistence,
+│   │   │                    OAuth, JWT signer, rate limiters, login throttle
 │   │   ├── cachevalkey/         (wraps github.com/slashdevops/c3e + valkey-io)
 │   │   ├── cipheraes/           (AES-GCM symmetric encryption)
-│   │   ├── llmhttp/             (LLM providers; one package per vendor under provider/)
 │   │   ├── notifieremail/       (mailer + templates/ helper)
 │   │   ├── oauthidp/            (golang.org/x/oauth2 + IDP UserInfo)
 │   │   ├── policyopa/           (OPA Rego eval; embeds rego/ bundle)
-│   │   ├── repositorypg/  (pgx-backed concrete repositories)
+│   │   ├── ratelimitbreaker/    (circuit breaker in front of the shared store)
+│   │   ├── ratelimitmemory/     (per-replica token/leaky bucket)
+│   │   ├── ratelimitvalkey/     (shared fixed-window counter)
+│   │   ├── repositorypg/        (pgx-backed concrete repositories)
+│   │   ├── throttlememory/      (per-identity login throttle)
 │   │   └── tokenjwt/            (golang-jwt sign/verify)
 │   └── driving/          ── inbound: HTTP transport
 │       └── http/
-│           ├── dto/              (request/response shapes)
+│           ├── payload/          (request/response shapes — wire payloads)
 │           ├── handler/          (route handlers; depend only on driving ports)
 │           ├── jwtvalidator/     (incoming-token middleware helper)
 │           ├── middleware/       (auth, CORS, rate limit, logging, ...)
@@ -101,8 +115,8 @@ internal/
 │   ├── domain/                   (entities, errors, validation, helpers)
 │   ├── port/
 │   │   ├── driven/               (interfaces use-cases consume)
-│   │   │   ├── cache, cipher, llm, notifier, oauth, policy,
-│   │   │   ├── repository, token
+│   │   │   ├── cache, cipher, notifier, oauth, policy, ratelimit,
+│   │   │   ├── repository, throttle, token
 │   │   └── driving/              (interfaces driving adapters consume)
 │   └── usecase/                  (the business logic)
 ├── o11y/                 ── OTEL setup + helpers (cross-cutting infra)
@@ -117,7 +131,7 @@ internal/
 | New use-case method                                | `internal/core/usecase/<entity>.go`                                                                                                 |
 | New HTTP route                                     | `internal/adapter/driving/http/handler/<entity>.go` (define/extend the matching `internal/core/port/driving/<entity>.go` interface) |
 | New repository method                              | `internal/adapter/driven/repositorypg/<entity>.go` (and add to the `internal/core/port/driven/repository/<entity>.go` interface)    |
-| New outbound integration (e.g. SMS, S3, vector DB) | Define a port in `internal/core/port/driven/<concept>/` and an adapter in `internal/adapter/driven/<concept>_<tech>/`               |
+| New outbound integration (e.g. SMS, S3, an LLM provider) | Define a port in `internal/core/port/driven/<concept>/` and an adapter in `internal/adapter/driven/<concept>_<tech>/`               |
 | Database migration                                 | `database/migrations/` (managed by `goose`) — **number it above every applied migration**, see below                                |
 | Mock for a port or service interface               | Add a `//go:generate go tool mockgen` stanza to the file declaring the interface; output to `mocks/{service,handler}/<entity>.go`   |
 
@@ -127,73 +141,6 @@ internal/
 - **Handlers (`internal/adapter/driving/http/handler/`) never import use-cases directly.** They depend on driving ports — `driving.Authn`, `driving.Users`, etc. Same composition-root wiring.
 - **Domain types are pure.** They may have struct tags (json, swagger), but they never import a transport package.
 - **When generating handlers/code, use `uuidgen` for V7 IDs**: `go run cmd/uuidgen/main.go -n 1 -v 7`.
-
-## LLM providers
-
-The core talks to every provider through one port — `llm.Factory` → `llm.Client`
-(`internal/core/port/driven/llm/llm.go`). Use-cases build a `llm.ClientSpec`
-(engine type, URL, method, key, model, dimension, prefix) and call
-`CreateEmbedding` / `GenerateText`. **Never import the adapter from `internal/core`.**
-
-Current support status — treat anything not marked ✅ as unverified against the
-live API:
-
-| Engine    | Embeddings                                                        | Generation                               |
-| --------- | ----------------------------------------------------------------- | ---------------------------------------- |
-| Ollama    | ✅ works                                                          | ✅ works                                 |
-| OpenAI    | ⚠️ via `openaicompat`                                             | ⚠️ via `openaicompat` (Chat Completions) |
-| Gemini    | ⚠️ rewritten to documented shapes; fixtures not yet captured live | ⚠️ same                                  |
-| DeepSeek  | n/a — no embeddings API exists                                    | ⚠️ via `openaicompat`                    |
-| Anthropic | n/a — no embeddings API exists                                    | ✅ works (Messages API)                  |
-
-**Anthropic is generation-only.** It publishes no embeddings endpoint, so an
-Anthropic engine can never back an embedding config — pair it with a different
-engine for embeddings. It also authenticates with `x-api-key` (not bearer),
-requires an `anthropic-version` header, and requires `max_tokens` on every
-request; the system prompt is a top-level field, not a message role.
-
-Each vendor is one package under `llmhttp/provider/` implementing
-`provider.Provider`, resolved through a registry. **Authentication belongs to the
-provider** — `provider.Caller` takes an `Authorize` hook rather than hardcoding a
-scheme, which is what lets Gemini send `x-goog-api-key` and Anthropic send
-`x-api-key` plus `anthropic-version`. Adding a vendor is a new package plus one
-line in `NewFactory`; it must not touch an existing provider.
-
-**Contract tests use golden fixtures captured from the live API**
-(`provider/<vendor>/testdata/`), never a mock that encodes the same Go struct the
-client decodes — see the testing rules below.
-
-**Before writing a bespoke provider**, check whether the vendor advertises OpenAI
-compatibility. `provider/openaicompat/` already serves OpenAI and DeepSeek and is
-constructed once per engine type — adding Azure OpenAI, Groq, Together,
-Fireworks, OpenRouter, vLLM or LM Studio is a `domain.EngineType` constant, one
-line in `NewFactory`, and seed rows, with **no new Go logic**.
-
-### `models.version` is part of the wire contract
-
-Every provider builds the model id it sends by concatenating the two columns —
-`name + "-" + version` for Gemini, Anthropic and `openaicompat`, `name + ":" +
-version` for Ollama — and **appends only when `version` is non-empty**. So
-`version` must be `''` whenever the published model id is already complete, and
-carry the suffix only when it genuinely is one (`claude-opus-4-5` / `20251101`).
-
-`'unknown'` is the convention for `parameters` and `quantization`, which are
-descriptive and never concatenated. Migration `20004` used it for `version` too,
-which asked providers for `models/gemini-embedding-001-unknown` and
-`claude-opus-4-8-unknown` — 23 rows that could never resolve. `20010` corrects
-them. Nothing validates the id before the request, so this fails as a provider
-404 on a user's query, not as an error when the config is created.
-
-**What an `llm_engines` row is pinned to differs by vendor.** OpenAI, Anthropic,
-DeepSeek and Ollama put the model in the request body, so one row serves every
-model on that host. Gemini puts the model *and* the operation in the path
-(`…/models/{model}:{operation}`) and `Embed` sends `api_endpoint` verbatim — so
-a second Gemini model needs a second row.
-
-`20010` seeds Gemini and OpenAI engines (Anthropic's came from `20002`), which
-makes all three hosted providers usable from seed by supplying `api_token`.
-DeepSeek is still unusable: no engine row, and model versions that build ids
-like `deepseek-v4-flash-DeepSeek-V4-Flash-0731`.
 
 ## Configuration
 
@@ -536,9 +483,9 @@ when the request headers are read and covers the entire handler, so it caps
 _total request duration_. A generation call is bounded by `http.client.timeout`
 (120s) but may be retried `http.client.max.retries` (10) times, so a legitimate
 request can run for roughly twenty minutes — a write deadline would abort
-exactly the request this service exists to serve. `ReadTimeout` is milder but
-still bounds how long a client may take to upload, and bulk embedding ingest
-posts an arbitrary amount of text.
+exactly the request an outbound integration exists to serve. `ReadTimeout` is
+milder but still bounds how long a client may take to upload, which a bulk
+endpoint accepting an arbitrary amount of text would feel first.
 
 `ReadHeaderTimeout` is the one that closes the actual hole, and it is on by
 default. The server logs a warning at startup if `WriteTimeout` is set, so an
@@ -559,11 +506,11 @@ reasoning, with the request-lifecycle diagram, is in
   `x', description='injected` closed the literal and appended an
   attacker-controlled assignment. It was the only repository in the package not
   already using placeholders.
-- **Identifiers that must be interpolated** (runtime-created embedding schemas
-  and tables) go through `pgx.Identifier{schema, table}.Sanitize()`.
-  `vector_queries.go` is the worked example. It used `strings.ReplaceAll` until
-  the same two values were being handled under two different rules by two files
-  in one package — which is the actual hazard, more than either rule alone.
+- **Identifiers that must be interpolated** (a schema or table name computed at
+  runtime) go through `pgx.Identifier{schema, table}.Sanitize()` — never
+  `strings.ReplaceAll` and never `fmt.Sprintf`. The hazard is less any single
+  rule than two files in one package handling the same value under two different
+  ones.
 - **Values that cannot be placeholders** (a distance operator, a sort direction)
   must be validated against an allow-list before interpolation. The operator
   comes from `emb_vectors_functions.operator`, a column constrained only by NOT
@@ -590,7 +537,7 @@ again** and every rule below about ordering applies without exception.
 - **A new migration must sort after every already-applied one.** The service runs
   `goose.UpContext` with no `AllowMissing`, so a file numbered below the current
   DB version is rejected as a missing migration and **startup fails**. The
-  filenames look domain-grouped (`5000` llm_engines, `20000` limits), but goose
+  filenames look domain-grouped (`4000` products, `20000` limits), but goose
   only cares about numeric order — check the highest existing number and go above
   it, whatever the topic.
 - **Editing an applied migration fails silently, it does not error.** goose
@@ -1416,14 +1363,13 @@ Two things about these workflows are load-bearing and should not be removed:
 ## Further reading
 
 - [`docs/architecture/README.md`](../docs/architecture/README.md) — hexagon overview, request flow, hard rules
-- [`docs/architecture/rag-pipeline.md`](../docs/architecture/rag-pipeline.md) — ingest → retrieve → assemble → generate, with call sites
-- [`docs/architecture/llm-providers.md`](../docs/architecture/llm-providers.md) — provider contract and how to add one
 - [`docs/architecture/adding-an-entity.md`](../docs/architecture/adding-an-entity.md) — recipe for a new domain entity
 - [`docs/architecture/adding-an-adapter.md`](../docs/architecture/adding-an-adapter.md) — recipe for a new outbound integration
 - [`docs/architecture/http-server-timeouts.md`](../docs/architecture/http-server-timeouts.md) — which bound covers which span of a request, and why two are off
 - [`docs/architecture/caching.md`](../docs/architecture/caching.md) — the cache port, the fail-open invariant, dependency invalidation, and why json is the only encoder
-- `.llm-rag-review/PLAN.md` — the current LLM/RAG improvement plan and its status
-  (local-only tracking dir, excluded via `.git/info/exclude`)
-- `.go127-migration/` — the Go 1.27 upgrade: `HANDOFF.md` (read first — current
-  state, uncommitted work, environment gotchas), `PLAN.md` (verified findings),
-  `IMPLEMENTATION.md` (tracker). Same local-only, `.git/info/exclude` convention.
+- [`docs/architecture/rate-limiting.md`](../docs/architecture/rate-limiting.md) — the rule model, the two limiters, and the breaker
+- [`docs/architecture/resource-limits.md`](../docs/architecture/resource-limits.md) — scopes, three-priority resolution, the counter signature
+- [`docs/architecture/authentication.md`](../docs/architecture/authentication.md) — tokens, rotation, revocation, throttling
+- [`docs/architecture/database-migrations.md`](../docs/architecture/database-migrations.md) — the file set and the rules that keep it applyable
+- [`docs/architecture/health-probes.md`](../docs/architecture/health-probes.md) — which endpoint answers which question
+- [`docs/operations/running-the-service.md`](../docs/operations/running-the-service.md) — the pre-flight checklist
