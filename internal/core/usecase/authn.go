@@ -42,18 +42,22 @@ type UserServiceConsumer interface {
 
 // AuthnServiceConf represents the configuration for the auth service.
 type AuthnServiceConf struct {
-	UserService               UserServiceConsumer
-	CacheService              cache.Cache
-	LoginThrottle             throttle.Throttle
-	RevokedTokens             repository.RevokedTokens
-	RevokedAccessTokens       RevokedAccessTokenSet
-	Notifier                  notifier.Notifier
-	TokenSigner               token.Signer
-	OT                        *o11y.OpenTelemetry
+	UserService         UserServiceConsumer
+	CacheService        cache.Cache
+	LoginThrottle       throttle.Throttle
+	RevokedTokens       repository.RevokedTokens
+	RevokedAccessTokens RevokedAccessTokenSet
+	Notifier            notifier.Notifier
+	TokenSigner         token.Signer
+	OT                  *o11y.OpenTelemetry
+	// TokenLifetimes answers how long the tokens issued RIGHT NOW should live.
+	// It is read at issuance, never captured, so a change made through
+	// PUT /auth/token_lifetimes reaches the next login and the next refresh
+	// without a restart. Required: there is no fallback lifetime in Go.
+	TokenLifetimes TokenLifetimesProvider
+
 	Issuer                    string
 	MetricsPrefix             string
-	AccessTokenDuration       time.Duration
-	RefreshTokenDuration      time.Duration
 	RefreshRotationGrace      time.Duration
 	UserVerificationTokenTTL  time.Duration
 	UserResetPasswordTokenTTL time.Duration
@@ -71,10 +75,9 @@ type AuthnService struct {
 	ot                        *o11y.OpenTelemetry
 	metrics                   *o11y.LayerMetrics
 	metricsMetadata           o11y.Metadata
+	tokenLifetimes            TokenLifetimesProvider
 	issuer                    string
 	metricsPrefix             string
-	accessTokenDuration       time.Duration
-	refreshTokenDuration      time.Duration
 	refreshRotationGrace      time.Duration
 	userVerificationTokenTTL  time.Duration
 	userResetPasswordTokenTTL time.Duration
@@ -99,14 +102,8 @@ func NewAuthnService(conf AuthnServiceConf) (*AuthnService, error) {
 		return nil, &domain.InvalidIssuerError{Message: "Issuer is invalid, but it is required for AuthnService"}
 	}
 
-	if conf.AccessTokenDuration < domain.ValidAuthnAccessTokenMinDuration ||
-		conf.AccessTokenDuration > domain.ValidAuthnAccessTokenMaxDuration {
-		return nil, &domain.InvalidAccessTokenDurationError{Message: fmt.Sprintf("AccessTokenDuration is invalid: %v", conf.AccessTokenDuration)}
-	}
-
-	if conf.RefreshTokenDuration < domain.ValidAuthnRefreshTokenMinDuration ||
-		conf.RefreshTokenDuration > domain.ValidAuthnRefreshTokenMaxDuration {
-		return nil, &domain.InvalidRefreshTokenDurationError{Message: fmt.Sprintf("RefreshTokenDuration is invalid: %v", conf.RefreshTokenDuration)}
+	if conf.TokenLifetimes == nil {
+		return nil, &domain.InvalidInputError{Message: "TokenLifetimes is nil, but it is required for AuthnService; there is no fallback lifetime"}
 	}
 
 	if conf.UserVerificationTokenTTL < domain.ValidAuthnMinUserVerificationTokenTTL ||
@@ -134,8 +131,7 @@ func NewAuthnService(conf AuthnServiceConf) (*AuthnService, error) {
 		issuer:                    conf.Issuer,
 		userVerificationTokenTTL:  conf.UserVerificationTokenTTL,
 		userResetPasswordTokenTTL: conf.UserResetPasswordTokenTTL,
-		accessTokenDuration:       conf.AccessTokenDuration,
-		refreshTokenDuration:      conf.RefreshTokenDuration,
+		tokenLifetimes:            conf.TokenLifetimes,
 		refreshRotationGrace:      conf.RefreshRotationGrace,
 		refreshRotationEnabled:    conf.RefreshRotationEnabled,
 		ot:                        conf.OT,
@@ -264,12 +260,16 @@ func (ref *AuthnService) LoginUser(ctx context.Context, input *domain.LoginUserI
 		ref.loginThrottle.Succeed(loginKey)
 	}
 
+	// One read for both tokens, so a change landing between the two cannot
+	// issue a pair from different settings.
+	lifetimes := ref.tokenLifetimes.Current()
+
 	accessTokenJWTClaims := domain.JWTClaims{
 		Email:         user.Email,
 		Subject:       user.ID.String(),
 		Issuer:        ref.issuer,
 		TokenType:     domain.TokenTypeAccess,
-		TokenDuration: ref.accessTokenDuration,
+		TokenDuration: lifetimes.AccessTokenDuration,
 	}
 
 	accessToken, err := ref.tokenSigner.Sign(ctx, accessTokenJWTClaims)
@@ -282,7 +282,7 @@ func (ref *AuthnService) LoginUser(ctx context.Context, input *domain.LoginUserI
 		Subject:       user.ID.String(),
 		Issuer:        ref.issuer,
 		TokenType:     domain.TokenTypeRefresh,
-		TokenDuration: ref.refreshTokenDuration,
+		TokenDuration: lifetimes.RefreshTokenDuration,
 	}
 
 	refreshToken, err := ref.tokenSigner.Sign(ctx, refreshTokenJWTClaims)
@@ -744,7 +744,7 @@ func (ref *AuthnService) RefreshAccessToken(ctx context.Context, input *domain.R
 		Subject:       user.ID.String(),
 		Issuer:        ref.issuer,
 		TokenType:     domain.TokenTypeAccess,
-		TokenDuration: ref.accessTokenDuration,
+		TokenDuration: ref.tokenLifetimes.Current().AccessTokenDuration,
 	}
 
 	accessTokenSigned, err := ref.tokenSigner.Sign(ctx, atJWTClaims)
@@ -1091,7 +1091,7 @@ func (ref *AuthnService) LogoutUser(ctx context.Context, input *domain.LogoutUse
 	// written. Adding locally first and then failing to record would leave a
 	// revocation that exists on exactly one replica until it restarts.
 	if ref.revokedTokens != nil && input.AccessTokenJTI != uuid.Nil() {
-		if err := ref.revokedTokens.Revoke(ctx, input.AccessTokenJTI, input.UserID, input.AccessTokenExpiresAt); err != nil {
+		if err := ref.revokedTokens.Revoke(ctx, input.AccessTokenJTI, input.UserID, domain.TokenTypeAccess, input.AccessTokenExpiresAt); err != nil {
 			return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 		}
 
@@ -1256,12 +1256,15 @@ func (ref *AuthnService) revokeRefreshToken(ctx context.Context, userID uuid.UUI
 
 	// exp bounds how long the row is worth keeping: past it the token is
 	// refused for being expired, so the revocation is no longer load-bearing.
-	expiresAt := time.Now().Add(ref.refreshTokenDuration)
+	// The verifier requires exp, so the fallback below is unreachable; it is
+	// the current refresh lifetime only so that a row is never kept for less
+	// than the token could have lived.
+	expiresAt := time.Now().Add(ref.tokenLifetimes.Current().RefreshTokenDuration)
 	if exp, ok := claimExpiry(claims); ok {
 		expiresAt = exp
 	}
 
-	if err := ref.revokedTokens.Revoke(ctx, jti, userID, expiresAt); err != nil {
+	if err := ref.revokedTokens.Revoke(ctx, jti, userID, domain.TokenTypeRefresh, expiresAt); err != nil {
 		return err
 	}
 

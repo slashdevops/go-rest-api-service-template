@@ -132,6 +132,10 @@ resource limit, and an integration test. Copy it; see
 - [**Resource limits**](./docs/architecture/resource-limits.md): soft and hard
   ceilings on what a deployment, user or project may create, resolved by scope
   with an integrity signature on the counters.
+- [**Token lifetimes**](./docs/architecture/token-lifetimes.md) as one database
+  row rather than two flags: `GET`/`PUT /auth/token_lifetimes`, bounded and
+  ordered (refresh strictly longer than access), mirrored per replica with a
+  Valkey change signal, and applied to the next token issued.
 
 **🔭 Observability.** OpenTelemetry traces and metrics throughout, with a
 `Metadata{Layer, Domain, Action}` convention so every span and metric is named
@@ -209,6 +213,7 @@ make docs-api-resources # regenerate the authz resource rows for migration 00008
 | 📦 [Adding an entity](./docs/architecture/adding-an-entity.md) | the end-to-end recipe for a new resource |
 | 🔌 [Adding an adapter](./docs/architecture/adding-an-adapter.md) | when you need a new external system |
 | 🔐 [Authentication](./docs/architecture/authentication.md) | tokens, rotation, revocation, throttling |
+| ⏳ [Token lifetimes](./docs/architecture/token-lifetimes.md) | the access/refresh lifetimes as a database row edited through the API |
 | 🚦 [Rate limiting](./docs/architecture/rate-limiting.md) | the rule model and how it is enforced |
 | 📏 [Resource limits](./docs/architecture/resource-limits.md) | scopes, resolution, the signature |
 | 🗄️ [Caching](./docs/architecture/caching.md) | what is cached, and what must never be |

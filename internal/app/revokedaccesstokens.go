@@ -24,7 +24,7 @@ func (a *App) initRevokedAccessTokens() error {
 		slog.Warn(
 			"access token revocation is off; a logged-out access token keeps working until it expires",
 			"setting", a.configs.Authn.AccessTokenRevocationEnabled.FlagName,
-			"window", a.configs.Authn.AccessTokenDuration.Value,
+			"window", "the access-token lifetime, a runtime setting: GET /auth/token_lifetimes",
 		)
 
 		return nil
@@ -35,10 +35,9 @@ func (a *App) initRevokedAccessTokens() error {
 	}
 
 	mirror, err := usecase.NewRevokedAccessTokens(usecase.RevokedAccessTokensConfig{
-		Repository:          a.repositories.RevokedTokens,
-		OT:                  a.telemetry,
-		AccessTokenDuration: a.configs.Authn.AccessTokenDuration.Value,
-		ReloadInterval:      a.configs.Authn.AccessTokenRevocationReloadInterval.Value,
+		Repository:     a.repositories.RevokedTokens,
+		OT:             a.telemetry,
+		ReloadInterval: a.configs.Authn.AccessTokenRevocationReloadInterval.Value,
 	})
 	if err != nil {
 		return fmt.Errorf("error creating the revoked access token mirror: %w", err)

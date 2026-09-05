@@ -98,6 +98,15 @@ func (a *App) initHandlers() error {
 		return fmt.Errorf("could not create rate limits handler: %w", err)
 	}
 
+	// Create token lifetimes handler
+	a.handlers.TokenLifetimes, err = handler.NewTokenLifetimesHandler(handler.TokenLifetimesHandlerConf{
+		Service: a.services.TokenLifetimes,
+		OT:      a.telemetry,
+	})
+	if err != nil {
+		return fmt.Errorf("could not create token lifetimes handler: %w", err)
+	}
+
 	// Create roles handler
 	a.handlers.Roles, err = handler.NewRolesHandler(handler.RolesHandlerConf{
 		Service: a.services.Roles,

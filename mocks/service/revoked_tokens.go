@@ -44,18 +44,18 @@ func (m *MockRevokedTokens) EXPECT() *MockRevokedTokensMockRecorder {
 }
 
 // Consume mocks base method.
-func (m *MockRevokedTokens) Consume(ctx context.Context, jti, userID uuid.UUID, expiresAt time.Time) (bool, error) {
+func (m *MockRevokedTokens) Consume(ctx context.Context, jti, userID uuid.UUID, tokenType domain.TokenType, expiresAt time.Time) (bool, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Consume", ctx, jti, userID, expiresAt)
+	ret := m.ctrl.Call(m, "Consume", ctx, jti, userID, tokenType, expiresAt)
 	ret0, _ := ret[0].(bool)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // Consume indicates an expected call of Consume.
-func (mr *MockRevokedTokensMockRecorder) Consume(ctx, jti, userID, expiresAt any) *gomock.Call {
+func (mr *MockRevokedTokensMockRecorder) Consume(ctx, jti, userID, tokenType, expiresAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Consume", reflect.TypeOf((*MockRevokedTokens)(nil).Consume), ctx, jti, userID, expiresAt)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Consume", reflect.TypeOf((*MockRevokedTokens)(nil).Consume), ctx, jti, userID, tokenType, expiresAt)
 }
 
 // DeleteExpired mocks base method.
@@ -89,17 +89,17 @@ func (mr *MockRevokedTokensMockRecorder) Get(ctx, jti any) *gomock.Call {
 }
 
 // Revoke mocks base method.
-func (m *MockRevokedTokens) Revoke(ctx context.Context, jti, userID uuid.UUID, expiresAt time.Time) error {
+func (m *MockRevokedTokens) Revoke(ctx context.Context, jti, userID uuid.UUID, tokenType domain.TokenType, expiresAt time.Time) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Revoke", ctx, jti, userID, expiresAt)
+	ret := m.ctrl.Call(m, "Revoke", ctx, jti, userID, tokenType, expiresAt)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // Revoke indicates an expected call of Revoke.
-func (mr *MockRevokedTokensMockRecorder) Revoke(ctx, jti, userID, expiresAt any) *gomock.Call {
+func (mr *MockRevokedTokensMockRecorder) Revoke(ctx, jti, userID, tokenType, expiresAt any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Revoke", reflect.TypeOf((*MockRevokedTokens)(nil).Revoke), ctx, jti, userID, expiresAt)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Revoke", reflect.TypeOf((*MockRevokedTokens)(nil).Revoke), ctx, jti, userID, tokenType, expiresAt)
 }
 
 // RevokeChain mocks base method.
@@ -132,16 +132,16 @@ func (mr *MockRevokedTokensMockRecorder) Rotate(ctx, oldJTI, newJTI, userID, exp
 }
 
 // SelectUnexpiredJTIs mocks base method.
-func (m *MockRevokedTokens) SelectUnexpiredJTIs(ctx context.Context, horizon time.Duration) ([]uuid.UUID, error) {
+func (m *MockRevokedTokens) SelectUnexpiredJTIs(ctx context.Context, tokenType domain.TokenType) ([]uuid.UUID, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SelectUnexpiredJTIs", ctx, horizon)
+	ret := m.ctrl.Call(m, "SelectUnexpiredJTIs", ctx, tokenType)
 	ret0, _ := ret[0].([]uuid.UUID)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // SelectUnexpiredJTIs indicates an expected call of SelectUnexpiredJTIs.
-func (mr *MockRevokedTokensMockRecorder) SelectUnexpiredJTIs(ctx, horizon any) *gomock.Call {
+func (mr *MockRevokedTokensMockRecorder) SelectUnexpiredJTIs(ctx, tokenType any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SelectUnexpiredJTIs", reflect.TypeOf((*MockRevokedTokens)(nil).SelectUnexpiredJTIs), ctx, horizon)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SelectUnexpiredJTIs", reflect.TypeOf((*MockRevokedTokens)(nil).SelectUnexpiredJTIs), ctx, tokenType)
 }

@@ -14,11 +14,20 @@ const (
 	// DefaultAuthnIssuer is the default issuer of the JWT tokens
 	DefaultAuthnIssuer = "https://goapitemplate.local"
 
-	// DefaultAuthnAccessTokenDuration is the default duration of the access token
-	DefaultAuthnAccessTokenDuration = 5 * time.Minute
-
-	// DefaultAuthnRefreshTokenDuration is the default duration of the refresh token
-	DefaultAuthnRefreshTokenDuration = 24 * time.Hour
+	// DefaultAuthnTokenLifetimesReloadInterval is how often each replica
+	// re-reads the authn_token_lifetimes row, and therefore the worst case for
+	// how long a change made on ANOTHER replica takes to reach this one when
+	// the Valkey change signal is lost or absent. A change made on this
+	// replica applies before its PUT answers, and with a cache the signal
+	// reaches the others in under a second, so this is a floor, not the
+	// mechanism.
+	//
+	// The two token lifetimes themselves are NOT settings any more. They used
+	// to be authn.access.token.duration and authn.refresh.token.duration; they
+	// live in the database now, seeded by migration and edited through
+	// PUT /auth/token_lifetimes, so a change is not a redeploy and the
+	// ordering rule (refresh strictly longer than access) is enforced.
+	DefaultAuthnTokenLifetimesReloadInterval = time.Minute
 
 	// DefaultAuthnRefreshTokenRotationEnabled makes every refresh spend the
 	// token it consumed and issue a new one in its place, so a refresh token is
@@ -132,12 +141,11 @@ type AuthnConfig struct {
 	AdditionalPublicKeyFiles            Field[string]
 	SymmetricKeyFile                    Field[FileVar]
 	Issuer                              Field[string]
-	AccessTokenDuration                 Field[time.Duration]
 	LoginThrottleMaxAttempts            Field[int]
 	LoginThrottleWindow                 Field[time.Duration]
 	LoginThrottleIdleAfter              Field[time.Duration]
 	LoginThrottleEnabled                Field[bool]
-	RefreshTokenDuration                Field[time.Duration]
+	TokenLifetimesReloadInterval        Field[time.Duration]
 	RefreshTokenRotationGrace           Field[time.Duration]
 	RefreshTokenRotationEnabled         Field[bool]
 	RevokedTokensSweepInterval          Field[time.Duration]
@@ -161,8 +169,7 @@ func NewAuthConfig() *AuthnConfig {
 		LoginThrottleWindow:      NewField("authn.login.throttle.window", "AUTHN_LOGIN_THROTTLE_WINDOW", "How long a fully spent login budget takes to refill; a refused account recovers one attempt every window/max-attempts", DefaultAuthnLoginThrottleWindow),
 		LoginThrottleIdleAfter:   NewField("authn.login.throttle.idle.after", "AUTHN_LOGIN_THROTTLE_IDLE_AFTER", "How long an untouched account keeps its throttle record before it is evicted", DefaultAuthnLoginThrottleIdleAfter),
 
-		AccessTokenDuration:                 NewField("authn.access.token.duration", "AUTHN_ACCESS_TOKEN_DURATION", "Duration of the access token", DefaultAuthnAccessTokenDuration),
-		RefreshTokenDuration:                NewField("authn.refresh.token.duration", "AUTHN_REFRESH_TOKEN_DURATION", "Duration of the refresh token", DefaultAuthnRefreshTokenDuration),
+		TokenLifetimesReloadInterval:        NewField("authn.token.lifetimes.reload.interval", "AUTHN_TOKEN_LIFETIMES_RELOAD_INTERVAL", "How often each replica re-reads the access and refresh token lifetimes from the database. The lifetimes themselves are not flags: they are edited through PUT /auth/token_lifetimes and a change reaches other replicas at once through the cache, or within this interval without one", DefaultAuthnTokenLifetimesReloadInterval),
 		RefreshTokenRotationEnabled:         NewField("authn.refresh.token.rotation.enabled", "AUTHN_REFRESH_TOKEN_ROTATION_ENABLED", "Issue a new refresh token on every refresh and revoke the one it replaced; a replayed token ends the whole session", DefaultAuthnRefreshTokenRotationEnabled),
 		RefreshTokenRotationGrace:           NewField("authn.refresh.token.rotation.grace", "AUTHN_REFRESH_TOKEN_ROTATION_GRACE", "How long a just-rotated refresh token still answers with the successor it issued, so a lost response is a retry and not a detected replay", DefaultAuthnRefreshTokenRotationGrace),
 		RevokedTokensSweepInterval:          NewField("authn.revoked.tokens.sweep.interval", "AUTHN_REVOKED_TOKENS_SWEEP_INTERVAL", "How often expired rows are deleted from the token denylist; zero disables the sweep", DefaultAuthnRevokedTokensSweepInterval),
@@ -183,12 +190,11 @@ func (ref *AuthnConfig) ParseEnvVars() {
 	ref.AdditionalPublicKeyFiles.Value = GetEnv(ref.AdditionalPublicKeyFiles.EnVarName, ref.AdditionalPublicKeyFiles.Value)
 	ref.SymmetricKeyFile.Value = GetEnv(ref.SymmetricKeyFile.EnVarName, ref.SymmetricKeyFile.Value)
 	ref.Issuer.Value = GetEnv(ref.Issuer.EnVarName, ref.Issuer.Value)
-	ref.AccessTokenDuration.Value = GetEnv(ref.AccessTokenDuration.EnVarName, ref.AccessTokenDuration.Value)
 	ref.LoginThrottleEnabled.Value = GetEnv(ref.LoginThrottleEnabled.EnVarName, ref.LoginThrottleEnabled.Value)
 	ref.LoginThrottleMaxAttempts.Value = GetEnv(ref.LoginThrottleMaxAttempts.EnVarName, ref.LoginThrottleMaxAttempts.Value)
 	ref.LoginThrottleWindow.Value = GetEnv(ref.LoginThrottleWindow.EnVarName, ref.LoginThrottleWindow.Value)
 	ref.LoginThrottleIdleAfter.Value = GetEnv(ref.LoginThrottleIdleAfter.EnVarName, ref.LoginThrottleIdleAfter.Value)
-	ref.RefreshTokenDuration.Value = GetEnv(ref.RefreshTokenDuration.EnVarName, ref.RefreshTokenDuration.Value)
+	ref.TokenLifetimesReloadInterval.Value = GetEnv(ref.TokenLifetimesReloadInterval.EnVarName, ref.TokenLifetimesReloadInterval.Value)
 	ref.RefreshTokenRotationEnabled.Value = GetEnv(ref.RefreshTokenRotationEnabled.EnVarName, ref.RefreshTokenRotationEnabled.Value)
 	ref.RefreshTokenRotationGrace.Value = GetEnv(ref.RefreshTokenRotationGrace.EnVarName, ref.RefreshTokenRotationGrace.Value)
 	ref.RevokedTokensSweepInterval.Value = GetEnv(ref.RevokedTokensSweepInterval.EnVarName, ref.RevokedTokensSweepInterval.Value)
@@ -233,19 +239,14 @@ func (ref *AuthnConfig) Validate() error {
 		}
 	}
 
-	if ref.AccessTokenDuration.Value <= domain.ValidAuthnAccessTokenMinDuration || ref.AccessTokenDuration.Value > domain.ValidAuthnAccessTokenMaxDuration {
+	// Zero would be a ticker that panics; the mirror has no "off" -- a serving
+	// replica always has lifetimes, and this is only how often it refreshes
+	// them.
+	if ref.TokenLifetimesReloadInterval.Value <= 0 {
 		return &InvalidConfigurationError{
-			Field:   "authn.access.token.duration",
-			Value:   fmt.Sprintf("%d", ref.AccessTokenDuration.Value),
-			Message: fmt.Sprintf("invalid access token duration, must be between %d and %d", domain.ValidAuthnAccessTokenMinDuration, domain.ValidAuthnAccessTokenMaxDuration),
-		}
-	}
-
-	if ref.RefreshTokenDuration.Value <= domain.ValidAuthnRefreshTokenMinDuration || ref.RefreshTokenDuration.Value > domain.ValidAuthnRefreshTokenMaxDuration {
-		return &InvalidConfigurationError{
-			Field:   "authn.refresh.token.duration",
-			Value:   fmt.Sprintf("%d", ref.RefreshTokenDuration.Value),
-			Message: fmt.Sprintf("invalid refresh token duration, must be between %d and %d", domain.ValidAuthnRefreshTokenMinDuration, domain.ValidAuthnRefreshTokenMaxDuration),
+			Field:   "authn.token.lifetimes.reload.interval",
+			Value:   ref.TokenLifetimesReloadInterval.Value.String(),
+			Message: "invalid authn.token.lifetimes.reload.interval, must be positive",
 		}
 	}
 
@@ -261,12 +262,14 @@ func (ref *AuthnConfig) Validate() error {
 	}
 
 	// The grace window is a period during which a spent token still answers, so
-	// it has to stay small relative to the life of the token it applies to.
-	if ref.RefreshTokenRotationGrace.Value >= ref.RefreshTokenDuration.Value {
+	// it has to stay small relative to the life of the token it applies to. The
+	// lifetime is a runtime setting, so the strongest statement a startup check
+	// can make is against the SHORTEST refresh token an operator may configure.
+	if ref.RefreshTokenRotationGrace.Value >= domain.ValidAuthnRefreshTokenMinDuration {
 		return &InvalidConfigurationError{
 			Field:   "authn.refresh.token.rotation.grace",
 			Value:   ref.RefreshTokenRotationGrace.Value.String(),
-			Message: "invalid authn.refresh.token.rotation.grace, must be shorter than authn.refresh.token.duration; a grace as long as the token disables reuse detection entirely",
+			Message: fmt.Sprintf("invalid authn.refresh.token.rotation.grace, must be shorter than the minimum refresh token lifetime (%s); a grace as long as the token disables reuse detection entirely", domain.ValidAuthnRefreshTokenMinDuration),
 		}
 	}
 
@@ -291,12 +294,14 @@ func (ref *AuthnConfig) Validate() error {
 	// A reload slower than the tokens it tracks is a mirror that is stale more
 	// often than it is fresh: a revocation made elsewhere would be honoured
 	// here for longer than the token it revokes would have lived anyway, which
-	// is the same as not having the check.
-	if ref.AccessTokenRevocationEnabled.Value && ref.AccessTokenRevocationReloadInterval.Value >= ref.AccessTokenDuration.Value {
+	// is the same as not having the check. The lifetime is a runtime setting,
+	// so this is checked against the SHORTEST access token an operator may
+	// configure; the Prometheus rule compares the live values.
+	if ref.AccessTokenRevocationEnabled.Value && ref.AccessTokenRevocationReloadInterval.Value >= domain.ValidAuthnAccessTokenMinDuration {
 		return &InvalidConfigurationError{
 			Field:   "authn.access.token.revocation.reload.interval",
 			Value:   ref.AccessTokenRevocationReloadInterval.Value.String(),
-			Message: "invalid authn.access.token.revocation.reload.interval, must be shorter than authn.access.token.duration; a reload slower than the token it tracks leaves the check doing nothing for most of the token's life",
+			Message: fmt.Sprintf("invalid authn.access.token.revocation.reload.interval, must be shorter than the minimum access token lifetime (%s); a reload slower than the token it tracks leaves the check doing nothing for most of the token's life", domain.ValidAuthnAccessTokenMinDuration),
 		}
 	}
 

@@ -21,10 +21,6 @@ const (
 	ValidAuthnIssuerMaxLength              = 100
 	ValidAuthnMaxEntitiesCacheTTL          = 72 * time.Hour
 	ValidAuthnMinEntitiesCacheTTL          = 1 * time.Hour
-	ValidAuthnAccessTokenMinDuration       = 1 * time.Minute
-	ValidAuthnAccessTokenMaxDuration       = 7 * 24 * time.Hour
-	ValidAuthnRefreshTokenMinDuration      = 5 * time.Minute
-	ValidAuthnRefreshTokenMaxDuration      = 30 * 24 * time.Hour
 	ValidAuthnMaxUserVerificationTokenTTL  = 3 * 24 * time.Hour
 	ValidAuthnMinUserVerificationTokenTTL  = 1 * time.Hour
 	ValidAuthnMinUserResetPasswordTokenTTL = 1 * time.Minute

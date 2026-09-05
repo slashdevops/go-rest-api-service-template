@@ -269,7 +269,7 @@ func TestPrettyPrint(t *testing.T) {
 			query: `SELECT *
                   FROM users
                   WHERE active = $1`,
-			args:     []any{domain.MakePointer(true)},
+			args:     []any{new(true)},
 			expected: "SELECT * FROM users WHERE active = true",
 		},
 		{
@@ -277,7 +277,7 @@ func TestPrettyPrint(t *testing.T) {
 			query: `SELECT *
                   FROM users
                   WHERE active = $1`,
-			args:     []any{domain.MakePointer(false)},
+			args:     []any{new(false)},
 			expected: "SELECT * FROM users WHERE active = false",
 		},
 		{
@@ -293,7 +293,7 @@ func TestPrettyPrint(t *testing.T) {
 			query: `SELECT *
                   FROM users
                   WHERE name = $1`,
-			args:     []any{domain.MakePointer("John")},
+			args:     []any{new("John")},
 			expected: "SELECT * FROM users WHERE name = 'John'",
 		},
 		{
@@ -309,7 +309,7 @@ func TestPrettyPrint(t *testing.T) {
 			query: `SELECT *
                   FROM users
                   WHERE id = $1`,
-			args:     []any{domain.MakePointer(123)},
+			args:     []any{new(123)},
 			expected: "SELECT * FROM users WHERE id = 123",
 		},
 		{
@@ -317,7 +317,7 @@ func TestPrettyPrint(t *testing.T) {
 			query: `SELECT *
                   FROM users
                   WHERE id = $1 AND name = $2 AND active = $3`,
-			args:     []any{123, domain.MakePointer("John"), domain.MakePointer(true)},
+			args:     []any{123, new("John"), new(true)},
 			expected: "SELECT * FROM users WHERE id = 123 AND name = 'John' AND active = true",
 		},
 		{
@@ -333,7 +333,7 @@ func TestPrettyPrint(t *testing.T) {
 			query: `SELECT *
                   FROM users
                   WHERE score = $1`,
-			args:     []any{domain.MakePointer(95.5)},
+			args:     []any{new(95.5)},
 			expected: "SELECT * FROM users WHERE score = 95.5",
 		},
 		{
@@ -349,7 +349,7 @@ func TestPrettyPrint(t *testing.T) {
 			query: `SELECT *
                   FROM users
                   WHERE uuid = $1`,
-			args:     []any{domain.MakePointer(uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"))},
+			args:     []any{new(uuid.MustParse("550e8400-e29b-41d4-a716-446655440000"))},
 			expected: "SELECT * FROM users WHERE uuid = '550e8400-e29b-41d4-a716-446655440000'",
 		},
 		{
@@ -357,7 +357,7 @@ func TestPrettyPrint(t *testing.T) {
 			query: `SELECT *
                   FROM users
                   WHERE id8 = $1 AND id16 = $2 AND id32 = $3 AND id64 = $4`,
-			args:     []any{domain.MakePointer(int8(8)), domain.MakePointer(int16(16)), domain.MakePointer(int32(32)), domain.MakePointer(int64(64))},
+			args:     []any{new(int8(8)), new(int16(16)), new(int32(32)), new(int64(64))},
 			expected: "SELECT * FROM users WHERE id8 = 8 AND id16 = 16 AND id32 = 32 AND id64 = 64",
 		},
 		{
@@ -365,7 +365,7 @@ func TestPrettyPrint(t *testing.T) {
 			query: `SELECT *
                   FROM users
                   WHERE uid = $1 AND uid8 = $2 AND uid16 = $3 AND uid32 = $4 AND uid64 = $5`,
-			args:     []any{domain.MakePointer(uint(1)), domain.MakePointer(uint8(8)), domain.MakePointer(uint16(16)), domain.MakePointer(uint32(32)), domain.MakePointer(uint64(64))},
+			args:     []any{new(uint(1)), new(uint8(8)), new(uint16(16)), new(uint32(32)), new(uint64(64))},
 			expected: "SELECT * FROM users WHERE uid = 1 AND uid8 = 8 AND uid16 = 16 AND uid32 = 32 AND uid64 = 64",
 		},
 		{
@@ -373,7 +373,7 @@ func TestPrettyPrint(t *testing.T) {
 			query: `SELECT *
                   FROM users
                   WHERE score32 = $1`,
-			args:     []any{domain.MakePointer(float32(3.14))},
+			args:     []any{new(float32(3.14))},
 			expected: "SELECT * FROM users WHERE score32 = 3.14",
 		},
 		{
