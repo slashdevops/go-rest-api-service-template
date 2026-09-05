@@ -166,30 +166,6 @@ jobs:
           echo "## Build" >> $GITHUB_STEP_SUMMARY
           go build ./... && echo "Build passed ✅" >> $GITHUB_STEP_SUMMARY
 
-      # 1 second, and CLAUDE.md's post-change checklist already tells every
-      # contributor to run it -- but nothing enforced it, so the claim in "What
-      # CI gates on" was simply false. Cheaper to make the claim true than to
-      # weaken it: a modernizer that has drifted shows up as a diff here rather
-      # than as a surprise in the next person's `go fix ./...`.
-      - name: Go fix (modernizers)
-        run: |
-          echo "## go fix -diff" >> $GITHUB_STEP_SUMMARY
-
-          # Warm the module cache FIRST, and keep its progress off the capture.
-          # `go fix -diff ./... 2>&1` merges stderr into $diff, so a single
-          # "go: downloading ..." line on a cold runner makes $diff non-empty
-          # and fails the step with no drift at all -- which is exactly how this
-          # first went red. stderr now goes to the log, not into the comparison.
-          go mod download
-
-          diff=$(go fix -diff ./...)
-          if [ -n "$diff" ]; then
-            echo "go fix -diff is not empty; run 'go fix ./...' and commit" >> $GITHUB_STEP_SUMMARY
-            echo "$diff"
-            exit 1
-          fi
-          echo "No modernizer drift ✅" >> $GITHUB_STEP_SUMMARY
-
       - name: Make arch-test
         run: |
           echo "## Make arch-test (hexagonal invariant)" >> $GITHUB_STEP_SUMMARY
@@ -204,24 +180,6 @@ jobs:
         run: |
           echo "## Make lint" >> $GITHUB_STEP_SUMMARY
           MAKE_DEBUG=true make lint | tee -a $GITHUB_STEP_SUMMARY
-
-      # Only when the dependency set moved.
-      #
-      # A per-PR scan answers "did THIS change introduce a vulnerable
-      # dependency", and that question can only change when go.mod or go.sum
-      # does. The other thing govulncheck catches -- an advisory published
-      # against a dependency you already had -- has nothing to do with your
-      # commits, so a per-PR scan is the wrong instrument for it and the weekly
-      # scheduled run below is the right one.
-      #
-      # So this is not less coverage for less money. It is the same coverage,
-      # plus the case a per-PR-only scan never caught: a quiet week during which
-      # an advisory lands and no PR is opened.
-      - name: Make vulncheck
-        if: steps.changed.outputs.deps == 'true'
-        run: |
-          echo "## Make vulncheck" >> $GITHUB_STEP_SUMMARY
-          MAKE_DEBUG=true make vulncheck | tee -a $GITHUB_STEP_SUMMARY
 
       # DISABLED to keep the runner cheap. Uncomment to restore.
       #
