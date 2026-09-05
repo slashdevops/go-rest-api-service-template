@@ -221,6 +221,7 @@ func (a *App) initHTTPServer(ctx context.Context) error {
 	a.handlers.AuthnIDPs.RegisterRoutes(apiRouter)
 	a.handlers.ResourcesLimits.RegisterRoutes(apiRouter, accessTokenMiddlewares)
 	a.handlers.RateLimits.RegisterRoutes(apiRouter, accessTokenMiddlewares)
+	a.handlers.TokenLifetimes.RegisterRoutes(apiRouter, accessTokenMiddlewares)
 	a.handlers.Me.RegisterRoutes(apiRouter, meEndpointMiddlewares)
 
 	// Create the main router

@@ -5,11 +5,6 @@ import (
 	"uuid"
 )
 
-//go:fix inline
-func MakePointer[T any](v T) *T {
-	return new(v)
-}
-
 // EnsureUUIDV7 ensures the ID is set, generating a new V7 UUID if it's nil.
 //
 // The returned error is always nil. The standard library's [uuid.NewV7] cannot

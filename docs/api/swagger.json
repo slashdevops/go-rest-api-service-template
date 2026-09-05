@@ -1181,6 +1181,124 @@
                 }
             }
         },
+        "/auth/token_lifetimes": {
+            "get": {
+                "security": [
+                    {
+                        "AccessToken": []
+                    }
+                ],
+                "description": "Read how long the access and refresh tokens issued from now on will live, the bounds a change is validated against, the shipped defaults, and who last changed them",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authn"
+                ],
+                "summary": "Get token lifetimes",
+                "operationId": "01a072df-d81d-78c8-a72b-6ea167cd50b2",
+                "responses": {
+                    "200": {
+                        "description": "The stored lifetimes, with bounds and defaults",
+                        "schema": {
+                            "$ref": "#/definitions/payload.TokenLifetimesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid or expired token",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error, including a missing row, which the migration seeds and nothing may delete",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "AccessToken": []
+                    }
+                ],
+                "description": "Replace the access and refresh token lifetimes. Applies to tokens issued from now on; a token already issued keeps the expiry it was signed with. The change reaches every replica within its reload interval, or at once where a change signal is available",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authn"
+                ],
+                "summary": "Update token lifetimes",
+                "operationId": "01a072df-d81d-7995-ad3e-92a0a4d0a4cf",
+                "parameters": [
+                    {
+                        "description": "Both lifetimes as Go duration strings",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/payload.UpdateTokenLifetimesRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The stored lifetimes after the change",
+                        "schema": {
+                            "$ref": "#/definitions/payload.TokenLifetimesResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "A duration that does not parse, a value outside its bounds, or a refresh lifetime not longer than the access lifetime",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid or expired token",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/verify": {
             "post": {
                 "description": "Request a new verification email for unverified account.",
@@ -8673,6 +8791,110 @@
                 }
             }
         },
+        "payload.TokenLifetimeBoundsResponse": {
+            "description": "The bounds every change is validated against, so a client never has to hardcode them",
+            "type": "object",
+            "properties": {
+                "access_token_duration": {
+                    "description": "Bounds on the access token lifetime",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/payload.TokenLifetimeRange"
+                        }
+                    ]
+                },
+                "refresh_token_duration": {
+                    "description": "Bounds on the refresh token lifetime",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/payload.TokenLifetimeRange"
+                        }
+                    ]
+                }
+            }
+        },
+        "payload.TokenLifetimeDefaultsResponse": {
+            "description": "The shipped defaults; \"reset to defaults\" is a PUT of exactly these",
+            "type": "object",
+            "properties": {
+                "access_token_duration": {
+                    "description": "Seeded access token lifetime",
+                    "type": "string",
+                    "format": "string",
+                    "example": "5m0s"
+                },
+                "refresh_token_duration": {
+                    "description": "Seeded refresh token lifetime",
+                    "type": "string",
+                    "format": "string",
+                    "example": "24h0m0s"
+                }
+            }
+        },
+        "payload.TokenLifetimeRange": {
+            "description": "The inclusive bounds a lifetime is validated against",
+            "type": "object",
+            "properties": {
+                "max": {
+                    "description": "Longest accepted value, as a Go duration",
+                    "type": "string",
+                    "format": "string",
+                    "example": "48h0m0s"
+                },
+                "min": {
+                    "description": "Shortest accepted value, as a Go duration",
+                    "type": "string",
+                    "format": "string",
+                    "example": "2m0s"
+                }
+            }
+        },
+        "payload.TokenLifetimesResponse": {
+            "description": "The lifetimes tokens issued from now on will carry, the bounds a change is validated against, the shipped defaults, and who last changed them",
+            "type": "object",
+            "properties": {
+                "access_token_duration": {
+                    "description": "Lifetime of access tokens issued from now on, as a Go duration",
+                    "type": "string",
+                    "format": "string",
+                    "example": "5m0s"
+                },
+                "bounds": {
+                    "description": "What a change is validated against",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/payload.TokenLifetimeBoundsResponse"
+                        }
+                    ]
+                },
+                "defaults": {
+                    "description": "The shipped values",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/payload.TokenLifetimeDefaultsResponse"
+                        }
+                    ]
+                },
+                "refresh_token_duration": {
+                    "description": "Lifetime of refresh tokens issued at the next login, as a Go duration",
+                    "type": "string",
+                    "format": "string",
+                    "example": "24h0m0s"
+                },
+                "updated_at": {
+                    "description": "When the row was last changed",
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-09-05T10:12:00Z"
+                },
+                "updated_by": {
+                    "description": "Who last changed it; absent for the seeded values",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "019b4b0d-a682-7e34-a20c-c71a7147d7e7"
+                }
+            }
+        },
         "payload.UnlinkPoliciesFromRoleRequest": {
             "description": "Request payload for attaching multiple policies to a role",
             "type": "object",
@@ -9069,6 +9291,24 @@
                     "maxLength": 100,
                     "minLength": 2,
                     "example": "Updated Editor"
+                }
+            }
+        },
+        "payload.UpdateTokenLifetimesRequest": {
+            "description": "Both lifetimes, as Go duration strings. The refresh lifetime must be strictly longer than the access lifetime",
+            "type": "object",
+            "properties": {
+                "access_token_duration": {
+                    "description": "2m to 48h",
+                    "type": "string",
+                    "format": "string",
+                    "example": "10m0s"
+                },
+                "refresh_token_duration": {
+                    "description": "12h to 168h, and longer than the access token",
+                    "type": "string",
+                    "format": "string",
+                    "example": "72h0m0s"
                 }
             }
         },

@@ -24,8 +24,9 @@ matching `_upsert` file that seeds it:
 00009  products                ← the worked example entity
 00010  idps                    00011  seed
 00012  resource limits         00013  seed
-00014  revoked tokens          ← the logout/rotation denylist
-00015  rate limits             00016  seed  ← rules + windows, and their authz rows
+00014  revoked tokens          ← the logout/rotation denylist, typed per token
+00015  rate limits             ← rules + windows, seeded default rule
+00016  authn_token_lifetimes   ← one seeded row: the access/refresh lifetimes
 ```
 
 The set used to be numbered with gaps (`200`, `1000`, `1100`, … `20004`) so a

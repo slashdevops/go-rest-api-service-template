@@ -178,6 +178,15 @@ The ordinary credential: `Bearer <access_token>`, from `POST /auth/login` or `PO
   
 
 
+###  authn
+
+| Method  | URI     | Name   | Summary |
+|---------|---------|--------|---------|
+| GET | /auth/token_lifetimes | [01a072df d81d 78c8 a72b 6ea167cd50b2](#01a072df-d81d-78c8-a72b-6ea167cd50b2) | Get token lifetimes |
+| PUT | /auth/token_lifetimes | [01a072df d81d 7995 ad3e 92a0a4d0a4cf](#01a072df-d81d-7995-ad3e-92a0a4d0a4cf) | Update token lifetimes |
+  
+
+
 ###  health
 
 | Method  | URI     | Name   | Summary |
@@ -8119,6 +8128,167 @@ Status: Internal Server Error
 
 [PayloadHTTPMessage](#payload-http-message)
 
+### <span id="01a072df-d81d-78c8-a72b-6ea167cd50b2"></span> Get token lifetimes (*01a072df-d81d-78c8-a72b-6ea167cd50b2*)
+
+```
+GET /auth/token_lifetimes
+```
+
+Read how long the access and refresh tokens issued from now on will live, the bounds a change is validated against, the shipped defaults, and who last changed them
+
+#### Produces
+  * application/json
+
+#### Security Requirements
+  * AccessToken
+
+#### All responses
+| Code | Status | Description | Has headers | Schema |
+|------|--------|-------------|:-----------:|--------|
+| [200](#01a072df-d81d-78c8-a72b-6ea167cd50b2-200) | OK | The stored lifetimes, with bounds and defaults |  | [schema](#01a072df-d81d-78c8-a72b-6ea167cd50b2-200-schema) |
+| [401](#01a072df-d81d-78c8-a72b-6ea167cd50b2-401) | Unauthorized | Invalid or expired token |  | [schema](#01a072df-d81d-78c8-a72b-6ea167cd50b2-401-schema) |
+| [403](#01a072df-d81d-78c8-a72b-6ea167cd50b2-403) | Forbidden | Not authorized |  | [schema](#01a072df-d81d-78c8-a72b-6ea167cd50b2-403-schema) |
+| [429](#01a072df-d81d-78c8-a72b-6ea167cd50b2-429) | Too Many Requests | Too many requests |  | [schema](#01a072df-d81d-78c8-a72b-6ea167cd50b2-429-schema) |
+| [500](#01a072df-d81d-78c8-a72b-6ea167cd50b2-500) | Internal Server Error | Internal server error, including a missing row, which the migration seeds and nothing may delete |  | [schema](#01a072df-d81d-78c8-a72b-6ea167cd50b2-500-schema) |
+
+#### Responses
+
+
+##### <span id="01a072df-d81d-78c8-a72b-6ea167cd50b2-200"></span> 200 - The stored lifetimes, with bounds and defaults
+Status: OK
+
+###### <span id="01a072df-d81d-78c8-a72b-6ea167cd50b2-200-schema"></span> Schema
+   
+  
+
+[PayloadTokenLifetimesResponse](#payload-token-lifetimes-response)
+
+##### <span id="01a072df-d81d-78c8-a72b-6ea167cd50b2-401"></span> 401 - Invalid or expired token
+Status: Unauthorized
+
+###### <span id="01a072df-d81d-78c8-a72b-6ea167cd50b2-401-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a072df-d81d-78c8-a72b-6ea167cd50b2-403"></span> 403 - Not authorized
+Status: Forbidden
+
+###### <span id="01a072df-d81d-78c8-a72b-6ea167cd50b2-403-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a072df-d81d-78c8-a72b-6ea167cd50b2-429"></span> 429 - Too many requests
+Status: Too Many Requests
+
+###### <span id="01a072df-d81d-78c8-a72b-6ea167cd50b2-429-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a072df-d81d-78c8-a72b-6ea167cd50b2-500"></span> 500 - Internal server error, including a missing row, which the migration seeds and nothing may delete
+Status: Internal Server Error
+
+###### <span id="01a072df-d81d-78c8-a72b-6ea167cd50b2-500-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+### <span id="01a072df-d81d-7995-ad3e-92a0a4d0a4cf"></span> Update token lifetimes (*01a072df-d81d-7995-ad3e-92a0a4d0a4cf*)
+
+```
+PUT /auth/token_lifetimes
+```
+
+Replace the access and refresh token lifetimes. Applies to tokens issued from now on; a token already issued keeps the expiry it was signed with. The change reaches every replica within its reload interval, or at once where a change signal is available
+
+#### Consumes
+  * application/json
+
+#### Produces
+  * application/json
+
+#### Security Requirements
+  * AccessToken
+
+#### Parameters
+
+| Name | Source | Type | Go type | Separator | Required | Default | Description |
+|------|--------|------|---------|-----------| :------: |---------|-------------|
+| body | `body` | [PayloadUpdateTokenLifetimesRequest](#payload-update-token-lifetimes-request) | `models.PayloadUpdateTokenLifetimesRequest` | | ✓ | | Both lifetimes as Go duration strings |
+
+#### All responses
+| Code | Status | Description | Has headers | Schema |
+|------|--------|-------------|:-----------:|--------|
+| [200](#01a072df-d81d-7995-ad3e-92a0a4d0a4cf-200) | OK | The stored lifetimes after the change |  | [schema](#01a072df-d81d-7995-ad3e-92a0a4d0a4cf-200-schema) |
+| [400](#01a072df-d81d-7995-ad3e-92a0a4d0a4cf-400) | Bad Request | A duration that does not parse, a value outside its bounds, or a refresh lifetime not longer than the access lifetime |  | [schema](#01a072df-d81d-7995-ad3e-92a0a4d0a4cf-400-schema) |
+| [401](#01a072df-d81d-7995-ad3e-92a0a4d0a4cf-401) | Unauthorized | Invalid or expired token |  | [schema](#01a072df-d81d-7995-ad3e-92a0a4d0a4cf-401-schema) |
+| [403](#01a072df-d81d-7995-ad3e-92a0a4d0a4cf-403) | Forbidden | Not authorized |  | [schema](#01a072df-d81d-7995-ad3e-92a0a4d0a4cf-403-schema) |
+| [429](#01a072df-d81d-7995-ad3e-92a0a4d0a4cf-429) | Too Many Requests | Too many requests |  | [schema](#01a072df-d81d-7995-ad3e-92a0a4d0a4cf-429-schema) |
+| [500](#01a072df-d81d-7995-ad3e-92a0a4d0a4cf-500) | Internal Server Error | Internal server error |  | [schema](#01a072df-d81d-7995-ad3e-92a0a4d0a4cf-500-schema) |
+
+#### Responses
+
+
+##### <span id="01a072df-d81d-7995-ad3e-92a0a4d0a4cf-200"></span> 200 - The stored lifetimes after the change
+Status: OK
+
+###### <span id="01a072df-d81d-7995-ad3e-92a0a4d0a4cf-200-schema"></span> Schema
+   
+  
+
+[PayloadTokenLifetimesResponse](#payload-token-lifetimes-response)
+
+##### <span id="01a072df-d81d-7995-ad3e-92a0a4d0a4cf-400"></span> 400 - A duration that does not parse, a value outside its bounds, or a refresh lifetime not longer than the access lifetime
+Status: Bad Request
+
+###### <span id="01a072df-d81d-7995-ad3e-92a0a4d0a4cf-400-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a072df-d81d-7995-ad3e-92a0a4d0a4cf-401"></span> 401 - Invalid or expired token
+Status: Unauthorized
+
+###### <span id="01a072df-d81d-7995-ad3e-92a0a4d0a4cf-401-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a072df-d81d-7995-ad3e-92a0a4d0a4cf-403"></span> 403 - Not authorized
+Status: Forbidden
+
+###### <span id="01a072df-d81d-7995-ad3e-92a0a4d0a4cf-403-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a072df-d81d-7995-ad3e-92a0a4d0a4cf-429"></span> 429 - Too many requests
+Status: Too Many Requests
+
+###### <span id="01a072df-d81d-7995-ad3e-92a0a4d0a4cf-429-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a072df-d81d-7995-ad3e-92a0a4d0a4cf-500"></span> 500 - Internal server error
+Status: Internal Server Error
+
+###### <span id="01a072df-d81d-7995-ad3e-92a0a4d0a4cf-500-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
 ## Models
 
 ### <span id="domain-check"></span> domain.Check
@@ -9471,6 +9641,86 @@ Status: Internal Server Error
 
 
 
+### <span id="payload-token-lifetime-bounds-response"></span> payload.TokenLifetimeBoundsResponse
+
+
+> The bounds every change is validated against, so a client never has to hardcode them
+  
+
+
+
+
+
+**Properties**
+
+| Name | Type | Go type | Required | Default | Description | Example |
+|------|------|---------|:--------:| ------- |-------------|---------|
+| access_token_duration | [PayloadTokenLifetimeBoundsResponse](#payload-token-lifetime-bounds-response)| `PayloadTokenLifetimeBoundsResponse` |  | | Bounds on the access token lifetime |  |
+| refresh_token_duration | [PayloadTokenLifetimeBoundsResponse](#payload-token-lifetime-bounds-response)| `PayloadTokenLifetimeBoundsResponse` |  | | Bounds on the refresh token lifetime |  |
+
+
+
+### <span id="payload-token-lifetime-defaults-response"></span> payload.TokenLifetimeDefaultsResponse
+
+
+> The shipped defaults; "reset to defaults" is a PUT of exactly these
+  
+
+
+
+
+
+**Properties**
+
+| Name | Type | Go type | Required | Default | Description | Example |
+|------|------|---------|:--------:| ------- |-------------|---------|
+| access_token_duration | string (formatted string)| `string` |  | | Seeded access token lifetime | `5m0s` |
+| refresh_token_duration | string (formatted string)| `string` |  | | Seeded refresh token lifetime | `24h0m0s` |
+
+
+
+### <span id="payload-token-lifetime-range"></span> payload.TokenLifetimeRange
+
+
+> The inclusive bounds a lifetime is validated against
+  
+
+
+
+
+
+**Properties**
+
+| Name | Type | Go type | Required | Default | Description | Example |
+|------|------|---------|:--------:| ------- |-------------|---------|
+| max | string (formatted string)| `string` |  | | Longest accepted value, as a Go duration | `48h0m0s` |
+| min | string (formatted string)| `string` |  | | Shortest accepted value, as a Go duration | `2m0s` |
+
+
+
+### <span id="payload-token-lifetimes-response"></span> payload.TokenLifetimesResponse
+
+
+> The lifetimes tokens issued from now on will carry, the bounds a change is validated against, the shipped defaults, and who last changed them
+  
+
+
+
+
+
+**Properties**
+
+| Name | Type | Go type | Required | Default | Description | Example |
+|------|------|---------|:--------:| ------- |-------------|---------|
+| access_token_duration | string (formatted string)| `string` |  | | Lifetime of access tokens issued from now on, as a Go duration | `5m0s` |
+| bounds | [PayloadTokenLifetimesResponse](#payload-token-lifetimes-response)| `PayloadTokenLifetimesResponse` |  | | What a change is validated against |  |
+| defaults | [PayloadTokenLifetimesResponse](#payload-token-lifetimes-response)| `PayloadTokenLifetimesResponse` |  | | The shipped values |  |
+| refresh_token_duration | string (formatted string)| `string` |  | | Lifetime of refresh tokens issued at the next login, as a Go duration | `24h0m0s` |
+| updated_at | date-time (formatted string)| `strfmt.DateTime` |  | | When the row was last changed | `2026-09-05T10:12:00Z` |
+| updated_by | uuid (formatted string)| `strfmt.UUID` |  | | Who last changed it; absent for the seeded values | `019b4b0d-a682-7e34-a20c-c71a7147d7e7` |
+
+
+
 ### <span id="payload-unlink-policies-from-role-request"></span> payload.UnlinkPoliciesFromRoleRequest
 
 
@@ -9728,6 +9978,25 @@ Status: Internal Server Error
 |------|------|---------|:--------:| ------- |-------------|---------|
 | description | string (formatted string)| `string` |  | | Updated role description | `Updated role description` |
 | name | string (formatted string)| `string` |  | | Updated role name | `Updated Editor` |
+
+
+
+### <span id="payload-update-token-lifetimes-request"></span> payload.UpdateTokenLifetimesRequest
+
+
+> Both lifetimes, as Go duration strings. The refresh lifetime must be strictly longer than the access lifetime
+  
+
+
+
+
+
+**Properties**
+
+| Name | Type | Go type | Required | Default | Description | Example |
+|------|------|---------|:--------:| ------- |-------------|---------|
+| access_token_duration | string (formatted string)| `string` |  | | 2m to 48h | `10m0s` |
+| refresh_token_duration | string (formatted string)| `string` |  | | 12h to 168h, and longer than the access token | `72h0m0s` |
 
 
 

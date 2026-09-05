@@ -193,34 +193,6 @@ func (e *InvalidIssuerError) Error() string {
 	}).Error()
 }
 
-// InvalidAccessTokenDurationError represents an invalid access token duration error
-type InvalidAccessTokenDurationError struct {
-	Duration string // optional: the invalid duration
-	Message  string
-}
-
-func (e *InvalidAccessTokenDurationError) Error() string {
-	return (&BaseInvalidFieldError{
-		Field:  "accessTokenDuration",
-		Value:  e.Duration,
-		Reason: e.Message,
-	}).Error()
-}
-
-// InvalidRefreshTokenDurationError represents an invalid refresh token duration error
-type InvalidRefreshTokenDurationError struct {
-	Duration string // optional: the invalid duration
-	Message  string
-}
-
-func (e *InvalidRefreshTokenDurationError) Error() string {
-	return (&BaseInvalidFieldError{
-		Field:  "refreshTokenDuration",
-		Value:  e.Duration,
-		Reason: e.Message,
-	}).Error()
-}
-
 // InvalidSymmetricKeyError represents an invalid symmetric key error
 type InvalidSymmetricKeyError struct {
 	Message string

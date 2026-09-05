@@ -23,8 +23,12 @@ tests:
     input_series:
       - series: 'revoked_access_tokens_staleness_seconds{job="go-rest-api-service-template"}'
         values: "1 8 3 9 2 7 4 10 1 6 3 9 2 8 5 10 1 7 3 9"
+      - series: 'authn_access_token_lifetime_seconds{job="go-rest-api-service-template"}'
+        values: "300x20"
       - series: 'revoked_access_tokens_reload_failures_total{job="go-rest-api-service-template"}'
         values: "0+0x19"
+      - series: 'authn_token_lifetimes_staleness_seconds{job="go-rest-api-service-template"}'
+        values: "5 20 35 50 5 20 35 50 5 20 35 50 5 20 35 50 5 20 35 50"
     alert_rule_test:
       - eval_time: 5m
         alertname: RevokedAccessTokenSetStale
@@ -34,6 +38,12 @@ tests:
         exp_alerts: []
       - eval_time: 5m
         alertname: RevokedAccessTokenReloadsFailing
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: AuthnTokenLifetimesStale
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: AuthnTokenLifetimesNeverLoaded
         exp_alerts: []
 
   # Reloads have stopped: staleness climbs 15s per evaluation, for ever.
@@ -72,17 +82,45 @@ tests:
     input_series:
       - series: 'revoked_access_tokens_staleness_seconds{job="go-rest-api-service-template"}'
         values: "200+0x40"
+      - series: 'authn_access_token_lifetime_seconds{job="go-rest-api-service-template"}'
+        values: "300x40"
     alert_rule_test:
       - eval_time: 5m
         alertname: RevokedAccessTokenSetStalerThanTheTokenLifetime
         exp_alerts: []
 
-  # Past 300s the cross-replica half of the check has stopped buying anything.
+  # The threshold FOLLOWS the setting. The same 200s of staleness is critical
+  # once an operator lowers the lifetime to the 2m minimum -- which is the whole
+  # reason the rule reads the gauge instead of carrying a literal.
+  - interval: 15s
+    name: the critical rule follows a lowered access token lifetime
+    input_series:
+      - series: 'revoked_access_tokens_staleness_seconds{job="go-rest-api-service-template"}'
+        values: "200+0x40"
+      - series: 'authn_access_token_lifetime_seconds{job="go-rest-api-service-template"}'
+        values: "120x40"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: RevokedAccessTokenSetStalerThanTheTokenLifetime
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: authn
+              job: go-rest-api-service-template
+            exp_annotations:
+              summary: "Revoked access token set older than the access token lifetime on "
+              description: >-
+                Staleness is 3m 20s, longer than the configured access token lifetime. A token revoked on another replica now outlives the window this check exists to close, so for tokens revoked elsewhere the service is behaving as though access-token revocation were switched off. The database is the usual cause: the set is rebuilt from it, and the previous copy is deliberately kept rather than cleared, which is why requests still succeed.
+
+  # Past the lifetime the cross-replica half of the check has stopped buying
+  # anything.
   - interval: 15s
     name: staleness past the token lifetime is critical
     input_series:
       - series: 'revoked_access_tokens_staleness_seconds{job="go-rest-api-service-template"}'
         values: "301+1x40"
+      - series: 'authn_access_token_lifetime_seconds{job="go-rest-api-service-template"}'
+        values: "300x40"
     alert_rule_test:
       - eval_time: 2m
         alertname: RevokedAccessTokenSetStalerThanTheTokenLifetime
@@ -94,7 +132,7 @@ tests:
             exp_annotations:
               summary: "Revoked access token set older than the access token lifetime on "
               description: >-
-                Staleness is 5m 9s, longer than the 5m access token lifetime. A token revoked on another replica now outlives the window this check exists to close, so for tokens revoked elsewhere the service is behaving as though access-token revocation were switched off. The database is the usual cause: the set is rebuilt from it, and the previous copy is deliberately kept rather than cleared, which is why requests still succeed.
+                Staleness is 5m 9s, longer than the configured access token lifetime. A token revoked on another replica now outlives the window this check exists to close, so for tokens revoked elsewhere the service is behaving as though access-token revocation were switched off. The database is the usual cause: the set is rebuilt from it, and the previous copy is deliberately kept rather than cleared, which is why requests still succeed.
 
   # Recovery. Verified live too — Postgres came back and staleness dropped from
   # 384s to 4.7s within one reload — but pinning it here means a future edit
@@ -120,6 +158,50 @@ tests:
       - eval_time: 12m
         alertname: RevokedAccessTokenSetStale
         exp_alerts: []
+
+  # Token lifetimes: a stopped ticker, and the never-loaded sentinel.
+  - interval: 15s
+    name: token lifetimes that stop reloading fire after the for delay
+    input_series:
+      - series: 'authn_token_lifetimes_staleness_seconds{job="go-rest-api-service-template"}'
+        values: "15+15x60"
+    alert_rule_test:
+      # Crosses 180 at t=165s; `for: 2m` puts firing at ~t=285s.
+      - eval_time: 3m
+        alertname: AuthnTokenLifetimesStale
+        exp_alerts: []
+      - eval_time: 6m
+        alertname: AuthnTokenLifetimesStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: authn
+              job: go-rest-api-service-template
+            exp_annotations:
+              summary: "Token lifetimes have stopped reloading on "
+              description: >-
+                This replica has not re-read the access and refresh token lifetimes for 6m 15s, against a 1m interval. A change made through PUT /auth/token_lifetimes on another replica is not being applied here. Derived from authn.token.lifetimes.reload.interval.
+
+  - interval: 15s
+    name: never-loaded token lifetimes fire their own alert and not the staleness one
+    input_series:
+      - series: 'authn_token_lifetimes_staleness_seconds{job="go-rest-api-service-template"}'
+        values: "-1x40"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: AuthnTokenLifetimesStale
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: AuthnTokenLifetimesNeverLoaded
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: authn
+              job: go-rest-api-service-template
+            exp_annotations:
+              summary: "Token lifetimes have never loaded on "
+              description: >-
+                This replica is serving without ever having read the token lifetimes. The first load is fatal at startup, so this should be unreachable; there is no fallback value.
 
   # Rate limits.
   #

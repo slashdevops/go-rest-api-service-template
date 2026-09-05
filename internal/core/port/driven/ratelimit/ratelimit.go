@@ -2,7 +2,10 @@ package ratelimit
 
 import (
 	"context"
+
 	"time"
+
+	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/changenotify"
 )
 
 //go:generate go tool mockgen -package=mocks -destination=../../../../../mocks/service/ratelimit.go -source=ratelimit.go Limiter
@@ -53,35 +56,8 @@ type Limiter interface {
 	Close() error
 }
 
-// ChangeNotifier tells other replicas that the rule set changed, so a write on
-// one is not invisible on the others until the reload ticker comes round.
-//
-// # The payload is a SIGNAL, never the rules
-//
-// A message says only "something changed"; the receiver then queries. That is
-// what makes a lost message cost a delay and a duplicated message cost a query,
-// rather than either one installing a wrong rule set. Shipping the rules in the
-// message would make delivery order load-bearing, and pub/sub offers no order
-// across a reconnect.
-//
-// # It is an optimisation, never the mechanism
-//
-// The reload ticker remains the floor. Everything here may fail -- the transport
-// is optional (cache.enabled=false is supported), a publish can fail, a
-// subscription can drop -- and the only consequence must be that a change takes
-// up to ratelimit.reload.interval to appear, which is exactly the behaviour
-// before any of this existed.
-type ChangeNotifier interface {
-	// Notify announces a change. A failure is not fatal to the write that
-	// caused it: the write already succeeded, and the ticker will carry it.
-	Notify(ctx context.Context) error
-
-	// Watch calls onChange once per notification until ctx is done. It blocks,
-	// and it is responsible for reconnecting: a dropped subscription that stays
-	// dropped silently returns this service to ticker-only propagation with
-	// nothing to say so.
-	Watch(ctx context.Context, onChange func()) error
-
-	// Close releases the subscription.
-	Close() error
-}
+// ChangeNotifier is [changenotify.Notifier] under the name this port had before
+// the token-lifetimes mirror needed the same thing. Kept as an alias so the
+// existing adapter, wiring and tests read unchanged; new code should name the
+// changenotify package directly.
+type ChangeNotifier = changenotify.Notifier

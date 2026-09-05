@@ -18,6 +18,7 @@ import (
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driven/throttlememory"
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/middleware"
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/server"
+	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/changenotify"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/ratelimit"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/token"
 	"github.com/slashdevops/go-rest-api-service-template/internal/o11y"
@@ -81,6 +82,19 @@ type App struct {
 	// the floor and this only removes the wait.
 	rateLimitNotifier ratelimit.ChangeNotifier
 	rateLimitMetrics  *middleware.RateLimitMetrics
+
+	// tokenLifetimesNotifier propagates a PUT /auth/token_lifetimes to the
+	// other replicas. Same shape and same "nil without a cache" as the
+	// rate-limit one.
+	tokenLifetimesNotifier changenotify.Notifier
+
+	// changeNotifyValkey is the subscriber client every change notifier shares.
+	// Separate from cacheClient because a subscribed connection accepts
+	// nothing else; owned here so shutdown closes it once.
+	changeNotifyValkey valkey.Client
+
+	// replicaID names this process in the change messages it publishes.
+	replicaID string
 
 	// The JWT signer, held so the HTTP middleware's validators verify tokens
 	// through the same routine the use-cases do. The middleware used to carry
@@ -149,6 +163,13 @@ func (a *App) Run(ctx context.Context) error {
 	// the only source of budgets now, so a replica that begins accepting
 	// requests without it is a replica limiting nothing.
 	if err := a.startRateLimitRulesMirror(ctx); err != nil {
+		return err
+	}
+
+	// Fatal, before serving, for the same reason: the row is the only source
+	// of token lifetimes, and a login served before it loaded would have
+	// nothing to sign with.
+	if err := a.startTokenLifetimesMirror(ctx); err != nil {
 		return err
 	}
 
@@ -221,6 +242,18 @@ func (a *App) Shutdown() error {
 			if err := a.rateLimitNotifier.Close(); err != nil {
 				slog.Error("error stopping the rate-limit change notifier", "error", err)
 			}
+		}
+
+		if a.tokenLifetimesNotifier != nil {
+			if err := a.tokenLifetimesNotifier.Close(); err != nil {
+				slog.Error("error stopping the token lifetimes change notifier", "error", err)
+			}
+		}
+
+		// Both notifiers share this client; each Close above is idempotent on
+		// it, and this is the one that owns it.
+		if a.changeNotifyValkey != nil {
+			a.changeNotifyValkey.Close()
 		}
 
 		// Stop the login throttle's background eviction goroutine

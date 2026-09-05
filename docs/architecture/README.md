@@ -280,6 +280,11 @@ Read it alongside [Adding a new entity](./adding-an-entity.md).
   token is single-use and what a replayed one costs, the single verification
   routine and the claims it checks, how a signing key is rotated without
   downtime, and why no credential travels in a URL.
+- [Token lifetimes](./token-lifetimes.md) — the access and refresh lifetimes
+  as one database row: the per-replica mirror and the change signal, what a
+  change does to tokens already issued and to a session mid-rotation, the
+  bounds and why each number, why the revocation mirror selects by token type,
+  and the alert that follows the live value instead of a literal.
 - [Database migrations](./database-migrations.md) — the 16-file set and why it
   is numbered contiguously, why editing
   an applied migration fails silently, the one shared system-row guard, the

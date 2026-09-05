@@ -135,6 +135,18 @@ func (a *App) initRepositories() error {
 		return fmt.Errorf("failed to create rate limits repository: %w", err)
 	}
 
+	a.repositories.TokenLifetimes, err = repositorypg.NewTokenLifetimesRepository(
+		repositorypg.TokenLifetimesRepositoryConfig{
+			DB:              a.dbPool,
+			MaxPingTimeout:  a.configs.Database.MaxPingTimeout.Value,
+			MaxQueryTimeout: a.configs.Database.MaxQueryTimeout.Value,
+			OT:              a.telemetry,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create token lifetimes repository: %w", err)
+	}
+
 	a.repositories.IDPTypes, err = repositorypg.NewIDPTypesRepository(
 		repositorypg.IDPTypesRepositoryConfig{
 			DB:              a.dbPool,

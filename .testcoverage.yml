@@ -91,6 +91,10 @@ override:
     threshold: 80 # measured 80.5%
   - path: ^internal/adapter/driving/http/middleware$
     threshold: 70 # measured 79.7%
+  # changenotifyvalkey: NO floor, for the same reason ratelimitvalkey's is
+  # lowered -- its tests need a Valkey and the PR runner deliberately has none,
+  # so CI measures 4.7% where a developer machine with the dev stack measures
+  # 76.7%. Re-enable the service in pr.yaml and this becomes 70.
   - path: ^internal/app$
     threshold: 40 # measured 47.1%
   - path: ^internal/adapter/driven/notifieremail/templates$

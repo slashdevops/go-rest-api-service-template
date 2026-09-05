@@ -1,4 +1,4 @@
-package ratelimitvalkey
+package changenotifyvalkey
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 
 	"github.com/valkey-io/valkey-go"
 
-	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/ratelimit"
+	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/changenotify"
 )
 
 // NotifierConfig configures [NewNotifier].
@@ -22,8 +22,15 @@ type NotifierConfig struct {
 	Client valkey.Client
 
 	// Channel is the pub/sub channel. Every replica of one deployment must use
-	// the same one, and two deployments sharing a Valkey must not.
+	// the same one, and two deployments sharing a Valkey must not. Each
+	// mirrored thing has its own -- see [RateLimitRulesChannel] and
+	// [TokenLifetimesChannel] -- so a write to one does not reload the other.
+	// Required.
 	Channel string
+
+	// Subject names what the channel carries, for log lines only: "rate-limit
+	// rules", "token lifetimes". Required.
+	Subject string
 
 	// InstanceID identifies this replica, so it can recognise the echo of its
 	// own message. It has already reloaded by then, so acting on it would be a
@@ -35,7 +42,11 @@ type NotifierConfig struct {
 	RetryInterval time.Duration
 }
 
-// Notifier is a [ratelimit.ChangeNotifier] over Valkey pub/sub.
+// Notifier is a [changenotify.Notifier] over Valkey pub/sub.
+//
+// One instance per mirrored thing. It started life inside ratelimitvalkey as
+// the rate-limit rule notifier and moved here, unchanged in mechanism, when the
+// token lifetimes needed the same signal on a channel of their own.
 //
 // # Why pub/sub and not a queue
 //
@@ -46,14 +57,21 @@ type NotifierConfig struct {
 type Notifier struct {
 	client     valkey.Client
 	channel    string
+	subject    string
 	instanceID string
 	retry      time.Duration
 }
 
-var _ ratelimit.ChangeNotifier = (*Notifier)(nil)
+var _ changenotify.Notifier = (*Notifier)(nil)
 
-// DefaultChannel is the pub/sub channel used when none is configured.
-const DefaultChannel = "go-rest-api-service-template:ratelimit:rules"
+// The channels, one per mirrored thing.
+const (
+	// RateLimitRulesChannel carries "the rate_limits table changed".
+	RateLimitRulesChannel = "go-rest-api-service-template:ratelimit:rules"
+
+	// TokenLifetimesChannel carries "the authn_token_lifetimes row changed".
+	TokenLifetimesChannel = "go-rest-api-service-template:authn:token_lifetimes"
+)
 
 // defaultRetryInterval bounds how fast a replica reconnects to a Valkey that is
 // refusing. Short enough that recovery is not noticed, long enough that a
@@ -63,12 +81,15 @@ const defaultRetryInterval = 2 * time.Second
 // NewNotifier builds the notifier.
 func NewNotifier(conf NotifierConfig) (*Notifier, error) {
 	if conf.Client == nil {
-		return nil, fmt.Errorf("rate-limit notifier: valkey client is nil")
+		return nil, fmt.Errorf("change notifier: valkey client is nil")
 	}
 
-	channel := conf.Channel
-	if channel == "" {
-		channel = DefaultChannel
+	if conf.Channel == "" {
+		return nil, fmt.Errorf("change notifier: channel is required; two mirrors sharing one would reload each other")
+	}
+
+	if conf.Subject == "" {
+		return nil, fmt.Errorf("change notifier: subject is required, it names the channel in every log line")
 	}
 
 	retry := conf.RetryInterval
@@ -78,22 +99,23 @@ func NewNotifier(conf NotifierConfig) (*Notifier, error) {
 
 	return &Notifier{
 		client:     conf.Client,
-		channel:    channel,
+		channel:    conf.Channel,
+		subject:    conf.Subject,
 		instanceID: conf.InstanceID,
 		retry:      retry,
 	}, nil
 }
 
-// Notify announces that the rule set changed.
+// Notify announces that the subject changed.
 //
-// The payload is this replica's id and nothing else. It is not the rules, and it
-// is not even which rule: a receiver queries for the whole set, so a message
+// The payload is this replica's id and nothing else. It is not the value, and
+// it is not even what changed: a receiver reloads the whole thing, so a message
 // lost in a reconnect costs a delay and a message delivered twice costs a query.
 func (ref *Notifier) Notify(ctx context.Context) error {
 	cmd := ref.client.B().Publish().Channel(ref.channel).Message(ref.instanceID).Build()
 
 	if err := ref.client.Do(ctx, cmd).Error(); err != nil {
-		return fmt.Errorf("rate-limit notifier: publishing to %s: %w", ref.channel, err)
+		return fmt.Errorf("%s notifier: publishing to %s: %w", ref.subject, ref.channel, err)
 	}
 
 	return nil
@@ -123,7 +145,7 @@ func (ref *Notifier) Watch(ctx context.Context, onChange func()) error {
 			// A payload that does not match is treated as "somebody changed
 			// something", NOT parsed for meaning -- the message is a signal, and
 			// trusting its content is what would let a malformed or replayed
-			// message install a wrong rule set.
+			// message install a wrong value.
 			if ref.instanceID != "" && msg.Message == ref.instanceID {
 				return
 			}
@@ -138,10 +160,10 @@ func (ref *Notifier) Watch(ctx context.Context, onChange func()) error {
 		if err != nil && !errors.Is(err, context.Canceled) {
 			if !announced {
 				slog.WarnContext(
-					ctx, "rate-limit rule notifications are not being received; falling back to the reload interval",
+					ctx, ref.subject+" change notifications are not being received; falling back to the reload interval",
 					"error", err,
 					"channel", ref.channel,
-					"consequence", "a rule written on another replica takes up to ratelimit.reload.interval to apply here",
+					"consequence", "a change written on another replica takes up to the reload interval to apply here",
 				)
 
 				announced = true

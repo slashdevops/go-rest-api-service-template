@@ -8,11 +8,12 @@ args_bin = [
   "-log.add.source=true",
   "-opentelemetry.trace.exporter=otlp-http",
   "-opentelemetry.metric.exporter=otlp-http",
-  # No token-lifetime overrides. Dev runs the shipped defaults -- a 5 minute
-  # access token and a 24 hour refresh token -- because the access token's
-  # lifetime IS the residual-access window after a logout, and a 24h override
-  # hid every consequence of that locally: refresh was never exercised, and
-  # the frontend bug that made refresh 404 survived because nothing reached it.
+  # The token lifetimes are not flags any more: they are a database row seeded
+  # at 5m / 24h and edited through PUT /auth/token_lifetimes. Dev runs the seed,
+  # for the reason the old 24h override was removed -- the access token's
+  # lifetime IS the residual-access window after a logout, and a long override
+  # hid every consequence of that locally: refresh was never exercised, and the
+  # frontend bug that made refresh 404 survived because nothing reached it.
   "-authn.private.key.file=./certs/jwt.key",
   "-authn.public.key.file=./certs/jwt.pub",
   "-authn.symmetric.key.file=./certs/aes-256-symmetric-hex.key",

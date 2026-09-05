@@ -17,26 +17,12 @@ import (
 	"github.com/slashdevops/go-rest-api-service-template/internal/o11y"
 )
 
-// clockSkewMargin widens the reload window past the access-token lifetime.
-//
-// expires_at is written from this process's clock and compared against the
-// database's NOW(), so the two only agree to within whatever skew exists
-// between them. Erring wide costs a few extra rows in the set; erring narrow
-// would silently omit a revocation, which is the one failure this whole
-// mechanism exists to prevent.
-const clockSkewMargin = time.Minute
-
 // RevokedAccessTokensConfig configures [RevokedAccessTokens].
 type RevokedAccessTokensConfig struct {
 	Repository repository.RevokedTokens
 	OT         *o11y.OpenTelemetry
 
 	MetricsPrefix string
-
-	// AccessTokenDuration bounds the reload window. See [clockSkewMargin] and
-	// [repository.RevokedTokens.SelectUnexpiredJTIs] for why this, and not the
-	// refresh lifetime, is the right horizon.
-	AccessTokenDuration time.Duration
 
 	// ReloadInterval is how often the set is rebuilt from the store, and
 	// therefore how stale a revocation made on another replica may be.
@@ -55,7 +41,7 @@ type RevokedAccessTokensConfig struct {
 //
 // A mirror changes the trade because the set is small by construction. It holds
 // only revoked-and-unexpired access tokens, so it is bounded by *logouts in the
-// last access-token lifetime* — five minutes by default — not by traffic, not
+// last access-token lifetime* — a runtime setting, five minutes by default — not by traffic, not
 // by sessions, and not by the refresh rotation that writes a row per refresh.
 //
 // # What it costs, stated plainly
@@ -110,7 +96,6 @@ type RevokedAccessTokens struct {
 
 	reloadFailures atomic.Int64
 
-	horizon        time.Duration
 	reloadInterval time.Duration
 }
 
@@ -125,10 +110,6 @@ func NewRevokedAccessTokens(conf RevokedAccessTokensConfig) (*RevokedAccessToken
 		return nil, &domain.InvalidOTConfigurationError{Message: "OpenTelemetry is required"}
 	}
 
-	if conf.AccessTokenDuration <= 0 {
-		return nil, &domain.InvalidInputError{Message: "AccessTokenDuration must be positive"}
-	}
-
 	if conf.ReloadInterval <= 0 {
 		return nil, &domain.InvalidInputError{Message: "ReloadInterval must be positive"}
 	}
@@ -136,7 +117,6 @@ func NewRevokedAccessTokens(conf RevokedAccessTokensConfig) (*RevokedAccessToken
 	ref := &RevokedAccessTokens{
 		repository:     conf.Repository,
 		ot:             conf.OT,
-		horizon:        conf.AccessTokenDuration + clockSkewMargin,
 		reloadInterval: conf.ReloadInterval,
 	}
 
@@ -256,7 +236,7 @@ func (ref *RevokedAccessTokens) Add(jti uuid.UUID, expiresAt time.Time) {
 // emptied itself when the database blinked would re-validate every token
 // anybody had logged out of.
 func (ref *RevokedAccessTokens) Reload(ctx context.Context) error {
-	jtis, err := ref.repository.SelectUnexpiredJTIs(ctx, ref.horizon)
+	jtis, err := ref.repository.SelectUnexpiredJTIs(ctx, domain.TokenTypeAccess)
 	if err != nil {
 		ref.reloadFailures.Add(1)
 

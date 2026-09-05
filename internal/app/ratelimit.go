@@ -6,8 +6,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
-	"uuid"
 
+	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driven/changenotifyvalkey"
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driven/ratelimitbreaker"
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driven/ratelimitmemory"
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driven/ratelimitvalkey"
@@ -93,16 +93,19 @@ func (a *App) initRateLimitRules() error {
 		// A SECOND client, deliberately. valkey-go puts a connection into
 		// subscribe mode, where it accepts nothing but further subscription
 		// commands -- sharing the counter's client would stall every INCR the
-		// limiter makes.
-		subClient, err := a.initCacheClient()
+		// limiter makes. It is shared with every other change notifier, which
+		// is fine: each Receive takes a dedicated connection from the client.
+		subClient, err := a.changeNotifyClient()
 		if err != nil {
 			return fmt.Errorf("error creating the rate-limit notification client: %w", err)
 		}
 
 		if subClient != nil {
-			notifier, err := ratelimitvalkey.NewNotifier(ratelimitvalkey.NotifierConfig{
+			notifier, err := changenotifyvalkey.NewNotifier(changenotifyvalkey.NotifierConfig{
 				Client:     subClient,
-				InstanceID: uuid.NewV7().String(),
+				Channel:    changenotifyvalkey.RateLimitRulesChannel,
+				Subject:    "rate-limit rules",
+				InstanceID: a.instanceID(),
 			})
 			if err != nil {
 				return fmt.Errorf("error creating the rate-limit notifier: %w", err)
