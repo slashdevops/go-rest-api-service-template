@@ -248,7 +248,8 @@ liveness must check nothing, is in
       or deliberately empty.
 - [ ] `http.server.tls.enabled=true` with a certificate and key, unless
       something in front terminates TLS.
-- [ ] `authn.access.token.duration` left short. With
+- [ ] The access-token lifetime left short. It is a runtime setting now —
+      `GET`/`PUT /auth/token_lifetimes`, seeded at 5m. With
       `authn.access.token.revocation.enabled` off it is the whole residual-access
       window after a logout; with it on, the default, it still bounds what a
       leaked token is worth.

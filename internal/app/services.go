@@ -431,12 +431,19 @@ func (a *App) initAuthServices(
 			"grace", a.configs.Authn.RefreshTokenRotationGrace.Value)
 	} else {
 		slog.Warn("refresh token rotation disabled; a stolen refresh token stays usable for its whole life and its reuse cannot be detected",
-			"refreshTokenDuration", a.configs.Authn.RefreshTokenDuration.Value)
+			"refreshTokenLifetime", "a runtime setting: GET /auth/token_lifetimes")
 	}
 
 	// Before the authn service, which takes it as a dependency: a logout has to
 	// add the token it revoked to the local set before it answers.
 	if err := a.initRevokedAccessTokens(); err != nil {
+		return err
+	}
+
+	// Before the authn service too: it signs with whatever the mirror holds,
+	// read at issuance. The row itself is loaded in Run, synchronously and
+	// fatally, before the server accepts a request.
+	if err := a.initTokenLifetimes(); err != nil {
 		return err
 	}
 
@@ -470,8 +477,7 @@ func (a *App) initAuthServices(
 		Notifier:                  emailNotifier,
 		TokenSigner:               tokenSigner,
 		Issuer:                    a.configs.Authn.Issuer.Value,
-		AccessTokenDuration:       a.configs.Authn.AccessTokenDuration.Value,
-		RefreshTokenDuration:      a.configs.Authn.RefreshTokenDuration.Value,
+		TokenLifetimes:            a.services.TokenLifetimesMirror,
 		RefreshRotationEnabled:    a.configs.Authn.RefreshTokenRotationEnabled.Value,
 		RefreshRotationGrace:      a.configs.Authn.RefreshTokenRotationGrace.Value,
 		UserVerificationTokenTTL:  a.configs.Authn.UserVerificationTokenTTL.Value,

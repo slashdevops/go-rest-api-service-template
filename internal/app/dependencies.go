@@ -28,6 +28,7 @@ type Repositories struct {
 	IDPs            *repositorypg.IDPsRepository
 	ResourcesLimits *repositorypg.ResourcesLimitsRepository
 	RateLimits      *repositorypg.RateLimitsRepository
+	TokenLifetimes  *repositorypg.TokenLifetimesRepository
 }
 
 // Services holds all service instances for business logic layer.
@@ -73,6 +74,12 @@ type Services struct {
 	// against. nil when ratelimit.enabled is false, which is how rule
 	// enforcement is switched off — the flag limiter then runs alone.
 	RateLimitRules *usecase.RateLimitRules
+
+	// TokenLifetimes is the GET/PUT use case behind /auth/token_lifetimes, and
+	// TokenLifetimesMirror the in-memory row the authn service signs with.
+	// Never nil: there is no switch, because there is no fallback lifetime.
+	TokenLifetimes       *usecase.TokenLifetimesService
+	TokenLifetimesMirror *usecase.TokenLifetimes
 }
 
 // Handlers holds all HTTP handler instances for the presentation layer.
@@ -86,6 +93,7 @@ type Services struct {
 // AppBuilder.WithHandlers().
 type Handlers struct {
 	RateLimits      *handler.RateLimitsHandler
+	TokenLifetimes  *handler.TokenLifetimesHandler
 	Version         *handler.VersionHandler
 	Health          *handler.HealthHandler
 	Users           *handler.UsersHandler

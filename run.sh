@@ -11,6 +11,8 @@
 # The rule is the same one that removed the old 24h access-token override:
 # a dev stack that disagrees with production hides exactly the bugs production
 # will have. Where a value has a shipped default, dev runs the shipped default.
+# (The token lifetimes are a database row now, seeded at 5m / 24h and edited
+# through PUT /auth/token_lifetimes; there is no flag to override.)
 #
 # Prefer `air` for day-to-day work -- it rebuilds on save. Use this script when
 # you want a plain `go run` with no file watching, e.g. under a debugger.

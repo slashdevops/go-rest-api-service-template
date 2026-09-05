@@ -44,7 +44,12 @@ type RevokedTokens interface {
 	//
 	// Revoking an already-revoked token is not an error. Logging out twice, or
 	// two tabs logging out at once, must both succeed.
-	Revoke(ctx context.Context, jti, userID uuid.UUID, expiresAt time.Time) error
+	//
+	// tokenType says what kind of token the row names. It is what lets the
+	// access-token mirror select exactly its own rows without a horizon on
+	// expires_at -- see [RevokedTokens.SelectUnexpiredJTIs] for why the horizon
+	// stopped being safe.
+	Revoke(ctx context.Context, jti, userID uuid.UUID, tokenType domain.TokenType, expiresAt time.Time) error
 
 	// Rotate records that oldJTI was spent on a refresh which issued newJTI in
 	// its place. The old token is refused from this point on, and the link to
@@ -69,7 +74,7 @@ type RevokedTokens interface {
 	// userID may be uuid.Nil() for a token that names no account — an OAuth
 	// state token's subject is the event that started the flow, not a user, and
 	// during a registration flow no user exists yet.
-	Consume(ctx context.Context, jti, userID uuid.UUID, expiresAt time.Time) (bool, error)
+	Consume(ctx context.Context, jti, userID uuid.UUID, tokenType domain.TokenType, expiresAt time.Time) (bool, error)
 
 	// Get returns what is known about jti, or nil when the token has not been
 	// revoked and has not been spent — the ordinary case.
@@ -88,25 +93,27 @@ type RevokedTokens interface {
 	// nothing in the request distinguishes them.
 	RevokeChain(ctx context.Context, jti, userID uuid.UUID, expiresAt time.Time) (uuid.UUID, error)
 
-	// SelectUnexpiredJTIs returns every jti that is still refused and whose
-	// token expires within horizon from now.
+	// SelectUnexpiredJTIs returns every jti of the given type that is still
+	// refused: revoked, and not yet past its own expiry. It is what the
+	// access-token mirror rebuilds itself from.
 	//
-	// It exists for the in-memory mirror that keeps the revocation check off
-	// the hot path, and the horizon is what keeps that mirror small. Rotation
-	// writes a row per refresh, so the full unexpired set is bounded by the
-	// REFRESH lifetime — potentially hundreds of rows per session per day. An
-	// access token, though, cannot outlive its own lifetime, so every revoked
-	// access token that still matters has an expires_at inside
-	// (now, now+accessTokenLifetime]. Asking for exactly that window is not an
-	// approximation: it cannot omit a live access token, and it excludes almost
-	// every refresh row.
+	// # Why it selects by TYPE and not by a horizon on expires_at
 	//
-	// The caller must pass a horizon no shorter than the lifetime of the tokens
-	// it intends to check. A credential that outlives it — a personal access
-	// token, up to a year — cannot be covered by a mirror built this way and
-	// must be revoked some other way. PA tokens are: deleting the row is what
-	// revokes them, checked directly.
-	SelectUnexpiredJTIs(ctx context.Context, horizon time.Duration) ([]uuid.UUID, error)
+	// It used to take a horizon equal to the access-token lifetime and return
+	// every row expiring inside it. That was exact only while the lifetime was
+	// a startup constant shorter than any refresh token: the table takes a row
+	// per refresh rotation, and the short window is what kept those out. With
+	// the lifetime a runtime setting that may be raised to 48h the trick fails
+	// twice -- a raise leaves a horizon shorter than the tokens it must cover,
+	// silently omitting revocations, and a 24h access lifetime admits every
+	// rotation row, growing the set to "rotations in the last day". Naming the
+	// type on the row removes the coupling: the mirror asks for exactly the
+	// unexpired ACCESS rows, whatever the lifetime is or becomes.
+	//
+	// A credential that is neither -- a personal access token, up to a year --
+	// is not covered by a mirror at all and is revoked by deleting its row,
+	// checked directly.
+	SelectUnexpiredJTIs(ctx context.Context, tokenType domain.TokenType) ([]uuid.UUID, error)
 
 	// DeleteExpired removes rows whose token has expired on its own and returns
 	// how many went. It is safe to call at any time and from anywhere.

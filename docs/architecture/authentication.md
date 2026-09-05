@@ -9,6 +9,10 @@ at identity.
 
 ## Token classes
 
+> How long the access and refresh tokens live, where that number is stored,
+> and what a change does to tokens already issued is its own document:
+> [Token lifetimes](./token-lifetimes.md).
+
 Every token is an ES256-signed JWT produced by the same signer
 ([`tokenjwt`](../../internal/adapter/driven/tokenjwt/adapter.go)) and told apart
 by its `token_type` claim. There is no other kind of credential.
@@ -473,10 +477,12 @@ replica whose reloads have stopped keeps answering, confidently, from a snapshot
 that ages every second. No request fails, no error rate moves, and the component
 that would tell you is the one that has stopped working.
 
-The thresholds assume the shipped defaults. Change
-`authn.access.token.duration` or
+The thresholds assume the shipped reload interval; change
 `authn.access.token.revocation.reload.interval` and the numbers here have to
-change with them; each rule's comment says which setting it came from.
+change with it. The access-token *lifetime* is no longer a literal in any rule:
+it is a runtime setting, so the critical rule compares staleness with the
+`authn_access_token_lifetime_seconds` gauge each replica exports — see
+[Token lifetimes](./token-lifetimes.md).
 
 **The rules are unit-tested.** `make check-alerts` runs `promtool check rules`
 and `promtool test rules` against
@@ -906,8 +912,8 @@ they last up to a year and have to be reissued. This is a one-time cost of
 
 | Setting | Default | What it does |
 | --- | --- | --- |
-| `authn.access.token.duration` | `5m` | also the residual-access window after logout; dev no longer overrides it |
-| `authn.refresh.token.duration` | `24h` | how long a session can be renewed for; carried across every rotation |
+| *(access and refresh lifetimes)* | `5m` / `24h` seeded | **not flags any more** — one database row, edited through `PUT /auth/token_lifetimes`; see [Token lifetimes](./token-lifetimes.md) |
+| `authn.token.lifetimes.reload.interval` | `1m` | how often each replica re-reads that row; the floor for propagation without a cache |
 | `authn.refresh.token.rotation.enabled` | `true` | spend each refresh token and issue a successor |
 | `authn.refresh.token.rotation.grace` | `30s` | how long a spent token still answers with its successor |
 | `authn.revoked.tokens.sweep.interval` | `1h` | how often expired denylist rows are deleted; `0` disables |

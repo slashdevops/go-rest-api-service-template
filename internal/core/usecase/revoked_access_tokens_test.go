@@ -21,15 +21,15 @@ type fakeRevokedTokens struct {
 	jtis   []uuid.UUID
 	err    error
 	calls  int
-	lastAt time.Duration
+	lastAt domain.TokenType
 }
 
-func (f *fakeRevokedTokens) SelectUnexpiredJTIs(_ context.Context, horizon time.Duration) ([]uuid.UUID, error) {
+func (f *fakeRevokedTokens) SelectUnexpiredJTIs(_ context.Context, tokenType domain.TokenType) ([]uuid.UUID, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
 	f.calls++
-	f.lastAt = horizon
+	f.lastAt = tokenType
 
 	if f.err != nil {
 		return nil, f.err
@@ -53,7 +53,7 @@ func (f *fakeRevokedTokens) fail(err error) {
 	f.err = err
 }
 
-func (f *fakeRevokedTokens) Revoke(context.Context, uuid.UUID, uuid.UUID, time.Time) error {
+func (f *fakeRevokedTokens) Revoke(context.Context, uuid.UUID, uuid.UUID, domain.TokenType, time.Time) error {
 	panic("the mirror must not write")
 }
 
@@ -61,7 +61,7 @@ func (f *fakeRevokedTokens) Rotate(context.Context, uuid.UUID, uuid.UUID, uuid.U
 	panic("the mirror must not write")
 }
 
-func (f *fakeRevokedTokens) Consume(context.Context, uuid.UUID, uuid.UUID, time.Time) (bool, error) {
+func (f *fakeRevokedTokens) Consume(context.Context, uuid.UUID, uuid.UUID, domain.TokenType, time.Time) (bool, error) {
 	panic("the mirror must not write")
 }
 
@@ -88,10 +88,9 @@ func newTestMirror(t *testing.T, repo *fakeRevokedTokens) *RevokedAccessTokens {
 	}
 
 	mirror, err := NewRevokedAccessTokens(RevokedAccessTokensConfig{
-		Repository:          repo,
-		OT:                  ot,
-		AccessTokenDuration: 5 * time.Minute,
-		ReloadInterval:      10 * time.Second,
+		Repository:     repo,
+		OT:             ot,
+		ReloadInterval: 10 * time.Second,
 	})
 	if err != nil {
 		t.Fatalf("NewRevokedAccessTokens: %v", err)
@@ -224,13 +223,14 @@ func TestExpiredLocalEntriesArePruned(t *testing.T) {
 	}
 }
 
-// TestTheReloadWindowCoversTheAccessTokenLifetime pins the horizon.
+// TestTheReloadSelectsAccessTokensByType pins what the mirror asks for.
 //
-// The window is what keeps the set small, and it is only safe because an access
-// token cannot outlive its own lifetime. A horizon SHORTER than that lifetime
-// would silently omit live revocations — the mirror would look fine, report a
-// healthy size and a fresh staleness, and let revoked tokens through.
-func TestTheReloadWindowCoversTheAccessTokenLifetime(t *testing.T) {
+// It used to ask for a HORIZON on expires_at equal to the access-token
+// lifetime, which was exact only while that lifetime was a startup constant
+// shorter than any refresh token. The lifetime is a runtime setting now, so the
+// mirror asks for the rows of its own type and nothing about the lifetime can
+// leave a revocation outside the window.
+func TestTheReloadSelectsAccessTokensByType(t *testing.T) {
 	t.Parallel()
 
 	repo := &fakeRevokedTokens{}
@@ -241,11 +241,11 @@ func TestTheReloadWindowCoversTheAccessTokenLifetime(t *testing.T) {
 	}
 
 	repo.mu.Lock()
-	horizon := repo.lastAt
+	asked := repo.lastAt
 	repo.mu.Unlock()
 
-	if horizon <= 5*time.Minute {
-		t.Errorf("reload horizon = %v, want strictly more than the 5m access-token lifetime; equal is not enough because expires_at is written from this process's clock and compared against the database's", horizon)
+	if asked != domain.TokenTypeAccess {
+		t.Errorf("reload asked for %q, want %q; any other selection either misses access revocations or drags refresh rotations into the set", asked, domain.TokenTypeAccess)
 	}
 }
 

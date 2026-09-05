@@ -56,7 +56,23 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
     --
     -- Deliberately not a foreign key to revoked_tokens(jti): the successor has no row until it is
     -- itself revoked, so a self-reference would reject every rotation.
-    replaced_by uuid
+    replaced_by uuid,
+
+    -- WHAT KIND OF TOKEN the row names, from domain.TokenType. It is what lets the revoked-ACCESS-
+    -- token mirror select exactly its own rows -- "token_type = 'access' AND expires_at > NOW()" --
+    -- rather than by a horizon on expires_at equal to the access lifetime. That horizon was exact
+    -- only while the lifetime was a startup constant shorter than any refresh token; it is a runtime
+    -- setting now (authn_token_lifetimes) that may be raised to 48h, and a raised lifetime would
+    -- leave the horizon shorter than the tokens it must cover, silently omitting revocations.
+    --
+    -- NO DEFAULT, deliberately: a writer that forgets to say what it is revoking must fail at the
+    -- INSERT rather than be quietly filed as one type or the other.
+    token_type VARCHAR(20) NOT NULL,
+
+    CONSTRAINT chk_revoked_tokens_token_type CHECK (
+        token_type IN ('access', 'refresh', 'email_verification', 'password_reset',
+                       'personal_access', 'idp_signin', 'idp_register')
+    )
 );
 
 -- Supports the sweep of expired rows. The lookup by jti uses the primary key.
@@ -67,6 +83,12 @@ CREATE INDEX idx_revoked_tokens_expires_at ON revoked_tokens (expires_at);
 
 -- Answers "end every session for this user", and makes the table readable during an incident.
 CREATE INDEX idx_revoked_tokens_users_id ON revoked_tokens (users_id);
+
+-- The access-token mirror's query, and nothing else: unexpired ACCESS rows. A partial index keeps
+-- it a range scan over the handful of rows that matter rather than over every rotation row.
+CREATE INDEX idx_revoked_tokens_access_expires_at
+    ON revoked_tokens (expires_at)
+    WHERE token_type = 'access';
 
 -- +goose StatementEnd
 

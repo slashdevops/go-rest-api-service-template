@@ -1,13 +1,67 @@
 //go:build unit
 
-package ratelimitvalkey
+package changenotifyvalkey
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"os"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/valkey-io/valkey-go"
 )
+
+// newTestClient connects to a real Valkey, or SKIPS. A skipped test reports
+// ok, so the Makefile sets VALKEY_TEST_CA from the dev stack and CI provides a
+// plaintext service container -- see ratelimitvalkey/adapter_test.go, whose
+// helper this mirrors, for why neither is optional.
+func newTestClient(t *testing.T) valkey.Client {
+	t.Helper()
+
+	addr := os.Getenv("VALKEY_TEST_ADDR")
+	if addr == "" {
+		addr = "127.0.0.1:6379"
+	}
+
+	opt := valkey.ClientOption{
+		InitAddress:  []string{addr},
+		DisableRetry: true,
+	}
+
+	if ca := os.Getenv("VALKEY_TEST_CA"); ca != "" {
+		pem, err := os.ReadFile(ca)
+		if err != nil {
+			t.Skipf("valkey CA unreadable: %v", err)
+		}
+
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(pem) {
+			t.Skip("valkey CA is not a PEM bundle")
+		}
+
+		opt.TLSConfig = &tls.Config{RootCAs: pool, MinVersion: tls.VersionTLS12}
+	}
+
+	client, err := valkey.NewClient(opt)
+	if err != nil {
+		t.Skipf("valkey unavailable at %s: %v", addr, err)
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancel()
+
+	if err := client.Do(ctx, client.B().Ping().Build()).Error(); err != nil {
+		client.Close()
+		t.Skipf("valkey unreachable at %s: %v", addr, err)
+	}
+
+	t.Cleanup(client.Close)
+
+	return client
+}
 
 // waitFor polls until cond holds or the budget runs out, so a test does not
 // depend on how fast a real Valkey delivers.
@@ -32,6 +86,7 @@ func newTestNotifier(t *testing.T, channel, instanceID string) *Notifier {
 	n, err := NewNotifier(NotifierConfig{
 		Client:     newTestClient(t),
 		Channel:    channel,
+		Subject:    "test",
 		InstanceID: instanceID,
 	})
 	if err != nil {
@@ -176,7 +231,28 @@ func waitForSubscription(t *testing.T, n *Notifier, channel string) {
 func TestNewNotifierRejectsANilClient(t *testing.T) {
 	t.Parallel()
 
-	if _, err := NewNotifier(NotifierConfig{}); err == nil {
+	if _, err := NewNotifier(NotifierConfig{Channel: "x", Subject: "x"}); err == nil {
 		t.Fatal("a nil client must be refused")
+	}
+}
+
+// Two mirrors on one channel would reload each other on every write, and a
+// notifier with no subject cannot say which one is failing. Both are refused
+// at construction rather than discovered in a log line that names nothing.
+func TestNewNotifierRequiresAChannelAndASubject(t *testing.T) {
+	t.Parallel()
+
+	client := newTestClient(t)
+
+	if _, err := NewNotifier(NotifierConfig{Client: client, Subject: "x"}); err == nil {
+		t.Fatal("a missing channel must be refused")
+	}
+
+	if _, err := NewNotifier(NotifierConfig{Client: client, Channel: "x"}); err == nil {
+		t.Fatal("a missing subject must be refused")
+	}
+
+	if RateLimitRulesChannel == TokenLifetimesChannel {
+		t.Fatal("the two mirrors must not share a channel")
 	}
 }

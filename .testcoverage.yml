@@ -44,7 +44,7 @@ threshold:
   # profiles in `profile` above. Merging the integration test binary's own
   # profile does not work -- it records what ran inside the test process, and
   # the handlers and use-cases run in the other one.
-  total: 19
+  total: 20
 
 # Per-package floors, generated from measured coverage and rounded DOWN to a
 # ten so ordinary churn does not trip them. These are the packages unit tests
@@ -91,6 +91,8 @@ override:
     threshold: 80 # measured 80.5%
   - path: ^internal/adapter/driving/http/middleware$
     threshold: 70 # measured 79.7%
+  - path: ^internal/adapter/driven/changenotifyvalkey$
+    threshold: 70 # measured 76.7% with a Valkey; its tests skip without one
   - path: ^internal/app$
     threshold: 40 # measured 47.1%
   - path: ^internal/adapter/driven/notifieremail/templates$

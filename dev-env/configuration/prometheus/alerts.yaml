@@ -7,11 +7,17 @@
 #
 # The thresholds below assume the shipped defaults:
 #
-#   authn.access.token.duration                     5m
 #   authn.access.token.revocation.reload.interval  10s
+#   authn.token.lifetimes.reload.interval           1m
 #
 # If you change either, change the numbers here to match — the comments on each
 # rule say which setting it is derived from.
+#
+# The access-token LIFETIME is not a setting any more: it lives in the database,
+# is edited through PUT /auth/token_lifetimes, and may change at any time. The
+# rules that used to carry it as a literal (300) now read it from the
+# authn_access_token_lifetime_seconds gauge each replica exports, so they
+# follow a change without anyone editing this file.
 
 groups:
   - name: go-rest-api-service-template-token-revocation
@@ -31,8 +37,8 @@ groups:
       # covers causes nobody has thought of.
       - alert: RevokedAccessTokenSetStale
         # Six times the 10s reload interval. Comfortably outside the normal
-        # sawtooth (0 -> 10s) and its scrape jitter, well inside the 5m access
-        # token lifetime.
+        # sawtooth (0 -> 10s) and its scrape jitter, well inside the shortest
+        # access token lifetime an operator can configure (2m).
         expr: revoked_access_tokens_staleness_seconds > 60
         for: 2m
         labels:
@@ -52,9 +58,13 @@ groups:
       # stopped: a token revoked elsewhere is being honoured here for longer
       # than it would have lived anyway, so the revocation buys nothing.
       - alert: RevokedAccessTokenSetStalerThanTheTokenLifetime
-        # The 5m access-token lifetime. Derived from
-        # authn.access.token.duration, not chosen for roundness.
-        expr: revoked_access_tokens_staleness_seconds > 300
+        # Compared with the LIVE access-token lifetime this replica is issuing,
+        # not a number copied in here. The lifetime is a runtime setting (PUT
+        # /auth/token_lifetimes), so a literal would be wrong the moment an
+        # operator changed it -- and it used to be exactly that: 300, from the
+        # flag default. Both gauges come from the same process, so they carry
+        # the same labels and match one-to-one.
+        expr: revoked_access_tokens_staleness_seconds > authn_access_token_lifetime_seconds
         for: 1m
         labels:
           severity: critical
@@ -62,8 +72,8 @@ groups:
         annotations:
           summary: "Revoked access token set older than the access token lifetime on {{ $labels.service_instance_id }}"
           description: >-
-            Staleness is {{ $value | humanizeDuration }}, longer than the 5m
-            access token lifetime. A token revoked on another replica now
+            Staleness is {{ $value | humanizeDuration }}, longer than the
+            configured access token lifetime. A token revoked on another replica now
             outlives the window this check exists to close, so for tokens
             revoked elsewhere the service is behaving as though access-token
             revocation were switched off. The database is the usual cause: the
@@ -88,6 +98,50 @@ groups:
             revoked" — so the previous copy is still serving. Watch
             revoked_access_tokens_staleness_seconds: if it stays flat, the
             retries are winning.
+
+  - name: go-rest-api-service-template-token-lifetimes
+    rules:
+      # The lifetimes have stopped reloading.
+      #
+      # Same shape as the two staleness alerts above and the same reason:
+      # nothing breaks. Tokens keep being issued, confidently, from a value that
+      # gets older every second, and a change made through the API on another
+      # replica never lands here. The change signal (Valkey pub/sub) usually
+      # makes this irrelevant, but the ticker is the floor and this is how a
+      # stopped floor is seen.
+      #
+      # 3x the 1m reload interval. Two missed reloads is a blip; three is a
+      # stopped ticker.
+      - alert: AuthnTokenLifetimesStale
+        expr: authn_token_lifetimes_staleness_seconds > 180
+        for: 2m
+        labels:
+          severity: warning
+          component: authn
+        annotations:
+          summary: "Token lifetimes have stopped reloading on {{ $labels.service_instance_id }}"
+          description: >-
+            This replica has not re-read the access and refresh token lifetimes
+            for {{ $value | humanizeDuration }}, against a 1m interval. A change
+            made through PUT /auth/token_lifetimes on another replica is not
+            being applied here. Derived from authn.token.lifetimes.reload.interval.
+
+      # Never loaded, which the synchronous fatal first load should make
+      # unreachable. -1 is the deliberate sentinel: 0 would look perfectly
+      # fresh. There is no fallback lifetime, so a replica in this state is a
+      # wiring bug that has somehow survived startup.
+      - alert: AuthnTokenLifetimesNeverLoaded
+        expr: authn_token_lifetimes_staleness_seconds == -1
+        for: 2m
+        labels:
+          severity: critical
+          component: authn
+        annotations:
+          summary: "Token lifetimes have never loaded on {{ $labels.service_instance_id }}"
+          description: >-
+            This replica is serving without ever having read the token
+            lifetimes. The first load is fatal at startup, so this should be
+            unreachable; there is no fallback value.
 
   - name: go-rest-api-service-template-rate-limits
     rules:

@@ -157,6 +157,17 @@ uppercased.** `http.server.*` used to be the one exception, mapping to
 `HTTP_SERVER_*` now. Keep the rule mechanical — an operator should never have to
 look one up.
 
+**The two token lifetimes are not settings.** `authn.access.token.duration`
+and `authn.refresh.token.duration` were removed on 2026-09-05; the values are
+one database row, seeded by migration `00016` with the same defaults (5m /
+24h), read into a per-replica mirror, and edited through
+`GET`/`PUT /auth/token_lifetimes`. The only flag left is
+`authn.token.lifetimes.reload.interval`. Do not add a fallback constant in Go:
+a replica that cannot read the row refuses to start, which is the same
+invariant the rate limiter keeps. The full design, including why
+`revoked_tokens` carries a `token_type` column for it, is in
+[`docs/architecture/token-lifetimes.md`](../docs/architecture/token-lifetimes.md).
+
 **A switch is `.enabled`, never `.enable`.** A wrong guess is not a warning, it
 is a stopped process: `flag provided but not defined: -database.migration.enabled`.
 
@@ -627,7 +638,10 @@ Two things still follow from the old trade-off and have not changed:
 - **the access-token lifetime stays short.** With revocation switched off it is
   once again the whole residual-access window after a logout, and the startup
   log says so explicitly — the absence is otherwise invisible, because every
-  request still succeeds.
+  request still succeeds. The lifetime is a runtime setting (2m–48h, seeded at
+  5m), so "short" is an operator's discipline, not a flag; the Prometheus rule
+  that pages when the revocation mirror is staler than the lifetime reads the
+  live value rather than a literal.
 - **the first load is fatal.** Same rule as the rate-limit rules mirror: a
   denylist that failed to load is an empty one, and an empty denylist re-validates
   every token anyone has logged out of.
@@ -1405,6 +1419,7 @@ Two things about these workflows are load-bearing and should not be removed:
 
 - [`docs/architecture/README.md`](../docs/architecture/README.md) — hexagon overview, request flow, hard rules
 - [`docs/architecture/adding-an-entity.md`](../docs/architecture/adding-an-entity.md) — recipe for a new domain entity
+- [`docs/architecture/token-lifetimes.md`](../docs/architecture/token-lifetimes.md) — the access/refresh lifetimes as a database row: the mirror, the change signal, what a change does to tokens already issued, and why revocation selects by token type
 - [`docs/architecture/adding-an-adapter.md`](../docs/architecture/adding-an-adapter.md) — recipe for a new outbound integration
 - [`docs/architecture/http-server-timeouts.md`](../docs/architecture/http-server-timeouts.md) — which bound covers which span of a request, and why two are off
 - [`docs/architecture/caching.md`](../docs/architecture/caching.md) — the cache port, the fail-open invariant, dependency invalidation, and why json is the only encoder

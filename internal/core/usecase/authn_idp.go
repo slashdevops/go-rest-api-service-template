@@ -244,7 +244,15 @@ func (ref *AuthnIDPsService) consumeState(ctx context.Context, claims map[string
 
 	// uuid.Nil() for the user: a state token's subject is the event that
 	// started the flow, and in a registration flow no account exists yet.
-	firstUse, err := ref.revokedTokens.Consume(ctx, jti, uuid.Nil(), expiresAt)
+	// The state token's own token_type claim names what is being spent: an
+	// idp_signin or idp_register state. Anything else was refused by the
+	// verifier before reaching here.
+	tokenType := domain.TokenType(claimString(claims, "token_type"))
+	if !tokenType.IsValid() {
+		return &domain.InvalidJWTError{Message: "token_type claim is invalid"}
+	}
+
+	firstUse, err := ref.revokedTokens.Consume(ctx, jti, uuid.Nil(), tokenType, expiresAt)
 	if err != nil {
 		return err
 	}

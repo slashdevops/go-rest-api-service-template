@@ -1707,6 +1707,81 @@ definitions:
         format: date-time
         type: string
     type: object
+  payload.TokenLifetimeBoundsResponse:
+    description: The bounds every change is validated against, so a client never has
+      to hardcode them
+    properties:
+      access_token_duration:
+        allOf:
+        - $ref: '#/definitions/payload.TokenLifetimeRange'
+        description: Bounds on the access token lifetime
+      refresh_token_duration:
+        allOf:
+        - $ref: '#/definitions/payload.TokenLifetimeRange'
+        description: Bounds on the refresh token lifetime
+    type: object
+  payload.TokenLifetimeDefaultsResponse:
+    description: The shipped defaults; "reset to defaults" is a PUT of exactly these
+    properties:
+      access_token_duration:
+        description: Seeded access token lifetime
+        example: 5m0s
+        format: string
+        type: string
+      refresh_token_duration:
+        description: Seeded refresh token lifetime
+        example: 24h0m0s
+        format: string
+        type: string
+    type: object
+  payload.TokenLifetimeRange:
+    description: The inclusive bounds a lifetime is validated against
+    properties:
+      max:
+        description: Longest accepted value, as a Go duration
+        example: 48h0m0s
+        format: string
+        type: string
+      min:
+        description: Shortest accepted value, as a Go duration
+        example: 2m0s
+        format: string
+        type: string
+    type: object
+  payload.TokenLifetimesResponse:
+    description: The lifetimes tokens issued from now on will carry, the bounds a
+      change is validated against, the shipped defaults, and who last changed them
+    properties:
+      access_token_duration:
+        description: Lifetime of access tokens issued from now on, as a Go duration
+        example: 5m0s
+        format: string
+        type: string
+      bounds:
+        allOf:
+        - $ref: '#/definitions/payload.TokenLifetimeBoundsResponse'
+        description: What a change is validated against
+      defaults:
+        allOf:
+        - $ref: '#/definitions/payload.TokenLifetimeDefaultsResponse'
+        description: The shipped values
+      refresh_token_duration:
+        description: Lifetime of refresh tokens issued at the next login, as a Go
+          duration
+        example: 24h0m0s
+        format: string
+        type: string
+      updated_at:
+        description: When the row was last changed
+        example: "2026-09-05T10:12:00Z"
+        format: date-time
+        type: string
+      updated_by:
+        description: Who last changed it; absent for the seeded values
+        example: 019b4b0d-a682-7e34-a20c-c71a7147d7e7
+        format: uuid
+        type: string
+    type: object
   payload.UnlinkPoliciesFromRoleRequest:
     description: Request payload for attaching multiple policies to a role
     properties:
@@ -2023,6 +2098,21 @@ definitions:
         format: string
         maxLength: 100
         minLength: 2
+        type: string
+    type: object
+  payload.UpdateTokenLifetimesRequest:
+    description: Both lifetimes, as Go duration strings. The refresh lifetime must
+      be strictly longer than the access lifetime
+    properties:
+      access_token_duration:
+        description: 2m to 48h
+        example: 10m0s
+        format: string
+        type: string
+      refresh_token_duration:
+        description: 12h to 168h, and longer than the access token
+        example: 72h0m0s
+        format: string
         type: string
     type: object
   payload.UpdateUserRequest:
@@ -3015,6 +3105,89 @@ paths:
       summary: Register new user
       tags:
       - Authentication
+  /auth/token_lifetimes:
+    get:
+      description: Read how long the access and refresh tokens issued from now on
+        will live, the bounds a change is validated against, the shipped defaults,
+        and who last changed them
+      operationId: 01a072df-d81d-78c8-a72b-6ea167cd50b2
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: The stored lifetimes, with bounds and defaults
+          schema:
+            $ref: '#/definitions/payload.TokenLifetimesResponse'
+        "401":
+          description: Invalid or expired token
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "403":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "429":
+          description: Too many requests
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "500":
+          description: Internal server error, including a missing row, which the migration
+            seeds and nothing may delete
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+      security:
+      - AccessToken: []
+      summary: Get token lifetimes
+      tags:
+      - Authn
+    put:
+      consumes:
+      - application/json
+      description: Replace the access and refresh token lifetimes. Applies to tokens
+        issued from now on; a token already issued keeps the expiry it was signed
+        with. The change reaches every replica within its reload interval, or at once
+        where a change signal is available
+      operationId: 01a072df-d81d-7995-ad3e-92a0a4d0a4cf
+      parameters:
+      - description: Both lifetimes as Go duration strings
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/payload.UpdateTokenLifetimesRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: The stored lifetimes after the change
+          schema:
+            $ref: '#/definitions/payload.TokenLifetimesResponse'
+        "400":
+          description: A duration that does not parse, a value outside its bounds,
+            or a refresh lifetime not longer than the access lifetime
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "401":
+          description: Invalid or expired token
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "403":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "429":
+          description: Too many requests
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+      security:
+      - AccessToken: []
+      summary: Update token lifetimes
+      tags:
+      - Authn
   /auth/verify:
     post:
       consumes:

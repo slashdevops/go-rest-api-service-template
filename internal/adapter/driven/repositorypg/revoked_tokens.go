@@ -132,7 +132,7 @@ func (ref *RevokedTokensRepository) PingContext(ctx context.Context) error {
 // tabs logging out at once, or a client retrying — and neither should be an
 // error. The first revocation is the one that counts; a later one cannot make
 // the token any more revoked.
-func (ref *RevokedTokensRepository) Revoke(ctx context.Context, jti, userID uuid.UUID, expiresAt time.Time) error {
+func (ref *RevokedTokensRepository) Revoke(ctx context.Context, jti, userID uuid.UUID, tokenType domain.TokenType, expiresAt time.Time) error {
 	start := time.Now()
 	ctx, span, attrs, cancel := o11y.SetupTraceWithTimeout(ctx, ref.ot.Traces.Tracer, ref.maxQueryTimeout, ref.metricsMetadata, "Revoke")
 	defer cancel()
@@ -143,17 +143,25 @@ func (ref *RevokedTokensRepository) Revoke(ctx context.Context, jti, userID uuid
 		return o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
 	}
 
-	span.SetAttributes(attribute.String("revoked_tokens.jti", jti.String()))
+	if !tokenType.IsValid() {
+		errorValue := &domain.InvalidInputError{Message: "token type is invalid"}
+		return o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
+	}
+
+	span.SetAttributes(
+		attribute.String("revoked_tokens.jti", jti.String()),
+		attribute.String("revoked_tokens.token_type", tokenType.String()),
+	)
 
 	query := `
-        INSERT INTO revoked_tokens (jti, users_id, expires_at)
-        VALUES ($1, $2, $3)
+        INSERT INTO revoked_tokens (jti, users_id, token_type, expires_at)
+        VALUES ($1, $2, $3, $4)
         ON CONFLICT (jti) DO NOTHING;
     `
 
 	cslog.Trace(ctx, "repository.RevokedTokens.Revoke", "query", prettyPrint(query))
 
-	if _, err := ref.db.Exec(ctx, query, jti, userID, expiresAt); err != nil {
+	if _, err := ref.db.Exec(ctx, query, jti, userID, tokenType.String(), expiresAt); err != nil {
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
 
@@ -185,15 +193,17 @@ func (ref *RevokedTokensRepository) Rotate(ctx context.Context, oldJTI, newJTI, 
 		attribute.String("revoked_tokens.replaced_by", newJTI.String()),
 	)
 
+	// Only a refresh token is ever rotated, so the type is fixed here rather
+	// than asked for.
 	query := `
-        INSERT INTO revoked_tokens (jti, users_id, expires_at, replaced_by)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO revoked_tokens (jti, users_id, token_type, expires_at, replaced_by)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (jti) DO NOTHING;
     `
 
 	cslog.Trace(ctx, "repository.RevokedTokens.Rotate", "query", prettyPrint(query))
 
-	if _, err := ref.db.Exec(ctx, query, oldJTI, userID, expiresAt, newJTI); err != nil {
+	if _, err := ref.db.Exec(ctx, query, oldJTI, userID, domain.TokenTypeRefresh.String(), expiresAt, newJTI); err != nil {
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
 
@@ -209,7 +219,7 @@ func (ref *RevokedTokensRepository) Rotate(ctx context.Context, oldJTI, newJTI, 
 // already spent" are the same question answered once, under the primary key's
 // own lock. A SELECT followed by an INSERT would let two concurrent callbacks
 // both decide they were first.
-func (ref *RevokedTokensRepository) Consume(ctx context.Context, jti, userID uuid.UUID, expiresAt time.Time) (bool, error) {
+func (ref *RevokedTokensRepository) Consume(ctx context.Context, jti, userID uuid.UUID, tokenType domain.TokenType, expiresAt time.Time) (bool, error) {
 	start := time.Now()
 	ctx, span, attrs, cancel := o11y.SetupTraceWithTimeout(ctx, ref.ot.Traces.Tracer, ref.maxQueryTimeout, ref.metricsMetadata, "Consume")
 	defer cancel()
@@ -220,11 +230,19 @@ func (ref *RevokedTokensRepository) Consume(ctx context.Context, jti, userID uui
 		return false, o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
 	}
 
-	span.SetAttributes(attribute.String("revoked_tokens.jti", jti.String()))
+	if !tokenType.IsValid() {
+		errorValue := &domain.InvalidInputError{Message: "token type is invalid"}
+		return false, o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
+	}
+
+	span.SetAttributes(
+		attribute.String("revoked_tokens.jti", jti.String()),
+		attribute.String("revoked_tokens.token_type", tokenType.String()),
+	)
 
 	query := `
-        INSERT INTO revoked_tokens (jti, users_id, expires_at)
-        VALUES ($1, $2, $3)
+        INSERT INTO revoked_tokens (jti, users_id, token_type, expires_at)
+        VALUES ($1, $2, $3, $4)
         ON CONFLICT (jti) DO NOTHING
         RETURNING jti;
     `
@@ -232,7 +250,7 @@ func (ref *RevokedTokensRepository) Consume(ctx context.Context, jti, userID uui
 	cslog.Trace(ctx, "repository.RevokedTokens.Consume", "query", prettyPrint(query))
 
 	var spent uuid.UUID
-	if err := ref.db.QueryRow(ctx, query, jti, userID, expiresAt).Scan(&spent); err != nil {
+	if err := ref.db.QueryRow(ctx, query, jti, userID, tokenType.String(), expiresAt).Scan(&spent); err != nil {
 		// No row means the conflict fired: something had already spent this
 		// jti. That is an answer, not a failure.
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -345,16 +363,17 @@ func (ref *RevokedTokensRepository) RevokeChain(ctx context.Context, jti, userID
               AND NOT EXISTS (SELECT 1 FROM revoked_tokens r WHERE r.jti = c.replaced_by)
             LIMIT 1
         )
-        INSERT INTO revoked_tokens (jti, users_id, expires_at)
-        SELECT tip.jti, $2, $3 FROM tip
+        INSERT INTO revoked_tokens (jti, users_id, token_type, expires_at)
+        SELECT tip.jti, $2, $3, $4 FROM tip
         ON CONFLICT (jti) DO NOTHING
         RETURNING jti;
     `
 
 	cslog.Trace(ctx, "repository.RevokedTokens.RevokeChain", "query", prettyPrint(query))
 
+	// The tip of a rotation chain is always a refresh token.
 	var tip uuid.UUID
-	if err := ref.db.QueryRow(ctx, query, jti, userID, expiresAt).Scan(&tip); err != nil {
+	if err := ref.db.QueryRow(ctx, query, jti, userID, domain.TokenTypeRefresh.String(), expiresAt).Scan(&tip); err != nil {
 		// No row returned means the chain had already been fully revoked —
 		// somebody logged out, or a concurrent replay got here first. There is
 		// nothing left to revoke, which is the outcome the caller wanted.
@@ -399,31 +418,34 @@ func (ref *RevokedTokensRepository) DeleteExpired(ctx context.Context) (int64, e
 }
 
 // SelectUnexpiredJTIs implements repository.RevokedTokens.
-func (ref *RevokedTokensRepository) SelectUnexpiredJTIs(ctx context.Context, horizon time.Duration) ([]uuid.UUID, error) {
+func (ref *RevokedTokensRepository) SelectUnexpiredJTIs(ctx context.Context, tokenType domain.TokenType) ([]uuid.UUID, error) {
 	start := time.Now()
 
 	ctx, span, attrs, cancel := o11y.SetupTraceWithTimeout(ctx, ref.ot.Traces.Tracer, ref.maxQueryTimeout, ref.metricsMetadata, "SelectUnexpiredJTIs")
 	defer cancel()
 	defer span.End()
 
-	if horizon <= 0 {
-		errorValue := &domain.InvalidInputError{Message: "horizon must be positive"}
+	if !tokenType.IsValid() {
+		errorValue := &domain.InvalidInputError{Message: "token type is invalid"}
 		return nil, o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
 	}
 
-	// A half-open window on expires_at, which idx_revoked_tokens_expires_at
-	// serves as a range scan. NOW() on both sides so the bounds come from the
-	// database clock, not from however far the caller has drifted from it.
+	span.SetAttributes(attribute.String("revoked_tokens.token_type", tokenType.String()))
+
+	// By TYPE, with no horizon: exactly the rows of this kind that are still
+	// refused. For access tokens idx_revoked_tokens_access_expires_at serves it
+	// as a range scan over the handful of rows that matter. NOW() from the
+	// database clock, not the caller's, so the bound cannot drift with it.
 	query := `
         SELECT jti
         FROM revoked_tokens
-        WHERE expires_at > NOW()
-          AND expires_at <= NOW() + $1::interval;
+        WHERE token_type = $1
+          AND expires_at > NOW();
     `
 
-	cslog.Trace(ctx, "repository.RevokedTokens.SelectUnexpiredJTIs", "query", prettyPrint(query, horizon))
+	cslog.Trace(ctx, "repository.RevokedTokens.SelectUnexpiredJTIs", "query", prettyPrint(query, tokenType.String()))
 
-	rows, err := ref.db.Query(ctx, query, horizon)
+	rows, err := ref.db.Query(ctx, query, tokenType.String())
 	if err != nil {
 		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}

@@ -26,12 +26,8 @@ func TestNewAuthConfig(t *testing.T) {
 		t.Errorf("Expected Issuer to be %s, got %s", DefaultAuthnIssuer, config.Issuer.Value)
 	}
 
-	if config.AccessTokenDuration.Value != DefaultAuthnAccessTokenDuration {
-		t.Errorf("Expected AccessTokenDuration to be %v, got %v", DefaultAuthnAccessTokenDuration, config.AccessTokenDuration.Value)
-	}
-
-	if config.RefreshTokenDuration.Value != DefaultAuthnRefreshTokenDuration {
-		t.Errorf("Expected RefreshTokenDuration to be %v, got %v", DefaultAuthnRefreshTokenDuration, config.RefreshTokenDuration.Value)
+	if config.TokenLifetimesReloadInterval.Value != DefaultAuthnTokenLifetimesReloadInterval {
+		t.Errorf("Expected TokenLifetimesReloadInterval to be %v, got %v", DefaultAuthnTokenLifetimesReloadInterval, config.TokenLifetimesReloadInterval.Value)
 	}
 
 	if config.UserVerificationWebEndpoint.Value != DefaultAuthnUserVerificationWebEndpoint {
@@ -48,8 +44,7 @@ func TestParseEnvVars_authn(t *testing.T) {
 	os.Setenv("AUTHN_PUBLIC_KEY_FILE", "/tmp/test_public.key")
 	os.Setenv("AUTHN_SYMMETRIC_KEY_FILE", "/tmp/test_symmetric.key")
 	os.Setenv("AUTHN_ISSUER", "https://test.example.com")
-	os.Setenv("AUTHN_ACCESS_TOKEN_DURATION", "10m")
-	os.Setenv("AUTHN_REFRESH_TOKEN_DURATION", "48h")
+	os.Setenv("AUTHN_TOKEN_LIFETIMES_RELOAD_INTERVAL", "2m")
 	os.Setenv("AUTHN_USER_VERIFICATION_WEB_ENDPOINT", "http://test.localhost:9090/verify")
 	os.Setenv("AUTHN_USER_VERIFICATION_TOKEN_TTL", "48h")
 
@@ -60,11 +55,8 @@ func TestParseEnvVars_authn(t *testing.T) {
 	if config.Issuer.Value != "https://test.example.com" {
 		t.Errorf("Expected Issuer to be https://test.example.com, got %s", config.Issuer.Value)
 	}
-	if config.AccessTokenDuration.Value != 10*time.Minute {
-		t.Errorf("Expected AccessTokenDuration to be 10m, got %v", config.AccessTokenDuration.Value)
-	}
-	if config.RefreshTokenDuration.Value != 48*time.Hour {
-		t.Errorf("Expected RefreshTokenDuration to be 48h, got %v", config.RefreshTokenDuration.Value)
+	if config.TokenLifetimesReloadInterval.Value != 2*time.Minute {
+		t.Errorf("Expected TokenLifetimesReloadInterval to be 2m, got %v", config.TokenLifetimesReloadInterval.Value)
 	}
 	if config.UserVerificationWebEndpoint.Value != "http://test.localhost:9090/verify" {
 		t.Errorf("Expected UserVerificationWebEndpoint to be http://test.localhost:9090/verify, got %s", config.UserVerificationWebEndpoint.Value)
@@ -78,8 +70,7 @@ func TestParseEnvVars_authn(t *testing.T) {
 	os.Unsetenv("AUTHN_PUBLIC_KEY_FILE")
 	os.Unsetenv("AUTHN_SYMMETRIC_KEY_FILE")
 	os.Unsetenv("AUTHN_ISSUER")
-	os.Unsetenv("AUTHN_ACCESS_TOKEN_DURATION")
-	os.Unsetenv("AUTHN_REFRESH_TOKEN_DURATION")
+	os.Unsetenv("AUTHN_TOKEN_LIFETIMES_RELOAD_INTERVAL")
 	os.Unsetenv("AUTHN_USER_VERIFICATION_WEB_ENDPOINT")
 	os.Unsetenv("AUTHN_USER_VERIFICATION_TOKEN_TTL")
 }
@@ -128,21 +119,30 @@ func TestValidate_authn(t *testing.T) {
 	}
 	config.Issuer.Value = DefaultAuthnIssuer
 
-	// Test invalid AccessTokenDuration (too short)
-	config.AccessTokenDuration.Value = 30 * time.Second
+	// The token lifetimes are not settings any more, so there is nothing to
+	// refuse here; what remains is the interval the mirror re-reads them on.
+	config.TokenLifetimesReloadInterval.Value = 0
 	err = config.Validate()
-	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "authn.access.token.duration" {
-		t.Errorf("Expected InvalidConfigurationError with field 'authn.access.token.duration', got %v", err)
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "authn.token.lifetimes.reload.interval" {
+		t.Errorf("Expected InvalidConfigurationError with field 'authn.token.lifetimes.reload.interval', got %v", err)
 	}
-	config.AccessTokenDuration.Value = DefaultAuthnAccessTokenDuration
+	config.TokenLifetimesReloadInterval.Value = DefaultAuthnTokenLifetimesReloadInterval
 
-	// Test invalid RefreshTokenDuration (too short)
-	config.RefreshTokenDuration.Value = 1 * time.Minute
+	// The two cross-checks that used to compare against the lifetimes now
+	// compare against the shortest lifetime an operator may configure.
+	config.RefreshTokenRotationGrace.Value = 12 * time.Hour
 	err = config.Validate()
-	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "authn.refresh.token.duration" {
-		t.Errorf("Expected InvalidConfigurationError with field 'authn.refresh.token.duration', got %v", err)
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "authn.refresh.token.rotation.grace" {
+		t.Errorf("Expected InvalidConfigurationError with field 'authn.refresh.token.rotation.grace', got %v", err)
 	}
-	config.RefreshTokenDuration.Value = DefaultAuthnRefreshTokenDuration
+	config.RefreshTokenRotationGrace.Value = DefaultAuthnRefreshTokenRotationGrace
+
+	config.AccessTokenRevocationReloadInterval.Value = 2 * time.Minute
+	err = config.Validate()
+	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "authn.access.token.revocation.reload.interval" {
+		t.Errorf("Expected InvalidConfigurationError with field 'authn.access.token.revocation.reload.interval', got %v", err)
+	}
+	config.AccessTokenRevocationReloadInterval.Value = DefaultAuthnAccessTokenRevocationReloadInterval
 
 	// Test invalid UserVerificationWebEndpoint
 	config.UserVerificationWebEndpoint.Value = ":/invalid-url"
