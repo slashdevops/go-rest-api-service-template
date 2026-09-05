@@ -3,13 +3,15 @@
 package integration
 
 import (
-	"context"
 	"net/http"
 	"testing"
+	"uuid"
 
-	"github.com/google/uuid"
-	"github.com/p2p-b2b/go-rest-api-service-template/internal/model"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/payload"
+	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
 )
 
 var (
@@ -22,7 +24,7 @@ func TestResourcesList(t *testing.T) {
 	t.Run("list_resources", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -39,7 +41,7 @@ func TestResourcesList(t *testing.T) {
 
 		// 3. Check the list response
 		assert.Equal(t, http.StatusOK, listResponse.StatusCode, "Expected status code 200 for list. Got %d. Message: %s", listResponse.StatusCode, readResponseBody(t, listResponse))
-		listAPIResp, err := parserResponseBody[model.ListResourcesOutput](t, listResponse)
+		listAPIResp, err := parserResponseBody[domain.ListResourcesOutput](t, listResponse)
 		assert.NoError(t, err, "Failed to parse list response body")
 
 		// 4. Verify that resources are returned
@@ -47,7 +49,7 @@ func TestResourcesList(t *testing.T) {
 
 		// 5. Verify the structure of the returned resources
 		for _, resource := range listAPIResp.Items {
-			assert.NotEqual(t, uuid.Nil, resource.ID, "Resource ID should not be nil")
+			assert.NotEqual(t, uuid.Nil(), resource.ID, "Resource ID should not be nil")
 			assert.NotEmpty(t, resource.Name, "Resource name should not be empty")
 			assert.NotEmpty(t, resource.Action, "Resource action should not be empty")
 			assert.NotEmpty(t, resource.Resource, "Resource resource path should not be empty")
@@ -62,7 +64,7 @@ func TestResourcesList(t *testing.T) {
 	t.Run("require_authentication", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		resp, err := sendHTTPRequest(t, ctx, resourcesListEndpoint, nil)
 		assert.NoError(t, err, "Failed to send request without authentication")
@@ -76,7 +78,7 @@ func TestResourcesGet(t *testing.T) {
 	t.Run("get_resource", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -92,7 +94,7 @@ func TestResourcesGet(t *testing.T) {
 		defer listResponse.Body.Close()
 
 		assert.Equal(t, http.StatusOK, listResponse.StatusCode, "Expected status code 200 for list. Got %d. Message: %s", listResponse.StatusCode, readResponseBody(t, listResponse))
-		listAPIResp, err := parserResponseBody[model.ListResourcesOutput](t, listResponse)
+		listAPIResp, err := parserResponseBody[domain.ListResourcesOutput](t, listResponse)
 		assert.NoError(t, err, "Failed to parse list response body")
 
 		// Ensure we have at least one resource to test with
@@ -107,7 +109,7 @@ func TestResourcesGet(t *testing.T) {
 
 		// 4. Check the get response
 		assert.Equal(t, http.StatusOK, getResponse.StatusCode, "Expected status code 200 for get. Got %d. Message: %s", getResponse.StatusCode, readResponseBody(t, getResponse))
-		resourceResp, err := parserResponseBody[model.Resource](t, getResponse)
+		resourceResp, err := parserResponseBody[domain.Resource](t, getResponse)
 		assert.NoError(t, err, "Failed to parse get response body")
 
 		// 5. Verify the structure of the returned resource
@@ -125,7 +127,7 @@ func TestResourcesGet(t *testing.T) {
 	t.Run("get_resource_bad_request", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -146,7 +148,7 @@ func TestResourcesGet(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, getResponse.StatusCode, "Expected status code 400 for invalid resource ID format. Got %d. Message: %s", getResponse.StatusCode, readResponseBody(t, getResponse))
 
 		// 4. Parse and verify the error response
-		errorResp, err := parserResponseBody[model.HTTPMessage](t, getResponse)
+		errorResp, err := parserResponseBody[payload.HTTPMessage](t, getResponse)
 		assert.NoError(t, err, "Failed to parse error response")
 
 		// Verify error message contains information about the invalid UUID format
@@ -163,7 +165,7 @@ func TestResourcesGet(t *testing.T) {
 	t.Run("get_resource_not_found", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -174,7 +176,7 @@ func TestResourcesGet(t *testing.T) {
 		}
 
 		// 2. Generate a random UUID that doesn't exist in the database
-		nonExistentResourceID := uuid.Must(uuid.NewV7())
+		nonExistentResourceID := uuid.NewV7()
 
 		// 3. Try to get the non-existent resource
 		getEndpoint := resourcesGetEndpoint.RewriteSlugs(nonExistentResourceID.String())
@@ -186,7 +188,7 @@ func TestResourcesGet(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, getResponse.StatusCode, "Expected status code 404 for non-existent resource. Got %d. Message: %s", getResponse.StatusCode, readResponseBody(t, getResponse))
 
 		// 5. Parse and verify the error response
-		errorResp, err := parserResponseBody[model.HTTPMessage](t, getResponse)
+		errorResp, err := parserResponseBody[payload.HTTPMessage](t, getResponse)
 		assert.NoError(t, err, "Failed to parse error response")
 
 		// Verify error message contains information about the resource not being found
@@ -203,7 +205,7 @@ func TestResourcesGet(t *testing.T) {
 	t.Run("require_authentication", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		getEndpoint := resourcesGetEndpoint.RewriteSlugs("00000000-0000-0000-0000-000000000000")
 		resp, err := sendHTTPRequest(t, ctx, getEndpoint, nil)
@@ -218,7 +220,7 @@ func TestResourcesMatches(t *testing.T) {
 	t.Run("list_resources_matches", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -241,14 +243,14 @@ func TestResourcesMatches(t *testing.T) {
 
 		// 4. Check the matches response
 		assert.Equal(t, http.StatusOK, matchesResponse.StatusCode, "Expected status code 200 for matches. Got %d. Message: %s", matchesResponse.StatusCode, readResponseBody(t, matchesResponse))
-		matchesAPIResp, err := parserResponseBody[model.ListResourcesOutput](t, matchesResponse)
+		matchesAPIResp, err := parserResponseBody[domain.ListResourcesOutput](t, matchesResponse)
 		assert.NoError(t, err, "Failed to parser matches response body")
 
 		// 5. Verify that matching resources are returned
 		// Note: We're not checking specific matches because we don't know exact values,
 		// but at minimum the structure should be correct
 		for _, resource := range matchesAPIResp.Items {
-			assert.NotEqual(t, uuid.Nil, resource.ID, "Resource ID should not be nil")
+			assert.NotEqual(t, uuid.Nil(), resource.ID, "Resource ID should not be nil")
 			assert.NotEmpty(t, resource.Name, "Resource name should not be empty")
 		}
 
@@ -261,7 +263,7 @@ func TestResourcesMatches(t *testing.T) {
 	t.Run("list_resources_matches_bad_request", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -327,7 +329,7 @@ func TestResourcesMatches(t *testing.T) {
 					"Expected status code %d for %s, got %d", tc.expectedStatus, tc.name, matchesResponse.StatusCode)
 
 				// Parse and verify the error response
-				errorResp, err := parserResponseBody[model.HTTPMessage](t, matchesResponse)
+				errorResp, err := parserResponseBody[payload.HTTPMessage](t, matchesResponse)
 				assert.NoError(t, err, "Failed to parse error response for %s", tc.name)
 
 				// Verify error message contains expected content
@@ -347,7 +349,7 @@ func TestResourcesMatches(t *testing.T) {
 	t.Run("list_resources_matches_no_results", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -373,7 +375,7 @@ func TestResourcesMatches(t *testing.T) {
 		// 4. Check the response - should return 404 Not Found
 		assert.Equal(t, http.StatusNotFound, matchesResponse.StatusCode, "Expected status code 404 for no matches. Got %d. Message: %s", matchesResponse.StatusCode, readResponseBody(t, matchesResponse))
 		// 5. Parse and verify the error response
-		errorResp, err := parserResponseBody[model.HTTPMessage](t, matchesResponse)
+		errorResp, err := parserResponseBody[payload.HTTPMessage](t, matchesResponse)
 		assert.NoError(t, err, "Failed to parse error response")
 		// Verify error message contains information about no matches found
 		assert.Contains(t, errorResp.Message, "not found", "Error message should indicate that no matches were found")
@@ -389,7 +391,7 @@ func TestResourcesMatches(t *testing.T) {
 	t.Run("require_authentication", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		matchesEndpoint := resourcesMatchesEndpoint.Clone()
 		matchesEndpoint.SetQueryParams(map[string]string{
@@ -402,5 +404,133 @@ func TestResourcesMatches(t *testing.T) {
 		defer resp.Body.Close()
 
 		assert.Equal(t, http.StatusUnauthorized, resp.StatusCode)
+	})
+}
+
+// TestResourceJSONSerialization tests that all resource endpoints return JSON responses with snake_case field names
+func TestResourceJSONSerialization(t *testing.T) {
+	// Test that Resource uses snake_case in JSON serialization
+	t.Run("get_resource_response_uses_snake_case", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// 1. Create an administrator user and get the token
+		adminToken := getAdminUserTokens(t)
+		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
+
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// 2. Get a list of resources first to find one to get by ID
+		listResponse, err := sendHTTPRequest(t, ctx, resourcesListEndpoint, nil, accessTokenHeader)
+		require.NoError(t, err, "Failed to send request to list resources")
+		defer listResponse.Body.Close()
+
+		require.Equal(t, http.StatusOK, listResponse.StatusCode)
+		listAPIResp, err := parserResponseBody[domain.ListResourcesOutput](t, listResponse)
+		require.NoError(t, err, "Failed to parse list response body")
+
+		// Ensure we have at least one resource to test with
+		require.NotEmpty(t, listAPIResp.Items, "Expected resources to be returned")
+		resourceID := listAPIResp.Items[0].ID
+
+		// 3. Get a specific resource by ID
+		getEndpoint := resourcesGetEndpoint.RewriteSlugs(resourceID.String())
+		response, err := sendHTTPRequest(t, ctx, getEndpoint, nil, accessTokenHeader)
+		require.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
+
+		require.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200")
+
+		// 4. Verify all Resource fields are in snake_case
+		expectedFields := []string{
+			"id",
+			"name",
+			"action",
+			"resource",
+		}
+
+		assertJSONFieldsAreSnakeCase(t, response, expectedFields)
+
+		t.Cleanup(func() {
+			deleteUserByIDFromDB(t, adminToken.UserID)
+		})
+	})
+
+	// Test that ListResourcesOutput uses snake_case including nested objects
+	t.Run("list_resources_response_uses_snake_case", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// 1. Create an administrator user and get the token
+		adminToken := getAdminUserTokens(t)
+		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
+
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// 2. List the resources
+		response, err := sendHTTPRequest(t, ctx, resourcesListEndpoint, nil, accessTokenHeader)
+		require.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
+
+		require.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200")
+
+		// 3. Verify ListResourcesOutput top-level fields are snake_case
+		expectedTopLevelFields := []string{
+			"items",
+			"paginator",
+		}
+
+		assertJSONFieldsAreSnakeCase(t, response, expectedTopLevelFields)
+
+		t.Cleanup(func() {
+			deleteUserByIDFromDB(t, adminToken.UserID)
+		})
+	})
+
+	// Test that resources matches endpoint uses snake_case
+	t.Run("list_resources_matches_uses_snake_case", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// 1. Create an administrator user and get the token
+		adminToken := getAdminUserTokens(t)
+		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
+
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// 2. Set up query parameters for the matches endpoint
+		matchesEndpoint := resourcesMatchesEndpoint.Clone()
+		matchesEndpoint.SetQueryParams(map[string]string{
+			"action":   "GET",
+			"resource": "/resources",
+		})
+
+		// 3. Call the matches endpoint
+		response, err := sendHTTPRequest(t, ctx, matchesEndpoint, nil, accessTokenHeader)
+		require.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
+
+		require.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200")
+
+		// 4. Verify ListResourcesOutput top-level fields are snake_case
+		expectedTopLevelFields := []string{
+			"items",
+			"paginator",
+		}
+
+		assertJSONFieldsAreSnakeCase(t, response, expectedTopLevelFields)
+
+		t.Cleanup(func() {
+			deleteUserByIDFromDB(t, adminToken.UserID)
+		})
 	})
 }

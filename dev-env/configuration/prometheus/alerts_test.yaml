@@ -1,0 +1,353 @@
+# Unit tests for alerts.yaml, run with `promtool test rules`.
+#
+# These exist because the alternative way to check an alert rule is to break a
+# production dependency and wait, which is exactly what nobody does — so rules
+# rot silently and are discovered to be wrong at the moment they were needed.
+# Here the series are synthetic and the whole ladder runs in milliseconds.
+#
+# Each case pins a property the rule was written for, not merely that it fires:
+# the healthy sawtooth must NOT trip it, the `for:` delay must be respected, and
+# recovery must clear it.
+
+rule_files:
+  - alerts.yaml
+
+evaluation_interval: 15s
+
+tests:
+  # The normal state. Staleness sawtooths between 0 and the 10s reload interval
+  # and must never trip anything — an alert that fires in steady state is one
+  # that gets muted, and a muted alert is not an alert.
+  - interval: 15s
+    name: a healthy sawtooth never alerts
+    input_series:
+      - series: 'revoked_access_tokens_staleness_seconds{job="go-rest-api-service-template"}'
+        values: "1 8 3 9 2 7 4 10 1 6 3 9 2 8 5 10 1 7 3 9"
+      - series: 'revoked_access_tokens_reload_failures_total{job="go-rest-api-service-template"}'
+        values: "0+0x19"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: RevokedAccessTokenSetStale
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: RevokedAccessTokenSetStalerThanTheTokenLifetime
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: RevokedAccessTokenReloadsFailing
+        exp_alerts: []
+
+  # Reloads have stopped: staleness climbs 15s per evaluation, for ever.
+  - interval: 15s
+    name: staleness climbing trips the warning after its for-delay
+    input_series:
+      - series: 'revoked_access_tokens_staleness_seconds{job="go-rest-api-service-template"}'
+        values: "0+15x60"
+    alert_rule_test:
+      # This series makes staleness equal the elapsed time, so the arithmetic is
+      # legible: it crosses 60 at t=75s, and `for: 2m` puts firing at t=195s.
+      #
+      # Asserting the DELAY and not just the eventual alert. A rule with the
+      # right expression and no `for` would page on a single unlucky scrape,
+      # and every test that only checks "it eventually fires" would still pass.
+      - eval_time: 3m
+        alertname: RevokedAccessTokenSetStale
+        exp_alerts: []
+      - eval_time: 4m
+        alertname: RevokedAccessTokenSetStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: authn
+              job: go-rest-api-service-template
+            exp_annotations:
+              summary: "Revoked access token set is stale on "
+              description: >-
+                The in-memory revocation set has not been rebuilt from the database for 4m 0s. This replica is still refusing the tokens it knew about, and still revokes immediately for logouts it serves itself — but a revocation made on ANOTHER replica is not being seen. Check revoked_access_tokens_reload_failures_total and the service log for "could not reload the revoked access token set".
+
+  # The critical rule must stay quiet while the warning is already firing:
+  # 200s is stale, but still shorter than the access token's own 5m life, so a
+  # revocation made elsewhere has not yet been outlived.
+  - interval: 15s
+    name: the critical rule waits for the access token lifetime
+    input_series:
+      - series: 'revoked_access_tokens_staleness_seconds{job="go-rest-api-service-template"}'
+        values: "200+0x40"
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: RevokedAccessTokenSetStalerThanTheTokenLifetime
+        exp_alerts: []
+
+  # Past 300s the cross-replica half of the check has stopped buying anything.
+  - interval: 15s
+    name: staleness past the token lifetime is critical
+    input_series:
+      - series: 'revoked_access_tokens_staleness_seconds{job="go-rest-api-service-template"}'
+        values: "301+1x40"
+    alert_rule_test:
+      - eval_time: 2m
+        alertname: RevokedAccessTokenSetStalerThanTheTokenLifetime
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              component: authn
+              job: go-rest-api-service-template
+            exp_annotations:
+              summary: "Revoked access token set older than the access token lifetime on "
+              description: >-
+                Staleness is 5m 9s, longer than the 5m access token lifetime. A token revoked on another replica now outlives the window this check exists to close, so for tokens revoked elsewhere the service is behaving as though access-token revocation were switched off. The database is the usual cause: the set is rebuilt from it, and the previous copy is deliberately kept rather than cleared, which is why requests still succeed.
+
+  # Recovery. Verified live too — Postgres came back and staleness dropped from
+  # 384s to 4.7s within one reload — but pinning it here means a future edit
+  # cannot leave an alert that fires and never clears, which is as useless as
+  # one that never fires.
+  - interval: 15s
+    name: a recovered reload clears the alert
+    input_series:
+      - series: 'revoked_access_tokens_staleness_seconds{job="go-rest-api-service-template"}'
+        values: "0+15x40 5 5 5 5 5 5 5 5 5 5 5 5"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: RevokedAccessTokenSetStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              component: authn
+              job: go-rest-api-service-template
+            exp_annotations:
+              summary: "Revoked access token set is stale on "
+              description: >-
+                The in-memory revocation set has not been rebuilt from the database for 9m 0s. This replica is still refusing the tokens it knew about, and still revokes immediately for logouts it serves itself — but a revocation made on ANOTHER replica is not being seen. Check revoked_access_tokens_reload_failures_total and the service log for "could not reload the revoked access token set".
+      - eval_time: 12m
+        alertname: RevokedAccessTokenSetStale
+        exp_alerts: []
+
+  # Rate limits.
+  #
+  # The healthy case first, for the same reason as above: a rule that fires in
+  # steady state is one that gets muted.
+  - interval: 15s
+    name: a healthy rate limiter never alerts
+    input_series:
+      - series: 'rate_limit_store_up{job="go-rest-api-service-template",instance="a"}'
+        values: "1x40"
+      - series: 'rate_limit_rules_staleness_seconds{job="go-rest-api-service-template",instance="a"}'
+        values: "5 12 20 28 3 11 19 27 4 12 20 28 2 10 18 26 5 13 21 29"
+      - series: 'rate_limit_rules_size{job="go-rest-api-service-template",instance="a"}'
+        values: "3x40"
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: RateLimitStoreDown
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: RateLimitRulesStale
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: RateLimitNoRulesConfigured
+        exp_alerts: []
+      - eval_time: 9m
+        alertname: RateLimitRulesNeverLoaded
+        exp_alerts: []
+
+  # The store goes down and stays down.
+  - interval: 15s
+    name: a store outage fires after the for delay and not before
+    input_series:
+      - series: 'rate_limit_store_up{job="go-rest-api-service-template",instance="a"}'
+        values: "1 1 1 0x40"
+    alert_rule_test:
+      # 45s in: the gauge just dropped, the 2m delay has not elapsed.
+      - eval_time: 1m
+        alertname: RateLimitStoreDown
+        exp_alerts: []
+      - eval_time: 3m
+        alertname: RateLimitStoreDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: go-rest-api-service-template
+              instance: a
+            exp_annotations:
+              summary: "The shared rate-limit counter is not answering"
+              description: >-
+                rate_limit_store_up has been 0 for 2 minutes on a. With
+                store.fail.mode=local each replica is enforcing the full limit
+                independently, so N replicas allow N times the configured rate.
+                With fail.mode=closed, limited endpoints are refusing legitimate
+                traffic with RATE_LIMIT_UNAVAILABLE. Check Valkey.
+
+  # Recovery must clear it, or the alert is a one-way door.
+  #
+  # At a 15s interval, `0x12` is three minutes of zeros -- long enough for the
+  # 2m `for:` to elapse, so the alert is genuinely firing at 2m30s before it is
+  # asserted cleared. Written as `0x20` this test passed for the wrong reason:
+  # 20 samples is five minutes, so at 4m the store was still down and "no alert"
+  # would have meant the rule never fired at all.
+  - interval: 15s
+    name: a recovered store clears the alert
+    input_series:
+      - series: 'rate_limit_store_up{job="go-rest-api-service-template",instance="a"}'
+        values: "0x12 1x28"
+    alert_rule_test:
+      # Firing, so the clearing below is a real transition.
+      - eval_time: 2m45s
+        alertname: RateLimitStoreDown
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: go-rest-api-service-template
+              instance: a
+            exp_annotations:
+              summary: "The shared rate-limit counter is not answering"
+              description: >-
+                rate_limit_store_up has been 0 for 2 minutes on a. With
+                store.fail.mode=local each replica is enforcing the full limit
+                independently, so N replicas allow N times the configured rate.
+                With fail.mode=closed, limited endpoints are refusing legitimate
+                traffic with RATE_LIMIT_UNAVAILABLE. Check Valkey.
+      # Recovered.
+      - eval_time: 5m
+        alertname: RateLimitStoreDown
+        exp_alerts: []
+
+  # A stopped ticker: staleness climbs past 3x the reload interval.
+  - interval: 15s
+    name: a stopped reload ticker fires
+    input_series:
+      - series: 'rate_limit_rules_staleness_seconds{job="go-rest-api-service-template",instance="a"}'
+        values: "15+15x40"
+    alert_rule_test:
+      # 90s of staleness is reached around 1m15s in, and the rule needs 2m more.
+      - eval_time: 1m
+        alertname: RateLimitRulesStale
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: RateLimitRulesStale
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: go-rest-api-service-template
+              instance: a
+            exp_annotations:
+              summary: "The rate-limit rule set has stopped reloading"
+              description: >-
+                a has not reloaded its rate-limit rules for 5m 15s, against a 30s
+                interval. Rules written or deleted on other replicas are not being
+                applied here. Derived from ratelimit.reload.interval.
+
+  # The sentinel. -1 must be caught by the never-loaded rule and must NOT trip
+  # the staleness one, which is a `>` comparison.
+  - interval: 15s
+    name: a never-loaded rule set fires its own alert and not the staleness one
+    input_series:
+      - series: 'rate_limit_rules_staleness_seconds{job="go-rest-api-service-template",instance="a"}'
+        values: "-1x40"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: RateLimitRulesStale
+        exp_alerts: []
+      - eval_time: 8m
+        alertname: RateLimitRulesNeverLoaded
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              job: go-rest-api-service-template
+              instance: a
+            exp_annotations:
+              summary: "Rate-limit rules have never loaded"
+              description: >-
+                a is serving without ever having loaded a rate-limit rule set. The
+                first load is fatal at startup, so this should be unreachable. There
+                is no fallback budget: nothing on this replica is being rate limited.
+
+  # An empty rule set is indistinguishable from a truncated table, and with no
+  # fallback budget behind it, it means nothing is limited at all.
+  - interval: 1m
+    name: an empty rule set warns after five minutes
+    input_series:
+      - series: 'rate_limit_rules_size{job="go-rest-api-service-template",instance="a"}'
+        values: "0x40"
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: RateLimitNoRulesConfigured
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: RateLimitNoRulesConfigured
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: go-rest-api-service-template
+              instance: a
+            exp_annotations:
+              summary: "No rate-limit rules are configured"
+              description: >-
+                a has loaded an empty rule set for 5 minutes, and there is no
+                fallback budget behind it — no request is being rate limited.
+                Legitimate only if the rules were deliberately removed.
+
+  # A malformed rule fires its own alert and NOT the store one. That separation
+  # is the whole point of the instrument: before it existed, this exact
+  # situation drove rate_limit_store_up to zero and paged for Valkey.
+  - interval: 1m
+    name: an unenforceable rule alerts without implicating the store
+    input_series:
+      - series: 'rate_limit_rule_faults_total{job="go-rest-api-service-template",instance="a",rule="broken",scope="ip",strategy="leaky_bucket"}'
+        values: "0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20"
+      - series: 'rate_limit_store_up{job="go-rest-api-service-template",instance="a"}'
+        values: "1x20"
+    alert_rule_test:
+      # Below the `for`, so a single scrape does not page.
+      - eval_time: 2m
+        alertname: RateLimitRuleUnenforceable
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: RateLimitRuleUnenforceable
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: go-rest-api-service-template
+              instance: a
+              rule: broken
+              scope: ip
+              strategy: leaky_bucket
+            exp_annotations:
+              summary: "A rate-limit rule cannot be enforced"
+              description: >-
+                Rule broken (ip scope, leaky_bucket strategy) on a could not be
+                built into a limiter, so it is enforcing nothing and its traffic is
+                falling through to the next matching rule. This cannot be written
+                through the API; check for a direct write to the rate_limits table.
+      # The store is healthy throughout. A rule fault must never look like one.
+      - eval_time: 10m
+        alertname: RateLimitStoreDown
+        exp_alerts: []
+
+  # A rule that was fixed stops alerting. Without this the test above passes for
+  # a permanently-firing rule, which nobody could act on twice.
+  - interval: 1m
+    name: a corrected rule clears the alert
+    input_series:
+      - series: 'rate_limit_rule_faults_total{job="go-rest-api-service-template",instance="a",rule="broken",scope="ip",strategy="leaky_bucket"}'
+        values: "1 2 3 3x40"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: RateLimitRuleUnenforceable
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              job: go-rest-api-service-template
+              instance: a
+              rule: broken
+              scope: ip
+              strategy: leaky_bucket
+            exp_annotations:
+              summary: "A rate-limit rule cannot be enforced"
+              description: >-
+                Rule broken (ip scope, leaky_bucket strategy) on a could not be
+                built into a limiter, so it is enforcing nothing and its traffic is
+                falling through to the next matching rule. This cannot be written
+                through the API; check for a direct write to the rate_limits table.
+      # The counter stopped moving at t=3m; the 10m increase window has to clear
+      # it and the 5m `for` has to elapse on top of that.
+      - eval_time: 25m
+        alertname: RateLimitRuleUnenforceable
+        exp_alerts: []

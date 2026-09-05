@@ -5,7 +5,7 @@ import "runtime"
 
 var (
 	// Version is the current version of the application
-	Version = "0.0.1"
+	Version = "0.0.0"
 
 	// BuildDate is the date the application was built
 	BuildDate = "1970-01-01T00:00:00Z"

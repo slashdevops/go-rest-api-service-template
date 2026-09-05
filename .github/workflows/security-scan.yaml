@@ -1,0 +1,51 @@
+name: Security scan
+
+# The scan a per-PR run cannot do.
+#
+# `make vulncheck` on a pull request answers "did this change introduce a
+# vulnerable dependency", which can only change when go.mod or go.sum does --
+# so pr.yaml runs it exactly then. It answers nothing about the other, more
+# common case: an advisory published against a dependency you already had, and
+# have not touched in months.
+#
+# That case has nothing to do with anyone's commits, so no per-PR schedule
+# catches it reliably. A quiet fortnight with no PRs is a fortnight with no
+# scan. This runs whether or not anybody is working.
+on:
+  schedule:
+    # Mondays, 07:00 UTC -- before the week's work rather than after it.
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  vulncheck:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ./go.mod
+          cache-dependency-path: |
+            **/go.sum
+            **/vendor/**/go.sum
+
+      # govulncheck reports standard library advisories against the toolchain it
+      # RUNS ON, so `make vulncheck` reinstalls it against the current one first.
+      # A binary built by an older Go cannot parse a newer stdlib and fails with
+      # a wall of "file requires newer Go version" that reads like a finding.
+      - name: Make vulncheck
+        run: |
+          echo "## Make vulncheck (scheduled)" >> $GITHUB_STEP_SUMMARY
+          MAKE_DEBUG=true make vulncheck | tee -a $GITHUB_STEP_SUMMARY

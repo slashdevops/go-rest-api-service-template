@@ -1,0 +1,275 @@
+name: Pull Request
+
+on:
+  pull_request:
+    branches:
+      - main
+      - release/*
+
+# A new push to the same PR supersedes the run already in flight.
+#
+# The single largest saving in this file, and it is not close. Without it every
+# push during a review pays for a full run that nobody will ever read -- three
+# pushes to a PR meant three complete runs, two of them answering a question
+# about code that no longer exists. The frontend has had this; this repo did not.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: this workflow only reads the repository. `pull-requests: read`
+# is for the changed-file query below, which decides whether the two expensive
+# conditional gates need to run at all.
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  MAKE_STOP_ON_ERRORS: true
+
+defaults:
+  run:
+    # Explicit, because the runner's default is not the same shell everywhere and this one
+    # brings `pipefail` with it: a step whose pipeline fails in an earlier stage now fails
+    # the step instead of reporting the exit code of the last command in it.
+    #
+    # This matters here: every build/test step below is piped into `tee -a $GITHUB_STEP_SUMMARY`,
+    # and without pipefail a failing `make` is masked by tee's exit code 0.
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    # DISABLED to keep the runner cheap. Uncomment to restore.
+    #
+    # This service exists so the ratelimitvalkey suite runs for real rather than
+    # skipping. Those tests connect to Valkey and SKIP when they cannot, and a
+    # skipped test reports `ok` -- so a suite that verified nothing looks exactly
+    # like one that passed, and the package measures 17.6% instead of 84.3%.
+    #
+    # Turning it off is a deliberate trade: the PR gate no longer exercises the
+    # shared counter's real INCR/PEXPIRE semantics, which is the entire point of
+    # that package. `.testcoverage.yml` carries a matching lowered floor with the
+    # same note, so the two stay consistent -- if you re-enable this service,
+    # raise that floor back to 80.
+    #
+    # Run it locally instead, which is where it is cheap:
+    #   podman run -d --name valkey -p 6379:6379 valkey/valkey:8-alpine
+    #   go test -tags=unit ./internal/adapter/driven/ratelimitvalkey/
+    #
+    # services:
+    #   valkey:
+    #     image: valkey/valkey:8-alpine
+    #     ports:
+    #       - 6379:6379
+    #     options: >-
+    #       --health-cmd "valkey-cli ping"
+    #       --health-interval 5s
+    #       --health-timeout 3s
+    #       --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ./go.mod
+          cache-dependency-path: |
+            **/go.sum
+            **/vendor/**/go.sum
+
+      # The Makefile's install-* targets go-install a tool when the binary is
+      # missing -- and on a fresh runner every one of them is. Measured locally
+      # with a WARM build cache, which is the floor rather than the cost:
+      #
+      #   golangci-lint 15s   go-swagger 6s   go-test-coverage 5s
+      #   swag 2s             govulncheck 1s
+      #
+      # Cold, as CI is on the first run after a dependency change, they are far
+      # worse. Caching the binaries turns all of it into a restore.
+      #
+      # Keyed on the Makefile because that is where the tool versions live, so a
+      # version bump invalidates the cache and only a version bump does.
+      # ensure_tool still reinstalls anything the restore left older than the
+      # running toolchain, so a stale entry corrects itself rather than lying.
+      - name: Cache Go tool binaries
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin
+          key: gotools-${{ runner.os }}-${{ hashFiles('Makefile', 'go.mod') }}
+          restore-keys: |
+            gotools-${{ runner.os }}-
+
+      # Which of the two expensive conditional gates below need to run.
+      #
+      # One API call, rather than deepening the checkout: `git diff` against the
+      # base needs history this job has no other use for, and fetching it costs
+      # more than the query.
+      - name: Changed files
+        id: changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          files=$(gh api --paginate \
+            "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}/files" \
+            --jq '.[].filename')
+
+          # Fail OPEN. If the query returns nothing -- an API hiccup, a
+          # permissions change -- run both gates rather than skip them. A
+          # cost optimisation must never be able to silently drop a gate.
+          if [ -z "$files" ]; then
+            echo "could not determine changed files; running every gate"
+            echo "deps=true"   >> $GITHUB_OUTPUT
+            echo "alerts=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          grep -qE '^go\.(mod|sum)$' <<<"$files" && d=true || d=false
+          grep -qE '^dev-env/configuration/prometheus/' <<<"$files" && a=true || a=false
+
+          echo "deps=$d"   >> $GITHUB_OUTPUT
+          echo "alerts=$a" >> $GITHUB_OUTPUT
+          echo "dependency files changed: $d | alert rules changed: $a"
+
+      - name: Summary Information
+        run: |
+          echo "# Pull Request Summary" > $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Pull Request:** ${{ github.event.pull_request.title }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Author:** ${{ github.event.pull_request.user.login }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${{ github.event.pull_request.head.ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Base:** ${{ github.event.pull_request.base.ref }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commits:** ${{ github.event.pull_request.commits }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Changed Files:** ${{ github.event.pull_request.changed_files }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Additions:** ${{ github.event.pull_request.additions }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deletions:** ${{ github.event.pull_request.deletions }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      # `go build ./...`, not `make build`.
+      #
+      # `make build` runs swag fmt + swag init + go-swagger, which installs two
+      # tools and regenerates docs/api -- and then this job throws the result
+      # away. Nothing diffs it, so it was never a gate on the PR path; it was
+      # ~8s of installs and generation buying nothing. The release workflow runs
+      # the full `make build-dist`, which is where the generated docs actually
+      # ship.
+      #
+      # What the PR needs from this step is the one thing go build gives:
+      # everything compiles, including the main packages `go test` never links.
+      - name: Build
+        run: |
+          echo "## Build" >> $GITHUB_STEP_SUMMARY
+          go build ./... && echo "Build passed ✅" >> $GITHUB_STEP_SUMMARY
+
+      # 1 second, and CLAUDE.md's post-change checklist already tells every
+      # contributor to run it -- but nothing enforced it, so the claim in "What
+      # CI gates on" was simply false. Cheaper to make the claim true than to
+      # weaken it: a modernizer that has drifted shows up as a diff here rather
+      # than as a surprise in the next person's `go fix ./...`.
+      - name: Go fix (modernizers)
+        run: |
+          echo "## go fix -diff" >> $GITHUB_STEP_SUMMARY
+
+          # Warm the module cache FIRST, and keep its progress off the capture.
+          # `go fix -diff ./... 2>&1` merges stderr into $diff, so a single
+          # "go: downloading ..." line on a cold runner makes $diff non-empty
+          # and fails the step with no drift at all -- which is exactly how this
+          # first went red. stderr now goes to the log, not into the comparison.
+          go mod download
+
+          diff=$(go fix -diff ./...)
+          if [ -n "$diff" ]; then
+            echo "go fix -diff is not empty; run 'go fix ./...' and commit" >> $GITHUB_STEP_SUMMARY
+            echo "$diff"
+            exit 1
+          fi
+          echo "No modernizer drift ✅" >> $GITHUB_STEP_SUMMARY
+
+      - name: Make arch-test
+        run: |
+          echo "## Make arch-test (hexagonal invariant)" >> $GITHUB_STEP_SUMMARY
+          make arch-test | tee -a $GITHUB_STEP_SUMMARY
+
+      # MAKE_DEBUG=true on the two diagnostic gates below. The Makefile's exec_cmd
+      # wrapper sends command output to /dev/null and prints only ✅ / ❌, which is
+      # fine for build steps but useless for a linter or a vulnerability scanner:
+      # a failure reports "❌" and nothing about what was found. MAKE_DEBUG makes
+      # exec_cmd run the command verbatim, so the report reaches the log.
+      - name: Make lint
+        run: |
+          echo "## Make lint" >> $GITHUB_STEP_SUMMARY
+          MAKE_DEBUG=true make lint | tee -a $GITHUB_STEP_SUMMARY
+
+      # Only when the dependency set moved.
+      #
+      # A per-PR scan answers "did THIS change introduce a vulnerable
+      # dependency", and that question can only change when go.mod or go.sum
+      # does. The other thing govulncheck catches -- an advisory published
+      # against a dependency you already had -- has nothing to do with your
+      # commits, so a per-PR scan is the wrong instrument for it and the weekly
+      # scheduled run below is the right one.
+      #
+      # So this is not less coverage for less money. It is the same coverage,
+      # plus the case a per-PR-only scan never caught: a quiet week during which
+      # an advisory lands and no PR is opened.
+      - name: Make vulncheck
+        if: steps.changed.outputs.deps == 'true'
+        run: |
+          echo "## Make vulncheck" >> $GITHUB_STEP_SUMMARY
+          MAKE_DEBUG=true make vulncheck | tee -a $GITHUB_STEP_SUMMARY
+
+      # DISABLED to keep the runner cheap. Uncomment to restore.
+      #
+      # `make check-alerts` runs promtool in a container, which pulls
+      # prom/prometheus -- a ~250 MB image -- onto the runner for a test that
+      # takes milliseconds. It was already conditional on a rule file changing,
+      # so it is rare; it is off now because when it does fire it is by far the
+      # most expensive thing in this job.
+      #
+      # An alert rule nobody has seen fire is a rule nobody should trust, so run
+      # it locally when you touch the rules:
+      #   make check-alerts
+      #
+      # The alert rules are unit-tested with promtool, in a container, so the
+      # gate does not depend on a Prometheus being installed on the runner.
+      # CONTAINER_ENGINE=docker because the runners have docker and no podman;
+      # the two are argument-compatible for what this runs.
+      #
+      # An alert rule that nobody has seen fire is a rule nobody should trust,
+      # and the only other way to exercise one is to break a dependency and
+      # wait. These tests take milliseconds.
+      # Only when a rule file changed. This pulls prom/prometheus -- a ~250 MB
+      # image, on every run, for a test that takes milliseconds and can only
+      # produce a different answer when the rules or their tests move.
+      # - name: Make check-alerts
+      # if: steps.changed.outputs.alerts == 'true'
+      # run: |
+      # echo "## Make check-alerts (Prometheus rules)" >> $GITHUB_STEP_SUMMARY
+      # MAKE_DEBUG=true CONTAINER_ENGINE=docker make check-alerts | tee -a $GITHUB_STEP_SUMMARY
+
+      - name: Make tests
+        run: |
+          echo "## Make tests" >> $GITHUB_STEP_SUMMARY
+
+          # Test output goes to the job log only, not the step summary: `go test -v` is
+          # far too large for the summary's 1 MiB cap. MAKE_DEBUG is still needed so
+          # exec_cmd does not discard it entirely — a failing suite otherwise reports
+          # "❌" and nothing about which test failed.
+          MAKE_DEBUG=true make test
+
+          # Only reached when make succeeded, because the job shell runs with -e.
+          echo "Unit tests passed ✅" >> $GITHUB_STEP_SUMMARY
+
+      - name: Make test-coverage
+        run: |
+          echo "## Make test-coverage" >> $GITHUB_STEP_SUMMARY
+
+          # Reads the profile the previous step wrote, so it must follow it.
+          # This is a ratchet, not an aspiration: it fails when coverage drops,
+          # either overall or in a package that has a floor in .testcoverage.yml.
+          MAKE_DEBUG=true make test-coverage | tee -a $GITHUB_STEP_SUMMARY

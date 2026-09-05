@@ -7,12 +7,14 @@ import (
 	"net/http"
 	"net/http/pprof"
 
-	"github.com/p2p-b2b/go-rest-api-service-template/internal/o11y"
+	"github.com/slashdevops/go-rest-api-service-template/internal/o11y"
 )
 
 // initTelemetry initializes the observability components (metrics, tracing)
 func (a *App) initTelemetry(ctx context.Context) error {
 	var err error
+
+	slog.Info("initializing telemetry")
 
 	// Create OpenTelemetry instance
 	a.telemetry, err = o11y.New(ctx, a.configs.Telemetry)
@@ -29,9 +31,30 @@ func (a *App) initTelemetry(ctx context.Context) error {
 	return nil
 }
 
-// startPprofServer starts the pprof server for debugging if enabled
+// startPprofServer starts the pprof server for debugging if enabled.
+//
+// Only five handlers are registered explicitly, but the server exposes more
+// than five profiles: `/debug/pprof/` is a subtree pattern, so [pprof.Index]
+// also serves every *named* profile in [runtime/pprof.Profiles] at
+// `/debug/pprof/<name>` — `heap`, `allocs`, `goroutine`, `mutex`, `block`,
+// `threadcreate`, and `goroutineleak`. Do not add a handler per profile.
+//
+// # goroutineleak
+//
+// `goroutineleak` went GA in Go 1.27 (it was a GOEXPERIMENT in 1.26) and is the
+// first place to look for a stuck worker or a leaked request context: it reports
+// goroutines blocked forever on a channel, [sync.Mutex] or [sync.Cond] that can
+// never become unblocked, which a plain `goroutine` dump cannot distinguish from
+// one that is merely idle.
+//
+//	go tool pprof http://localhost:6060/debug/pprof/goroutineleak
+//
+// The server is **off by default** and binds to localhost; enable it with
+// `-http.server.pprof.enabled=true`. It listens on its own port (6060), not the
+// API port, so nothing here is reachable from the public listener.
 func (a *App) startPprofServer() {
-	pprofAddr := fmt.Sprintf("%s:%d",
+	pprofAddr := fmt.Sprintf(
+		"%s:%d",
 		a.configs.HTTPServer.PprofAddress.Value,
 		a.configs.HTTPServer.PprofPort.Value,
 	)

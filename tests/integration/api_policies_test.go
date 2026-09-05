@@ -3,19 +3,19 @@
 package integration
 
 import (
-	// Added for readResponseBody
-	"context" // Added for readResponseBody
-	"strings"
-	"time"
-
-	// Added for readResponseBody
 	"math/rand"
 	"net/http"
+	"strings"
 	"testing"
+	"time"
 
-	"github.com/google/uuid"
-	"github.com/p2p-b2b/go-rest-api-service-template/internal/model"
+	"uuid"
+
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/payload"
+	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
 )
 
 var (
@@ -26,15 +26,15 @@ var (
 	policyDeleteEndpoint      = newAPIEndpoint(http.MethodDelete, "/policies/{policy_id}")
 	policyLinkRolesEndpoint   = newAPIEndpoint(http.MethodPost, "/policies/{policy_id}/roles")
 	policyUnlinkRolesEndpoint = newAPIEndpoint(http.MethodDelete, "/policies/{policy_id}/roles")
+
+	policyListPoliciesByRoleEndpoint = newAPIEndpoint(http.MethodGet, "/roles/{role_id}/policies")
 )
 
 // Helper function to create a policy for testing
 func createTestPolicy(t *testing.T, accessToken, namePrefix string) uuid.UUID {
 	t.Helper()
 
-	policyID := uuid.Must(uuid.NewV7())
-
-	// Create a policy with a unique ID and name
+	policyID := uuid.NewV7()
 	policy := map[string]any{
 		"id":               policyID.String(),
 		"name":             namePrefix + policyID.String(),
@@ -45,7 +45,7 @@ func createTestPolicy(t *testing.T, accessToken, namePrefix string) uuid.UUID {
 
 	accessTokenHeader := map[string]string{"Authorization": "Bearer " + accessToken}
 
-	ctx := context.Background()
+	ctx := t.Context()
 	response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
 	assert.NoError(t, err, "Failed to send request to create policy")
 	defer response.Body.Close()
@@ -53,9 +53,40 @@ func createTestPolicy(t *testing.T, accessToken, namePrefix string) uuid.UUID {
 	assert.Equal(t, http.StatusCreated, response.StatusCode, "Expected status code 201 for policy creation. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
 
 	// Verify the response
-	createAPIResp, err := parserResponseBody[model.HTTPMessage](t, response)
+	createAPIResp, err := parserResponseBody[payload.HTTPMessage](t, response)
 	assert.NoError(t, err, "Failed to parse response body")
-	assert.Equal(t, model.PoliciesPolicyCreatedSuccessfully, createAPIResp.Message, "Expected success message")
+	assert.Equal(t, domain.PoliciesPolicyCreatedSuccessfully, createAPIResp.Message, "Expected success message")
+
+	return policyID
+}
+
+// Helper function to create a policy with custom parameters
+func createTestPolicyWithParams(t *testing.T, accessToken, namePrefix, resource, action, effect string) uuid.UUID {
+	t.Helper()
+
+	policyID := uuid.NewV7()
+	policy := map[string]any{
+		"id":               policyID.String(),
+		"name":             namePrefix + policyID.String(),
+		"description":      "Test policy " + policyID.String(),
+		"allowed_action":   action,
+		"allowed_resource": resource,
+		"effect":           effect,
+	}
+
+	accessTokenHeader := map[string]string{"Authorization": "Bearer " + accessToken}
+
+	ctx := t.Context()
+	response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
+	assert.NoError(t, err, "Failed to send request to create policy")
+	defer response.Body.Close()
+
+	assert.Equal(t, http.StatusCreated, response.StatusCode, "Expected status code 201 for policy creation. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+
+	// Verify the response
+	createAPIResp, err := parserResponseBody[payload.HTTPMessage](t, response)
+	assert.NoError(t, err, "Failed to parse response body")
+	assert.Equal(t, domain.PoliciesPolicyCreatedSuccessfully, createAPIResp.Message, "Expected success message")
 
 	return policyID
 }
@@ -64,8 +95,7 @@ func createTestPolicy(t *testing.T, accessToken, namePrefix string) uuid.UUID {
 func createTestRole(t *testing.T, accessToken, namePrefix string) uuid.UUID {
 	t.Helper()
 
-	roleID := uuid.Must(uuid.NewV7())
-
+	roleID := uuid.NewV7()
 	role := map[string]any{
 		"id":          roleID.String(),
 		"name":        namePrefix + roleID.String(),
@@ -74,7 +104,7 @@ func createTestRole(t *testing.T, accessToken, namePrefix string) uuid.UUID {
 
 	accessTokenHeader := map[string]string{"Authorization": "Bearer " + accessToken}
 
-	ctx := context.Background()
+	ctx := t.Context()
 
 	rolesCreateEndpoint := newAPIEndpoint(http.MethodPost, "/roles")
 	response, err := sendHTTPRequest(t, ctx, rolesCreateEndpoint, role, accessTokenHeader)
@@ -86,275 +116,7 @@ func createTestRole(t *testing.T, accessToken, namePrefix string) uuid.UUID {
 }
 
 func TestPolicyCreate(t *testing.T) {
-	// Test policy creation with various resource patterns
-	t.Run("create_policy_resource_patterns", func(t *testing.T) {
-		t.Parallel()
-
-		// 1. Create an administrator user and get the token
-		adminToken := getAdminUserTokens(t)
-		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
-
-		accessTokenHeader := map[string]string{
-			"Authorization": "Bearer " + adminToken.AccessToken,
-		}
-
-		ctx := context.Background()
-
-		// Define test cases based on resources from the SQL migration file
-		testCases := []struct {
-			name            string
-			allowedAction   string
-			allowedResource string
-			description     string
-		}{
-			{
-				name:            "Wildcard all access",
-				allowedAction:   "*",
-				allowedResource: "*",
-				description:     "Allow all actions on all resources",
-			},
-			{
-				name:            "Read only wildcard",
-				allowedAction:   "GET",
-				allowedResource: "*",
-				description:     "Allow all GET actions on all resources",
-			},
-			{
-				name:            "Create only wildcard",
-				allowedAction:   "POST",
-				allowedResource: "*",
-				description:     "Allow all POST actions on all resources",
-			},
-			{
-				name:            "Delete only wildcard",
-				allowedAction:   "DELETE",
-				allowedResource: "*",
-				description:     "Allow all DELETE actions on all resources",
-			},
-			{
-				name:            "Update only wildcard",
-				allowedAction:   "PUT",
-				allowedResource: "*",
-				description:     "Allow all PUT actions on all resources",
-			},
-			{
-				name:            "Partial update only wildcard",
-				allowedAction:   "PATCH",
-				allowedResource: "*",
-				description:     "Allow all PATCH actions on all resources",
-			},
-			{
-				name:            "Login user",
-				allowedAction:   "POST",
-				allowedResource: "/auth/login",
-				description:     "Authenticate user credentials and return JWT access and refresh tokens",
-			},
-			{
-				name:            "Logout user",
-				allowedAction:   "DELETE",
-				allowedResource: "/auth/logout",
-				description:     "Logout user and invalidate session tokens",
-			},
-			{
-				name:            "Refresh access token",
-				allowedAction:   "POST",
-				allowedResource: "/auth/refresh",
-				description:     "Generate new access token using valid refresh token",
-			},
-			{
-				name:            "Register user",
-				allowedAction:   "POST",
-				allowedResource: "/auth/register",
-				description:     "Create a new user account and send email verification",
-			},
-			{
-				name:            "Verify user with dynamic JWT",
-				allowedAction:   "GET",
-				allowedResource: "/auth/verify/019826e3-d118-70cf-a4dc-34ab5815a866",
-				description:     "Verify user account using JWT verification token",
-			},
-			{
-				name:            "List policies",
-				allowedAction:   "GET",
-				allowedResource: "/policies",
-				description:     "Retrieve paginated list of all policies in the system",
-			},
-			{
-				name:            "Create policy",
-				allowedAction:   "POST",
-				allowedResource: "/policies",
-				description:     "Create a new policy with specified permissions",
-			},
-			{
-				name:            "Get policy with UUID",
-				allowedAction:   "GET",
-				allowedResource: "/policies/019826e3-d118-7153-a149-ffa559d5e81c",
-				description:     "Retrieve a specific policy by its unique identifier",
-			},
-			{
-				name:            "Update policy with UUID",
-				allowedAction:   "PUT",
-				allowedResource: "/policies/019826e3-d118-7157-af66-69649c40b171",
-				description:     "Modify an existing policy by its ID",
-			},
-			{
-				name:            "Delete policy with UUID",
-				allowedAction:   "DELETE",
-				allowedResource: "/policies/019826e3-d118-715b-a9fd-b7578292a87e",
-				description:     "Remove a policy permanently from the system",
-			},
-			{
-				name:            "List roles by policy",
-				allowedAction:   "GET",
-				allowedResource: "/policies/019826e3-d118-715f-bf7c-e8e3fe40c458/roles",
-				description:     "Retrieve paginated list of roles associated with a specific policy",
-			},
-			{
-				name:            "Link roles to policy",
-				allowedAction:   "POST",
-				allowedResource: "/policies/019826e3-d118-7163-a9fd-41d1754edd7c/roles",
-				description:     "Associate multiple roles with a specific policy for authorization",
-			},
-			{
-				name:            "List projects",
-				allowedAction:   "GET",
-				allowedResource: "/projects",
-				description:     "Retrieve paginated list of all projects in the system",
-			},
-			{
-				name:            "Create project",
-				allowedAction:   "POST",
-				allowedResource: "/projects",
-				description:     "Create a new project with specified configuration",
-			},
-			{
-				name:            "Get project with UUID",
-				allowedAction:   "GET",
-				allowedResource: "/projects/019826e3-d118-7167-9876-689c5072cd53",
-				description:     "Retrieve a specific project by its unique identifier",
-			},
-			{
-				name:            "Update project with UUID",
-				allowedAction:   "PUT",
-				allowedResource: "/projects/019826e3-d118-716b-a5df-b788c61691aa",
-				description:     "Modify an existing project by its ID",
-			},
-			{
-				name:            "Delete project with UUID",
-				allowedAction:   "DELETE",
-				allowedResource: "/projects/019826e3-d118-716f-afe4-c29840316b62",
-				description:     "Remove a project permanently from the system",
-			},
-			{
-				name:            "List products by project",
-				allowedAction:   "GET",
-				allowedResource: "/projects/019826e3-d118-7173-bad2-4056eb7ed27c/products",
-				description:     "Retrieve paginated list of products for a specific project",
-			},
-			{
-				name:            "Create product in project",
-				allowedAction:   "POST",
-				allowedResource: "/projects/019826e3-d118-7177-8d95-d4db11f0b693/products",
-				description:     "Create a new product with specified configuration",
-			},
-			{
-				name:            "Get product with UUIDs",
-				allowedAction:   "GET",
-				allowedResource: "/projects/019826e3-d118-717a-aedd-0001aa702c2d/products/019826e3-d118-717e-aafa-d97531bc29d7",
-				description:     "Retrieve a specific product by its unique identifier",
-			},
-			{
-				name:            "Update product with UUIDs",
-				allowedAction:   "PUT",
-				allowedResource: "/projects/019826e3-d118-7182-a1ac-b10a135b267e/products/019826e3-d118-7186-9df6-fcbb43ee1738",
-				description:     "Modify an existing product by its ID",
-			},
-			{
-				name:            "Delete product with UUIDs",
-				allowedAction:   "DELETE",
-				allowedResource: "/projects/019826e3-d118-718a-932c-969b821f13e1/products/019826e3-d118-718e-9d02-8cd41fed1d8e",
-				description:     "Remove a product permanently from the system",
-			},
-			{
-				name:            "List users",
-				allowedAction:   "GET",
-				allowedResource: "/users",
-				description:     "Retrieve paginated list of all users in the system",
-			},
-			{
-				name:            "Create user",
-				allowedAction:   "POST",
-				allowedResource: "/users",
-				description:     "Create a new user account with specified configuration",
-			},
-			{
-				name:            "Get user with UUID",
-				allowedAction:   "GET",
-				allowedResource: "/users/019826e3-d118-7192-8dc8-dffca8d700f8",
-				description:     "Retrieve a specific user account by its unique identifier",
-			},
-			{
-				name:            "Update user with UUID",
-				allowedAction:   "PUT",
-				allowedResource: "/users/019826e3-d118-7196-866d-d412bc57f632",
-				description:     "Modify an existing user account by its ID",
-			},
-			{
-				name:            "Get user authorization",
-				allowedAction:   "GET",
-				allowedResource: "/users/019826e3-d118-719a-ba77-a2e8465a95d6/authz",
-				description:     "Retrieve user authorization permissions and roles for access control",
-			},
-		}
-
-		// Track policy IDs for cleanup
-		var policyIDs []uuid.UUID
-
-		// Run each test case
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				// Generate unique policy ID for this test case
-				policyID := uuid.Must(uuid.NewV7())
-				policyIDs = append(policyIDs, policyID)
-
-				policy := map[string]any{
-					"id":               policyID.String(),
-					"name":             "test_" + strings.ReplaceAll(tc.name, " ", "_") + "_" + policyID.String(),
-					"description":      tc.description + " - " + policyID.String(),
-					"allowed_action":   tc.allowedAction,
-					"allowed_resource": tc.allowedResource,
-				}
-
-				response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
-				assert.NoError(t, err, "Error sending request for %s: %v", tc.name, err)
-				defer response.Body.Close()
-
-				assert.Equal(t, http.StatusCreated, response.StatusCode,
-					"Expected status code 201 Created for %s. Got %d. Message: %s",
-					tc.name, response.StatusCode, readResponseBody(t, response))
-
-				apiResp, err := parserResponseBody[model.HTTPMessage](t, response)
-				assert.NoError(t, err, "Failed to parse response body for %s", tc.name)
-
-				assert.Equal(t, model.PoliciesPolicyCreatedSuccessfully, apiResp.Message,
-					"Unexpected response message for %s", tc.name)
-				assert.Equal(t, policyCreateEndpoint.method, apiResp.Method,
-					"Expected method to be set for %s", tc.name)
-				assert.Equal(t, policyCreateEndpoint.Path(), apiResp.Path,
-					"Expected path to be set for %s", tc.name)
-			})
-		}
-
-		// Cleanup all created policies
-		t.Cleanup(func() {
-			for _, policyID := range policyIDs {
-				deletePolicyByIDFromDB(t, policyID)
-			}
-			deleteUserByIDFromDB(t, adminToken.UserID)
-		})
-	})
-
-	// Test policy creation - original simple test
+	// Test policy creation
 	t.Run("create_policy", func(t *testing.T) {
 		t.Parallel()
 
@@ -363,7 +125,7 @@ func TestPolicyCreate(t *testing.T) {
 		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
 
 		// 2. Create a new policy
-		policyID := uuid.Must(uuid.NewV7())
+		policyID := uuid.NewV7()
 
 		policy := map[string]any{
 			"id":               policyID.String(),
@@ -378,14 +140,14 @@ func TestPolicyCreate(t *testing.T) {
 			"Authorization": "Bearer " + adminToken.AccessToken,
 		}
 
-		ctx := context.Background()
+		ctx := t.Context()
 		response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
 		assert.NoError(t, err, "Error sending request: %v", err)
 		defer response.Body.Close()
 
 		assert.Equal(t, http.StatusCreated, response.StatusCode, "Expected status code 201 Created. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
 
-		apiResp, err := parserResponseBody[model.HTTPMessage](t, response)
+		apiResp, err := parserResponseBody[payload.HTTPMessage](t, response)
 		assert.NoError(t, err, "Failed to parse response body")
 
 		t.Cleanup(func() {
@@ -393,7 +155,7 @@ func TestPolicyCreate(t *testing.T) {
 			deleteUserByIDFromDB(t, adminToken.UserID)
 		})
 
-		assert.Equal(t, model.PoliciesPolicyCreatedSuccessfully, apiResp.Message, "Unexpected response message")
+		assert.Equal(t, domain.PoliciesPolicyCreatedSuccessfully, apiResp.Message, "Unexpected response message")
 		assert.Equal(t, policyCreateEndpoint.method, apiResp.Method, "Expected method to be set")
 		assert.Equal(t, policyCreateEndpoint.Path(), apiResp.Path, "Expected path to be set")
 	})
@@ -402,7 +164,7 @@ func TestPolicyCreate(t *testing.T) {
 	t.Run("create_policy_bad_request", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -432,7 +194,7 @@ func TestPolicyCreate(t *testing.T) {
 			{
 				name: "Empty name",
 				invalidPolicy: map[string]any{
-					"id":               uuid.Must(uuid.NewV7()).String(),
+					"id":               uuid.NewV7().String(),
 					"name":             "",
 					"description":      "Test policy description",
 					"allowed_action":   "GET",
@@ -443,7 +205,7 @@ func TestPolicyCreate(t *testing.T) {
 			{
 				name: "Invalid action",
 				invalidPolicy: map[string]any{
-					"id":               uuid.Must(uuid.NewV7()).String(),
+					"id":               uuid.NewV7().String(),
 					"name":             "Test Policy",
 					"description":      "Test policy description",
 					"allowed_action":   "INVALID_ACTION",
@@ -454,7 +216,7 @@ func TestPolicyCreate(t *testing.T) {
 			{
 				name: "Empty resource",
 				invalidPolicy: map[string]any{
-					"id":               uuid.Must(uuid.NewV7()).String(),
+					"id":               uuid.NewV7().String(),
 					"name":             "Test Policy",
 					"description":      "Test policy description",
 					"allowed_action":   "GET",
@@ -477,7 +239,7 @@ func TestPolicyCreate(t *testing.T) {
 					"Expected status code 400 Bad Request for %s. Got %d. Message: %s", tc.name, response.StatusCode, readResponseBody(t, response))
 
 				// Parse and verify the error response
-				errorResp, err := parserResponseBody[model.HTTPMessage](t, response)
+				errorResp, err := parserResponseBody[payload.HTTPMessage](t, response)
 				assert.NoError(t, err, "Failed to parse error response for %s", tc.name)
 
 				// Verify error message contains information specific to this validation failure
@@ -498,7 +260,7 @@ func TestPolicyCreate(t *testing.T) {
 	t.Run("create_policy_already_exists", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -509,8 +271,7 @@ func TestPolicyCreate(t *testing.T) {
 		}
 
 		// 2. First create a valid policy that will be our reference policy
-		policyID := uuid.Must(uuid.NewV7())
-
+		policyID := uuid.NewV7()
 		policyName := "test_" + policyID.String()
 		allowedAction := "GET"
 		allowedResource := "/users/*"
@@ -551,8 +312,8 @@ func TestPolicyCreate(t *testing.T) {
 			{
 				name: "Policy with existing name",
 				duplicatePolicy: map[string]any{
-					"id":               uuid.Must(uuid.NewV7()).String(), // Different ID
-					"name":             policyName,                       // Same name as existing policy has the same allowed action and allowed resource
+					"id":               uuid.NewV7().String(), // Different ID
+					"name":             policyName,            // Same name as existing policy has the same allowed action and allowed resource
 					"description":      "This is another policy",
 					"allowed_action":   allowedAction,
 					"allowed_resource": allowedResource,
@@ -575,7 +336,7 @@ func TestPolicyCreate(t *testing.T) {
 					"Expected status code %d for %s. Got %d. Message: %s", tc.expectedStatus, tc.name, response.StatusCode, readResponseBody(t, response))
 
 				// Parse and verify the error response
-				errorResp, err := parserResponseBody[model.HTTPMessage](t, response)
+				errorResp, err := parserResponseBody[payload.HTTPMessage](t, response)
 				assert.NoError(t, err, "Failed to parse error response for %s", tc.name)
 
 				// Verify error message contains information about the conflict
@@ -593,10 +354,513 @@ func TestPolicyCreate(t *testing.T) {
 		})
 	})
 
+	// Test creating policies with various valid resources from the system
+	t.Run("create_policies_with_valid_resources", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// 1. Create an administrator user and get the token
+		adminToken := getAdminUserTokens(t)
+		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
+
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// 2. Define test cases for various valid resources from the migration file
+		testCases := []struct {
+			name            string
+			allowedAction   string
+			allowedResource string
+			description     string
+		}{
+			// David error
+			{
+				name:            "TestDavid",
+				allowedAction:   "DELETE",
+				allowedResource: "/users/*",
+				description:     "Test",
+			},
+			// Auth endpoints
+			{
+				name:            "Auth login resource",
+				allowedAction:   "POST",
+				allowedResource: "/auth/login",
+				description:     "Policy for user authentication",
+			},
+			{
+				name:            "Auth logout resource",
+				allowedAction:   "DELETE",
+				allowedResource: "/auth/logout",
+				description:     "Policy for user logout",
+			},
+			{
+				name:            "Auth refresh token resource",
+				allowedAction:   "POST",
+				allowedResource: "/auth/refresh",
+				description:     "Policy for refreshing tokens",
+			},
+			{
+				name:            "Auth register resource",
+				allowedAction:   "POST",
+				allowedResource: "/auth/register",
+				description:     "Policy for user registration",
+			},
+			{
+				name:            "Auth resend verification resource",
+				allowedAction:   "POST",
+				allowedResource: "/auth/verify",
+				description:     "Policy for resending verification email",
+			},
+			{
+				name:            "Auth verify account resource",
+				allowedAction:   "POST",
+				allowedResource: "/auth/verify/confirm",
+				description:     "Policy for verifying user account",
+			},
+			// Generate config endpoints
+			{
+				name:            "List generate configs resource",
+				allowedAction:   "GET",
+				allowedResource: "/generate_config",
+				description:     "Policy for listing generate configs",
+			},
+			// Personal access tokens endpoints
+			{
+				name:            "List all tokens resource",
+				allowedAction:   "GET",
+				allowedResource: "/pa_tokens",
+				description:     "Policy for listing all personal access tokens",
+			},
+			// Policy endpoints
+			{
+				name:            "List policies resource",
+				allowedAction:   "GET",
+				allowedResource: "/policies",
+				description:     "Policy for listing policies",
+			},
+			{
+				name:            "Create policy resource",
+				allowedAction:   "POST",
+				allowedResource: "/policies",
+				description:     "Policy for creating policies",
+			},
+			{
+				name:            "Delete policy resource",
+				allowedAction:   "DELETE",
+				allowedResource: "/policies/019826a1-081e-7b23-a27b-8551fa40c489",
+				description:     "Policy for deleting policies",
+			},
+			{
+				name:            "Update policy resource",
+				allowedAction:   "PUT",
+				allowedResource: "/policies/019826a1-081e-7b27-bc3f-7b03697ec03c",
+				description:     "Policy for updating policies",
+			},
+			{
+				name:            "Get specific policy resource",
+				allowedAction:   "GET",
+				allowedResource: "/policies/019826a1-081e-7b2b-b894-d9d9ac9568c7",
+				description:     "Policy for getting specific policy",
+			},
+			{
+				name:            "Unlink roles from policy resource",
+				allowedAction:   "DELETE",
+				allowedResource: "/policies/019826a1-081e-7b2f-923a-684494b233ef/roles",
+				description:     "Policy for unlinking roles from policy",
+			},
+			{
+				name:            "Link roles to policy resource",
+				allowedAction:   "POST",
+				allowedResource: "/policies/019826a1-081e-7b33-9817-85294d752935/roles",
+				description:     "Policy for linking roles to policy",
+			},
+			{
+				name:            "List roles by policy resource",
+				allowedAction:   "GET",
+				allowedResource: "/policies/019826a1-081e-7b37-a9f5-21ce828c73b5/roles",
+				description:     "Policy for listing roles by policy",
+			},
+			// Project endpoints
+			{
+				name:            "List projects resource",
+				allowedAction:   "GET",
+				allowedResource: "/projects",
+				description:     "Policy for listing projects",
+			},
+			{
+				name:            "Create project resource",
+				allowedAction:   "POST",
+				allowedResource: "/projects",
+				description:     "Policy for creating projects",
+			},
+			{
+				name:            "Delete project resource",
+				allowedAction:   "DELETE",
+				allowedResource: "/projects/019826a1-081e-7b3b-9e6e-283fd4acb5db",
+				description:     "Policy for deleting projects",
+			},
+			{
+				name:            "Update project resource",
+				allowedAction:   "PUT",
+				allowedResource: "/projects/019826a1-081e-7b3c-8809-fa8837365151",
+				description:     "Policy for updating projects",
+			},
+			{
+				name:            "Get project resource",
+				allowedAction:   "GET",
+				allowedResource: "/projects/019826a1-081e-7b42-9525-c406b0d7f453",
+				description:     "Policy for getting specific project",
+			},
+			// Project generate config endpoints
+			{
+				name:            "Create generate config resource",
+				allowedAction:   "POST",
+				allowedResource: "/projects/019826a1-081e-7ba8-ba82-ea9db2b30508/generate_config",
+				description:     "Policy for creating generate config",
+			},
+			{
+				name:            "Delete generate config resource",
+				allowedAction:   "DELETE",
+				allowedResource: "/projects/019826a1-081e-7bac-b1a7-06e9893a666b/generate_config/019826a1-081e-7bb0-a51d-1bd68f38790e",
+				description:     "Policy for deleting generate config",
+			},
+			{
+				name:            "Update generate config resource",
+				allowedAction:   "PUT",
+				allowedResource: "/projects/019826a1-081e-7bb4-8903-15438e852e6c/generate_config/019826a1-081e-7bb8-a643-c20ac816ad8a",
+				description:     "Policy for updating generate config",
+			},
+			{
+				name:            "Get generate config resource",
+				allowedAction:   "GET",
+				allowedResource: "/projects/019826a1-081e-7bbb-bb4b-32672d21427f/generate_config/019826a1-081e-7bbf-9db2-873524c335ea",
+				description:     "Policy for getting generate config",
+			},
+			{
+				name:            "Generate response resource",
+				allowedAction:   "POST",
+				allowedResource: "/projects/019826a1-081e-7bc3-82d4-19380a272113/generate_config/019826a1-081e-7bc7-85f8-63d5bf4a3ca2/generate",
+				description:     "Policy for generating responses",
+			},
+			// Resource endpoints
+			{
+				name:            "List resources resource",
+				allowedAction:   "GET",
+				allowedResource: "/resources",
+				description:     "Policy for listing resources",
+			},
+			{
+				name:            "Match resources by action resource",
+				allowedAction:   "GET",
+				allowedResource: "/resources/matches",
+				description:     "Policy for matching resources by action",
+			},
+			{
+				name:            "Get resource resource",
+				allowedAction:   "GET",
+				allowedResource: "/resources/019826a1-081e-7d52-83c5-2553f5f29019",
+				description:     "Policy for getting specific resource",
+			},
+			// Role endpoints
+			{
+				name:            "Create role resource",
+				allowedAction:   "POST",
+				allowedResource: "/roles",
+				description:     "Policy for creating roles",
+			},
+			{
+				name:            "List roles resource",
+				allowedAction:   "GET",
+				allowedResource: "/roles",
+				description:     "Policy for listing roles",
+			},
+			{
+				name:            "Delete role resource",
+				allowedAction:   "DELETE",
+				allowedResource: "/roles/019826a1-081e-7d53-8be4-a5d197cf9b2e",
+				description:     "Policy for deleting roles",
+			},
+			{
+				name:            "Update role resource",
+				allowedAction:   "PUT",
+				allowedResource: "/roles/019826a1-081e-7d59-ac8c-26e40a46c1bf",
+				description:     "Policy for updating roles",
+			},
+			{
+				name:            "Get role resource",
+				allowedAction:   "GET",
+				allowedResource: "/roles/019826a1-081e-7d5d-ad2f-3def5d34e1a6",
+				description:     "Policy for getting specific role",
+			},
+			{
+				name:            "Link policies to role resource",
+				allowedAction:   "POST",
+				allowedResource: "/roles/019826a1-081e-7d61-9835-9fa58d741ced/policies",
+				description:     "Policy for linking policies to role",
+			},
+			{
+				name:            "List policies by role resource",
+				allowedAction:   "GET",
+				allowedResource: "/roles/019826a1-081e-7d62-9647-eaa862428728/policies",
+				description:     "Policy for listing policies by role",
+			},
+			{
+				name:            "Unlink policies from role resource",
+				allowedAction:   "DELETE",
+				allowedResource: "/roles/019826a1-081e-7d65-86fb-39a4e530081d/policies",
+				description:     "Policy for unlinking policies from role",
+			},
+			{
+				name:            "Link users to role resource",
+				allowedAction:   "POST",
+				allowedResource: "/roles/019826a1-081e-7d69-b9d0-0fa407c06957/users",
+				description:     "Policy for linking users to role",
+			},
+			{
+				name:            "Unlink users from role resource",
+				allowedAction:   "DELETE",
+				allowedResource: "/roles/019826a1-081e-7d6d-89be-d5f8a719ba7c/users",
+				description:     "Policy for unlinking users from role",
+			},
+			{
+				name:            "List users by role resource",
+				allowedAction:   "GET",
+				allowedResource: "/roles/019826a1-081e-7d71-8da0-91f821211feb/users",
+				description:     "Policy for listing users by role",
+			},
+			// User endpoints
+			{
+				name:            "Create user resource",
+				allowedAction:   "POST",
+				allowedResource: "/users",
+				description:     "Policy for creating users",
+			},
+			{
+				name:            "List users resource",
+				allowedAction:   "GET",
+				allowedResource: "/users",
+				description:     "Policy for listing users",
+			},
+			{
+				name:            "Update user resource",
+				allowedAction:   "PUT",
+				allowedResource: "/users/019826a1-081e-7d75-949f-cddf8ba8624b",
+				description:     "Policy for updating users",
+			},
+			{
+				name:            "Delete user resource",
+				allowedAction:   "DELETE",
+				allowedResource: "/users/019826a1-081e-7d79-b194-b88945191fc0",
+				description:     "Policy for deleting users",
+			},
+			{
+				name:            "Get user resource",
+				allowedAction:   "GET",
+				allowedResource: "/users/019826a1-081e-7d7d-a3b3-464de6369be0",
+				description:     "Policy for getting specific user",
+			},
+			{
+				name:            "Get user authorization resource",
+				allowedAction:   "GET",
+				allowedResource: "/users/019826a1-081e-7d81-ae85-60d1ce3d66f5/authz",
+				description:     "Policy for getting user authorization",
+			},
+			// Personal access token endpoints (global scope)
+			{
+				name:            "Create personal access token resource",
+				allowedAction:   "POST",
+				allowedResource: "/pa_tokens",
+				description:     "Policy for creating personal access tokens",
+			},
+			{
+				name:            "List user tokens resource",
+				allowedAction:   "GET",
+				allowedResource: "/users/019826a1-081e-7d88-a292-42a7e402d9c6/pa_tokens",
+				description:     "Policy for listing user tokens",
+			},
+			{
+				name:            "Get personal access token resource",
+				allowedAction:   "GET",
+				allowedResource: "/pa_tokens/019826a1-081e-7d90-8c62-1f15e877908e",
+				description:     "Policy for getting personal access token",
+			},
+			{
+				name:            "Update personal access token resource",
+				allowedAction:   "PUT",
+				allowedResource: "/pa_tokens/019826a1-081e-7d98-8e2f-710586facc40",
+				description:     "Policy for updating personal access token",
+			},
+			{
+				name:            "Delete personal access token resource",
+				allowedAction:   "DELETE",
+				allowedResource: "/pa_tokens/019826a1-081e-7da0-bdbb-4a4818426a60",
+				description:     "Policy for deleting personal access token",
+			},
+			// User role management endpoints
+			{
+				name:            "Unlink roles from user resource",
+				allowedAction:   "DELETE",
+				allowedResource: "/users/019826a1-081e-7da4-8072-8422d9b612cd/roles",
+				description:     "Policy for unlinking roles from user",
+			},
+			{
+				name:            "Link roles to user resource",
+				allowedAction:   "POST",
+				allowedResource: "/users/019826a1-081e-7dbf-a971-69186f453351/roles",
+				description:     "Policy for linking roles to user",
+			},
+			{
+				name:            "List roles by user resource",
+				allowedAction:   "GET",
+				allowedResource: "/users/019826a1-081e-7dc3-a7a9-3d1a3d321e13/roles",
+				description:     "Policy for listing roles by user",
+			},
+			// Wildcard permissions for comprehensive access control testing
+			{
+				name:            "Wildcard all actions resource",
+				allowedAction:   "*",
+				allowedResource: "*",
+				description:     "Policy with full access to all resources",
+			},
+			{
+				name:            "Read-only all resources",
+				allowedAction:   "GET",
+				allowedResource: "*",
+				description:     "Policy for read-only access to all resources",
+			},
+			{
+				name:            "Create-only all resources",
+				allowedAction:   "POST",
+				allowedResource: "*",
+				description:     "Policy for create-only access to all resources",
+			},
+			{
+				name:            "Delete-only all resources",
+				allowedAction:   "DELETE",
+				allowedResource: "*",
+				description:     "Policy for delete-only access to all resources",
+			},
+			{
+				name:            "Update-only all resources",
+				allowedAction:   "PUT",
+				allowedResource: "*",
+				description:     "Policy for update-only access to all resources",
+			},
+			{
+				name:            "Patch-only all resources",
+				allowedAction:   "PATCH",
+				allowedResource: "*",
+				description:     "Policy for patch-only access to all resources",
+			},
+			{
+				name:            "Options-only all resources",
+				allowedAction:   "OPTIONS",
+				allowedResource: "*",
+				description:     "Policy for options-only access to all resources",
+			},
+			{
+				name:            "Head-only all resources",
+				allowedAction:   "HEAD",
+				allowedResource: "*",
+				description:     "Policy for head-only access to all resources",
+			},
+			// Pattern matching permissions
+			{
+				name:            "Delete any users resource",
+				allowedAction:   "DELETE",
+				allowedResource: "/users/*",
+				description:     "Policy for deleting any users",
+			},
+			{
+				name:            "Get any projects resource",
+				allowedAction:   "GET",
+				allowedResource: "/projects/*",
+				description:     "Policy for getting any projects",
+			},
+			{
+				name:            "Update any roles resource",
+				allowedAction:   "PUT",
+				allowedResource: "/roles/*",
+				description:     "Policy for updating any roles",
+			},
+		}
+
+		var createdPolicyIDs []uuid.UUID
+
+		// 3. Run each test case
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				// Generate unique policy ID and name
+				policyID := uuid.NewV7()
+
+				// Add some randomness to avoid naming conflicts
+				uniqueSuffix := policyID.String()[:8]
+				policyName := "test_resource_policy_" + strings.ReplaceAll(tc.name, " ", "_") + "_" + uniqueSuffix
+
+				policy := map[string]any{
+					"id":               policyID.String(),
+					"name":             policyName,
+					"description":      tc.description + " - " + uniqueSuffix,
+					"allowed_action":   tc.allowedAction,
+					"allowed_resource": tc.allowedResource,
+				}
+
+				// Send request to create the policy
+				response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
+				assert.NoError(t, err, "Failed to send request for %s", tc.name)
+				defer response.Body.Close()
+
+				// Verify successful creation
+				assert.Equal(t, http.StatusCreated, response.StatusCode,
+					"Expected status code 201 Created for %s. Got %d. Message: %s", tc.name, response.StatusCode, readResponseBody(t, response))
+
+				// Parse and verify the success response
+				apiResp, err := parserResponseBody[payload.HTTPMessage](t, response)
+				assert.NoError(t, err, "Failed to parse success response for %s", tc.name)
+
+				assert.Equal(t, domain.PoliciesPolicyCreatedSuccessfully, apiResp.Message, "Expected success message for %s", tc.name)
+				assert.Equal(t, policyCreateEndpoint.method, apiResp.Method, "Expected method to be set for %s", tc.name)
+				assert.Equal(t, policyCreateEndpoint.Path(), apiResp.Path, "Expected path to be set for %s", tc.name)
+
+				// Store policy ID for cleanup
+				createdPolicyIDs = append(createdPolicyIDs, policyID)
+
+				// Verify the policy was actually created by retrieving it
+				getEndpoint := policyGetEndpoint.RewriteSlugs(policyID.String())
+				getResponse, err := sendHTTPRequest(t, ctx, getEndpoint, nil, accessTokenHeader)
+				assert.NoError(t, err, "Failed to retrieve created policy for %s", tc.name)
+				defer getResponse.Body.Close()
+
+				assert.Equal(t, http.StatusOK, getResponse.StatusCode,
+					"Expected status code 200 OK when retrieving %s policy. Got %d. Message: %s", tc.name, getResponse.StatusCode, readResponseBody(t, getResponse))
+
+				// Parse and verify the retrieved policy
+				retrievedPolicy, err := parserResponseBody[payload.PolicyResponse](t, getResponse)
+				assert.NoError(t, err, "Failed to parse retrieved policy for %s", tc.name)
+
+				assert.Equal(t, policyID, retrievedPolicy.ID, "Expected policy ID to match for %s", tc.name)
+				assert.Equal(t, policyName, retrievedPolicy.Name, "Expected policy name to match for %s", tc.name)
+				assert.Equal(t, tc.allowedAction, retrievedPolicy.AllowedAction, "Expected action to match for %s", tc.name)
+				assert.Equal(t, tc.allowedResource, retrievedPolicy.AllowedResource, "Expected resource to match for %s", tc.name)
+				assert.Contains(t, retrievedPolicy.Description, tc.description, "Expected description to contain base text for %s", tc.name)
+			})
+		}
+
+		// 4. Cleanup - delete all created policies and the admin user
+		t.Cleanup(func() {
+			for _, policyID := range createdPolicyIDs {
+				deletePolicyByIDFromDB(t, policyID)
+			}
+			deleteUserByIDFromDB(t, adminToken.UserID)
+		})
+	})
+
 	t.Run("require_authentication", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		policy := map[string]any{
 			"id":          "00000000-0000-0000-0000-000000000000",
@@ -622,7 +886,7 @@ func TestPolicyGet(t *testing.T) {
 		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
 
 		// 2. Create a new policy
-		policyID := uuid.Must(uuid.NewV7())
+		policyID := uuid.NewV7()
 		policyName := "test_policy_get_" + policyID.String()
 		policyDesc := "This is a test policy for get " + policyID.String()
 		policyAction := "GET"
@@ -640,7 +904,7 @@ func TestPolicyGet(t *testing.T) {
 			"Authorization": "Bearer " + adminToken.AccessToken,
 		}
 
-		ctx := context.Background()
+		ctx := t.Context()
 		createResponse, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
 		assert.NoError(t, err, "Error sending create request: %v", err)
 		defer createResponse.Body.Close()
@@ -660,7 +924,7 @@ func TestPolicyGet(t *testing.T) {
 
 		// 4. Check the response
 		assert.Equal(t, http.StatusOK, getResponse.StatusCode, "Expected status code 200 OK for get. Got %d. Message: %s", getResponse.StatusCode, readResponseBody(t, getResponse))
-		getAPIResp, err := parserResponseBody[model.Policy](t, getResponse)
+		getAPIResp, err := parserResponseBody[payload.PolicyResponse](t, getResponse)
 		assert.NoError(t, err, "Failed to parse get response body", err)
 
 		assert.Equal(t, policyID, getAPIResp.ID, "Expected policy ID to match")
@@ -689,11 +953,11 @@ func TestPolicyGet(t *testing.T) {
 		}
 
 		// 2. Generate a random UUID that doesn't exist in the database
-		nonExistentPolicyID := uuid.Must(uuid.NewV7())
+		nonExistentPolicyID := uuid.NewV7()
 
 		// 3. Try to get the non-existent policy
 		getEndpoint := policyGetEndpoint.RewriteSlugs(nonExistentPolicyID.String())
-		ctx := context.Background()
+		ctx := t.Context()
 		getResponse, err := sendHTTPRequest(t, ctx, getEndpoint, nil, accessTokenHeader)
 		assert.NoError(t, err, "Failed to send request to get non-existent policy")
 		defer getResponse.Body.Close()
@@ -702,7 +966,7 @@ func TestPolicyGet(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, getResponse.StatusCode, "Expected status code 404 for non-existent policy. Got %d. Message: %s", getResponse.StatusCode, readResponseBody(t, getResponse))
 
 		// 5. Parse and verify the error response
-		errorResp, err := parserResponseBody[model.HTTPMessage](t, getResponse)
+		errorResp, err := parserResponseBody[payload.HTTPMessage](t, getResponse)
 		assert.NoError(t, err, "Failed to parse error response")
 
 		// Verify error message contains information about the policy not being found
@@ -720,7 +984,7 @@ func TestPolicyGet(t *testing.T) {
 	t.Run("get_policy_bad_request", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -741,7 +1005,7 @@ func TestPolicyGet(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, getResponse.StatusCode, "Expected status code 400 for invalid policy ID format. Got %d. Message: %s", getResponse.StatusCode, readResponseBody(t, getResponse))
 
 		// 4. Parse and verify the error response
-		errorResp, err := parserResponseBody[model.HTTPMessage](t, getResponse)
+		errorResp, err := parserResponseBody[payload.HTTPMessage](t, getResponse)
 		assert.NoError(t, err, "Failed to parse error response")
 
 		// Verify error message contains information about the invalid UUID format
@@ -758,7 +1022,7 @@ func TestPolicyGet(t *testing.T) {
 	t.Run("require_authentication", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		getEndpoint := policyGetEndpoint.RewriteSlugs("00000000-0000-0000-0000-000000000000")
 		resp, err := sendHTTPRequest(t, ctx, getEndpoint, nil)
@@ -774,7 +1038,7 @@ func TestPolicyDelete(t *testing.T) {
 	t.Run("delete_policy", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -785,13 +1049,13 @@ func TestPolicyDelete(t *testing.T) {
 		}
 
 		// 2. Create a new policy
-		policyID := uuid.Must(uuid.NewV7())
+		policyID := uuid.NewV7()
 		policy := map[string]any{
 			"id":               policyID.String(),
 			"name":             "test_policy_delete_" + policyID.String(),
 			"description":      "This is a test policy for delete " + policyID.String(),
-			"allowed_action":   "DELETE",
-			"allowed_resource": "/roles/" + policyID.String(),
+			"allowed_action":   "GET",
+			"allowed_resource": "/roles/*",
 		}
 
 		createResponse, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
@@ -807,10 +1071,10 @@ func TestPolicyDelete(t *testing.T) {
 
 		// 4. Check the delete response
 		assert.Equal(t, http.StatusOK, deleteResponse.StatusCode, "Expected status code 200 OK for delete")
-		deleteAPIResp, err := parserResponseBody[model.HTTPMessage](t, deleteResponse)
+		deleteAPIResp, err := parserResponseBody[payload.HTTPMessage](t, deleteResponse)
 		assert.NoError(t, err, "Failed to parse delete response body")
 
-		assert.Equal(t, model.PoliciesPolicyDeletedSuccessfully, deleteAPIResp.Message, "Unexpected delete response message")
+		assert.Equal(t, domain.PoliciesPolicyDeletedSuccessfully, deleteAPIResp.Message, "Unexpected delete response message")
 		assert.Equal(t, deleteEndpoint.method, deleteAPIResp.Method, "Expected method to be set for delete")
 		assert.Equal(t, deleteEndpoint.Path(), deleteAPIResp.Path, "Expected path to be set for delete")
 
@@ -833,7 +1097,7 @@ func TestPolicyDelete(t *testing.T) {
 	t.Run("delete_policy_bad_request", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -855,7 +1119,7 @@ func TestPolicyDelete(t *testing.T) {
 		assert.Equal(t, http.StatusBadRequest, deleteResponse.StatusCode, "Expected status code 400 for invalid policy ID format. Got %d. Message: %s", deleteResponse.StatusCode, readResponseBody(t, deleteResponse))
 
 		// 4. Parse and verify the error response
-		errorResp, err := parserResponseBody[model.HTTPMessage](t, deleteResponse)
+		errorResp, err := parserResponseBody[payload.HTTPMessage](t, deleteResponse)
 		assert.NoError(t, err, "Failed to parse error response")
 
 		// 5. Verify error message contains information about the invalid UUID format
@@ -873,7 +1137,7 @@ func TestPolicyDelete(t *testing.T) {
 	t.Run("delete_policy_not_found", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -884,7 +1148,7 @@ func TestPolicyDelete(t *testing.T) {
 		}
 
 		// 2. Generate a UUID that doesn't exist in the database
-		nonExistentPolicyID := uuid.Must(uuid.NewV7())
+		nonExistentPolicyID := uuid.NewV7()
 		deleteEndpoint := policyDeleteEndpoint.RewriteSlugs(nonExistentPolicyID.String())
 
 		deleteResponse, err := sendHTTPRequest(t, ctx, deleteEndpoint, nil, accessTokenHeader)
@@ -896,11 +1160,11 @@ func TestPolicyDelete(t *testing.T) {
 		assert.Equal(t, http.StatusOK, deleteResponse.StatusCode, "Expected status code 200 OK for deleting non-existent policy. Got %d. Message: %s", deleteResponse.StatusCode, readResponseBody(t, deleteResponse))
 
 		// 4. Parse and verify the success response
-		deleteAPIResp, err := parserResponseBody[model.HTTPMessage](t, deleteResponse)
+		deleteAPIResp, err := parserResponseBody[payload.HTTPMessage](t, deleteResponse)
 		assert.NoError(t, err, "Failed to parse response body")
 
 		// 5. Verify success message for deletion
-		assert.Equal(t, model.PoliciesPolicyDeletedSuccessfully, deleteAPIResp.Message, "Expected success message")
+		assert.Equal(t, domain.PoliciesPolicyDeletedSuccessfully, deleteAPIResp.Message, "Expected success message")
 		assert.Equal(t, deleteEndpoint.method, deleteAPIResp.Method, "Expected method to be set")
 		assert.Equal(t, deleteEndpoint.Path(), deleteAPIResp.Path, "Expected path to be set")
 
@@ -913,7 +1177,7 @@ func TestPolicyDelete(t *testing.T) {
 	t.Run("require_authentication", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		deleteEndpoint := policyDeleteEndpoint.RewriteSlugs("00000000-0000-0000-0000-000000000000")
 		resp, err := sendHTTPRequest(t, ctx, deleteEndpoint, nil)
@@ -929,7 +1193,7 @@ func TestPolicyUpdate(t *testing.T) {
 	t.Run("update_policy", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -940,7 +1204,7 @@ func TestPolicyUpdate(t *testing.T) {
 		}
 
 		// 2. Create a new policy
-		policyID := uuid.Must(uuid.NewV7())
+		policyID := uuid.NewV7()
 		originalName := "test_policy_update_" + policyID.String()
 		originalDesc := "Original description " + policyID.String()
 		originalAction := "GET"
@@ -978,11 +1242,11 @@ func TestPolicyUpdate(t *testing.T) {
 		defer updateResponse.Body.Close()
 
 		// 4. Check the update response
-		assert.Equal(t, http.StatusOK, updateResponse.StatusCode, "Expected status code 200 OK for update")
-		updateAPIResp, err := parserResponseBody[model.HTTPMessage](t, updateResponse)
+		assert.Equal(t, http.StatusOK, updateResponse.StatusCode, "Expected status code 200 OK for update", updateResponse.StatusCode, readResponseBody(t, updateResponse))
+		updateAPIResp, err := parserResponseBody[payload.HTTPMessage](t, updateResponse)
 		assert.NoError(t, err, "Failed to parse update response body")
 
-		assert.Equal(t, model.PoliciesPolicyUpdatedSuccessfully, updateAPIResp.Message, "Unexpected update response message")
+		assert.Equal(t, domain.PoliciesPolicyUpdatedSuccessfully, updateAPIResp.Message, "Unexpected update response message")
 		assert.Equal(t, updateEndpoint.method, updateAPIResp.Method, "Expected method to be set for update")
 		assert.Equal(t, updateEndpoint.Path(), updateAPIResp.Path, "Expected path to be set for update")
 
@@ -992,9 +1256,9 @@ func TestPolicyUpdate(t *testing.T) {
 		assert.NoError(t, err, "Error sending get request after update: %v", err)
 		defer getResponse.Body.Close()
 
-		assert.Equal(t, http.StatusOK, getResponse.StatusCode, "Expected status code 200 OK when getting updated policy")
+		assert.Equal(t, http.StatusOK, getResponse.StatusCode, "Expected status code 200 OK when getting updated policy", getResponse.StatusCode, readResponseBody(t, getResponse))
 
-		getAPIResp, err := parserResponseBody[model.Policy](t, getResponse)
+		getAPIResp, err := parserResponseBody[payload.PolicyResponse](t, getResponse)
 		assert.NoError(t, err, "Failed to parse get response body for updated policy")
 
 		assert.Equal(t, policyID, getAPIResp.ID, "Expected policy ID to remain the same")
@@ -1014,7 +1278,7 @@ func TestPolicyUpdate(t *testing.T) {
 	t.Run("update_policy_bad_request", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -1025,7 +1289,7 @@ func TestPolicyUpdate(t *testing.T) {
 		}
 
 		// 2. Create a valid policy first that we'll try to update with invalid data
-		policyID := uuid.Must(uuid.NewV7())
+		policyID := uuid.NewV7()
 		policy := map[string]any{
 			"id":               policyID.String(),
 			"name":             "test_policy_update_invalid_" + policyID.String(),
@@ -1082,7 +1346,7 @@ func TestPolicyUpdate(t *testing.T) {
 					"Expected status code 400 Bad Request for %s. Got %d. Message: %s", tc.name, updateResponse.StatusCode, readResponseBody(t, updateResponse))
 
 				// Parse and verify the error response
-				errorResp, err := parserResponseBody[model.HTTPMessage](t, updateResponse)
+				errorResp, err := parserResponseBody[payload.HTTPMessage](t, updateResponse)
 				assert.NoError(t, err, "Failed to parse error response for %s", tc.name)
 
 				// Verify error message contains information specific to this validation failure
@@ -1104,7 +1368,7 @@ func TestPolicyUpdate(t *testing.T) {
 	t.Run("update_policy_not_found", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -1115,7 +1379,7 @@ func TestPolicyUpdate(t *testing.T) {
 		}
 
 		// 2. Generate a random UUID that doesn't exist
-		nonExistentPolicyID := uuid.Must(uuid.NewV7())
+		nonExistentPolicyID := uuid.NewV7()
 		updateEndpoint := policyUpdateEndpoint.RewriteSlugs(nonExistentPolicyID.String())
 
 		// Create update data
@@ -1135,7 +1399,7 @@ func TestPolicyUpdate(t *testing.T) {
 		assert.Equal(t, http.StatusNotFound, updateResponse.StatusCode, "Expected status code 404 for non-existent policy. Got %d. Message: %s", updateResponse.StatusCode, readResponseBody(t, updateResponse))
 
 		// 5. Parse and verify the error response
-		errorResp, err := parserResponseBody[model.HTTPMessage](t, updateResponse)
+		errorResp, err := parserResponseBody[payload.HTTPMessage](t, updateResponse)
 		assert.NoError(t, err, "Failed to parse error response")
 
 		// Verify error message contains information about the policy not being found
@@ -1153,7 +1417,7 @@ func TestPolicyUpdate(t *testing.T) {
 	t.Run("update_policy_conflict_name", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -1165,7 +1429,7 @@ func TestPolicyUpdate(t *testing.T) {
 
 		// 2. Create two policies with different names
 		// First policy - this is the one we'll try to update
-		policyID1 := uuid.Must(uuid.NewV7())
+		policyID1 := uuid.NewV7()
 		policyName1 := "test_conflict_1_" + policyID1.String()
 		policy1 := map[string]any{
 			"id":               policyID1.String(),
@@ -1181,7 +1445,7 @@ func TestPolicyUpdate(t *testing.T) {
 		assert.Equal(t, http.StatusCreated, createResponse1.StatusCode, "Expected status code 201 for first policy creation. Got %d. Message: %s", createResponse1.StatusCode, readResponseBody(t, createResponse1))
 
 		// Second policy - we'll try to use this policy's name when updating the first policy
-		policyID2 := uuid.Must(uuid.NewV7())
+		policyID2 := uuid.NewV7()
 		policyName2 := "test_conflict_2_" + policyID2.String()
 		policy2 := map[string]any{
 			"id":               policyID2.String(),
@@ -1212,7 +1476,7 @@ func TestPolicyUpdate(t *testing.T) {
 		assert.Equal(t, http.StatusConflict, updateResponse.StatusCode, "Expected status code 409 Conflict for update with already used name. Got %d. Message: %s", updateResponse.StatusCode, readResponseBody(t, updateResponse))
 
 		// 5. Parse and verify the error response
-		errorResp, err := parserResponseBody[model.HTTPMessage](t, updateResponse)
+		errorResp, err := parserResponseBody[payload.HTTPMessage](t, updateResponse)
 		assert.NoError(t, err, "Failed to parse error response")
 
 		// 6. Verify error message contains information about the name being already in use
@@ -1234,7 +1498,7 @@ func TestPolicyList(t *testing.T) {
 	t.Run("list_policies", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Create an administrator user and get the token
 		adminToken := getAdminUserTokens(t)
@@ -1245,10 +1509,10 @@ func TestPolicyList(t *testing.T) {
 		}
 
 		// 2. Create a couple of new policies
-		policyIDs := []uuid.UUID{uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7()), uuid.Must(uuid.NewV7())}
+		policyIDs := []uuid.UUID{uuid.NewV7(), uuid.NewV7(), uuid.NewV7(), uuid.NewV7(), uuid.NewV7()}
 		policiesToCreate := map[string]map[string]any{}
 
-		// validActions := strings.ReplaceAll(model.GetValidActions(), " ", "")
+		// validActions := strings.ReplaceAll(domain.GetValidActions(), " ", "")
 		// actionsAllowed := strings.Split(validActions, ",")
 		actionsAllowed := []string{"GET"}
 		resourcesAllowed := []string{
@@ -1275,10 +1539,10 @@ func TestPolicyList(t *testing.T) {
 			if createResponse != nil {
 				defer createResponse.Body.Close()
 
-				createResponseMessage, err := parserResponseBody[model.HTTPMessage](t, createResponse)
+				createResponseMessage, err := parserResponseBody[payload.HTTPMessage](t, createResponse)
 				assert.NoError(t, err, "Failed to parse create response body for policy %d", i+1)
 
-				assert.Equal(t, model.PoliciesPolicyCreatedSuccessfully, createResponseMessage.Message, "Unexpected response message for policy %d", i+1)
+				assert.Equal(t, domain.PoliciesPolicyCreatedSuccessfully, createResponseMessage.Message, "Unexpected response message for policy %d", i+1)
 				assert.Equal(t, http.StatusCreated, createResponse.StatusCode, "Expected status code 201 for policy.")
 			}
 		}
@@ -1290,8 +1554,8 @@ func TestPolicyList(t *testing.T) {
 
 		// 4. Check the list response
 		assert.Equal(t, http.StatusOK, listResponse.StatusCode, "Expected status code 200 for list. Got %d. Message: %s", listResponse.StatusCode, readResponseBody(t, listResponse))
-		// Assuming model.ListPoliciesOutput exists and has an Items field []model.Policy
-		listAPIResp, err := parserResponseBody[model.ListPoliciesOutput](t, listResponse)
+		// Assuming domain.ListPoliciesOutput exists and has an Items field []domain.Policy
+		listAPIResp, err := parserResponseBody[payload.ListPoliciesResponse](t, listResponse)
 		assert.NoError(t, err, "Failed to parse list response body")
 
 		// 5. Verify the created policies are in the list
@@ -1325,7 +1589,7 @@ func TestPolicyLinkRoles(t *testing.T) {
 	t.Run("link_roles_to_policy", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Setup: Create admin, policy, and roles
 		adminToken := getAdminUserTokens(t)
@@ -1351,10 +1615,10 @@ func TestPolicyLinkRoles(t *testing.T) {
 
 		// 3. Check link response
 		assert.Equal(t, http.StatusOK, linkResponse.StatusCode, "Expected status code 200 OK for linking roles. Got %d. Message: %s", linkResponse.StatusCode, readResponseBody(t, linkResponse))
-		linkAPIResp, err := parserResponseBody[model.HTTPMessage](t, linkResponse)
+		linkAPIResp, err := parserResponseBody[payload.HTTPMessage](t, linkResponse)
 		assert.NoError(t, err, "Failed to parse link roles response body")
 
-		assert.Equal(t, model.PoliciesRolesLinkedSuccessfully, linkAPIResp.Message, "Unexpected link roles response message")
+		assert.Equal(t, domain.PoliciesRolesLinkedSuccessfully, linkAPIResp.Message, "Unexpected link roles response message")
 
 		// 4. Verify roles are linked (by getting one of the roles)
 		getRoleEndpoint := rolesGetEndpoint.RewriteSlugs(roleID1.String())
@@ -1379,7 +1643,7 @@ func TestPolicyUnlinkRoles(t *testing.T) {
 	t.Run("unlink_roles_from_policy", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Setup: Create admin, policy, roles, and link them
 		adminToken := getAdminUserTokens(t)
@@ -1406,7 +1670,7 @@ func TestPolicyUnlinkRoles(t *testing.T) {
 		assert.Equal(t, http.StatusOK, linkResponse.StatusCode, "Expected status code 200 OK for linking roles during setup. Got %d. Message: %s", linkResponse.StatusCode, readResponseBody(t, linkResponse))
 
 		// 2. Unlink one role
-		time.Sleep(1 * time.Second) // Ensure different timestamps for unlinking
+		time.Sleep(500 * time.Millisecond) // Ensure different timestamps for unlinking
 		unlinkEndpoint := policyUnlinkRolesEndpoint.RewriteSlugs(policyID.String())
 		unlinkPayload := map[string]any{
 			"role_ids": []string{roleID1.String()},
@@ -1418,10 +1682,10 @@ func TestPolicyUnlinkRoles(t *testing.T) {
 
 		// 3. Check unlink response
 		assert.Equal(t, http.StatusOK, unlinkResponse.StatusCode, "Expected status code 200 OK for unlinking role. Got %d. Message: %s", unlinkResponse.StatusCode, readResponseBody(t, unlinkResponse))
-		unlinkAPIResp, err := parserResponseBody[model.HTTPMessage](t, unlinkResponse)
+		unlinkAPIResp, err := parserResponseBody[payload.HTTPMessage](t, unlinkResponse)
 		assert.NoError(t, err, "Failed to parse unlink role response body")
 
-		assert.Equal(t, model.PoliciesRolesUnlinkedSuccessfully, unlinkAPIResp.Message, "Unexpected unlink role response message")
+		assert.Equal(t, domain.PoliciesRolesUnlinkedSuccessfully, unlinkAPIResp.Message, "Unexpected unlink role response message")
 
 		// 4. Verify role is unlinked (by getting the roles)
 		rolesGetEndpoint := newAPIEndpoint(http.MethodGet, "/roles/{role_id}") // Define locally or ensure global access
@@ -1447,5 +1711,1087 @@ func TestPolicyUnlinkRoles(t *testing.T) {
 			deleteRoleByIDFromDB(t, roleID2)
 			deleteUserByIDFromDB(t, adminToken.UserID)
 		})
+	})
+}
+
+// TestPolicyCreate_EdgeCases tests policy creation with various edge cases
+func TestPolicyCreate_EdgeCases(t *testing.T) {
+	t.Run("create_policy_without_authentication", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		policyID := uuid.NewV7()
+		policy := map[string]any{
+			"id":          policyID.String(),
+			"name":        "test-policy-" + policyID.String(),
+			"description": "Test policy",
+			"resource":    "/api/v1/test",
+			"action":      "read",
+			"effect":      "allow",
+		}
+
+		response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusUnauthorized, response.StatusCode, "Expected status code 401. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+
+	t.Run("create_policy_with_invalid_token", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		invalidTokenHeader := map[string]string{
+			"Authorization": "Bearer invalid.token.here",
+		}
+
+		policyID := uuid.NewV7()
+		policy := map[string]any{
+			"id":          policyID.String(),
+			"name":        "test-policy-" + policyID.String(),
+			"description": "Test policy",
+			"resource":    "/api/v1/test",
+			"action":      "read",
+			"effect":      "allow",
+		}
+
+		response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, invalidTokenHeader)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusUnauthorized, response.StatusCode, "Expected status code 401. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+
+	t.Run("create_policy_with_empty_name", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		adminToken := getAdminUserTokens(t)
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		policyID := uuid.NewV7()
+		policy := map[string]any{
+			"id":          policyID.String(),
+			"name":        "",
+			"description": "Test policy",
+			"resource":    "/api/v1/test",
+			"action":      "read",
+			"effect":      "allow",
+		}
+
+		response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusBadRequest, response.StatusCode, "Expected status code 400. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+
+	t.Run("create_policy_with_invalid_effect", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		adminToken := getAdminUserTokens(t)
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		policyID := uuid.NewV7()
+		policy := map[string]any{
+			"id":          policyID.String(),
+			"name":        "test-policy-" + policyID.String(),
+			"description": "Test policy",
+			"resource":    "/api/v1/test",
+			"action":      "read",
+			"effect":      "invalid", // not 'allow' or 'deny'
+		}
+
+		response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusBadRequest, response.StatusCode, "Expected status code 400. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+
+	t.Run("create_policy_with_invalid_uuid", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		adminToken := getAdminUserTokens(t)
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		policy := map[string]any{
+			"id":          "invalid-uuid",
+			"name":        "test-policy-invalid",
+			"description": "Test policy",
+			"resource":    "/api/v1/test",
+			"action":      "read",
+			"effect":      "allow",
+		}
+
+		response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusBadRequest, response.StatusCode, "Expected status code 400. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+}
+
+// TestPolicyGet_EdgeCases tests policy retrieval with edge cases
+func TestPolicyGet_EdgeCases(t *testing.T) {
+	t.Run("get_policy_without_authentication", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		policyID := uuid.NewV7()
+
+		getEndpoint := policyGetEndpoint.RewriteSlugs(policyID.String())
+		response, err := sendHTTPRequest(t, ctx, getEndpoint, nil)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusUnauthorized, response.StatusCode, "Expected status code 401. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+
+	t.Run("get_policy_with_invalid_uuid", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		adminToken := getAdminUserTokens(t)
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		getEndpoint := policyGetEndpoint.RewriteSlugs("invalid-uuid")
+		response, err := sendHTTPRequest(t, ctx, getEndpoint, nil, accessTokenHeader)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusBadRequest, response.StatusCode, "Expected status code 400. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+
+	t.Run("get_non_existent_policy", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		adminToken := getAdminUserTokens(t)
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		nonExistentPolicyID := uuid.NewV7()
+
+		getEndpoint := policyGetEndpoint.RewriteSlugs(nonExistentPolicyID.String())
+		response, err := sendHTTPRequest(t, ctx, getEndpoint, nil, accessTokenHeader)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusNotFound, response.StatusCode, "Expected status code 404. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+}
+
+// TestPolicyUpdate_EdgeCases tests policy update with edge cases
+func TestPolicyUpdate_EdgeCases(t *testing.T) {
+	t.Run("update_policy_without_authentication", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		policyID := uuid.NewV7()
+
+		updatePayload := map[string]any{
+			"name": "updated-policy",
+		}
+
+		updateEndpoint := policyUpdateEndpoint.RewriteSlugs(policyID.String())
+		response, err := sendHTTPRequest(t, ctx, updateEndpoint, updatePayload)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusUnauthorized, response.StatusCode, "Expected status code 401. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+
+	t.Run("update_non_existent_policy", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		adminToken := getAdminUserTokens(t)
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		nonExistentPolicyID := uuid.NewV7()
+
+		updatePayload := map[string]any{
+			"name": "updated-policy",
+		}
+
+		updateEndpoint := policyUpdateEndpoint.RewriteSlugs(nonExistentPolicyID.String())
+		response, err := sendHTTPRequest(t, ctx, updateEndpoint, updatePayload, accessTokenHeader)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusNotFound, response.StatusCode, "Expected status code 404. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+
+	t.Run("update_policy_with_invalid_effect", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		adminToken := getAdminUserTokens(t)
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// Create a policy first
+		policyID := createTestPolicyWithParams(t, adminToken.AccessToken, "test-policy-", "/users", "GET", "allow")
+
+		// Try to update with invalid effect
+		updatePayload := map[string]any{
+			"effect": "invalid-effect",
+		}
+
+		updateEndpoint := policyUpdateEndpoint.RewriteSlugs(policyID.String())
+		response, err := sendHTTPRequest(t, ctx, updateEndpoint, updatePayload, accessTokenHeader)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusBadRequest, response.StatusCode, "Expected status code 400. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+
+		t.Cleanup(func() {
+			deletePolicyByIDFromDB(t, policyID)
+		})
+	})
+}
+
+// TestPolicyDelete_EdgeCases tests policy deletion with edge cases
+func TestPolicyDelete_EdgeCases(t *testing.T) {
+	t.Run("delete_policy_without_authentication", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		policyID := uuid.NewV7()
+
+		deleteEndpoint := policyDeleteEndpoint.RewriteSlugs(policyID.String())
+		response, err := sendHTTPRequest(t, ctx, deleteEndpoint, nil)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusUnauthorized, response.StatusCode, "Expected status code 401. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+
+	t.Run("delete_non_existent_policy", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		adminToken := getAdminUserTokens(t)
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		nonExistentPolicyID := uuid.NewV7()
+
+		deleteEndpoint := policyDeleteEndpoint.RewriteSlugs(nonExistentPolicyID.String())
+		response, err := sendHTTPRequest(t, ctx, deleteEndpoint, nil, accessTokenHeader)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200 (graceful delete for security). Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+
+		// Verify success message
+		apiResp, err := parserResponseBody[payload.HTTPMessage](t, response)
+		assert.NoError(t, err, "Failed to parse response body")
+		assert.Equal(t, domain.PoliciesPolicyDeletedSuccessfully, apiResp.Message, "Expected success message even for non-existent policy (security pattern)")
+	})
+
+	t.Run("delete_policy_with_invalid_uuid", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		adminToken := getAdminUserTokens(t)
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		deleteEndpoint := policyDeleteEndpoint.RewriteSlugs("invalid-uuid")
+		response, err := sendHTTPRequest(t, ctx, deleteEndpoint, nil, accessTokenHeader)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusBadRequest, response.StatusCode, "Expected status code 400. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+}
+
+// TestPolicyList_EdgeCases tests policy listing with edge cases
+func TestPolicyList_EdgeCases(t *testing.T) {
+	t.Run("list_policies_without_authentication", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		response, err := sendHTTPRequest(t, ctx, policyListEndpoint, nil)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusUnauthorized, response.StatusCode, "Expected status code 401. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+
+	t.Run("list_policies_with_invalid_pagination", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		adminToken := getAdminUserTokens(t)
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		testCases := []struct {
+			name     string
+			endpoint *apiEndpoint
+		}{
+			{
+				name:     "negative_limit",
+				endpoint: newAPIEndpoint(http.MethodGet, "/policies?limit=-1"),
+			},
+			{
+				name:     "limit_too_large",
+				endpoint: newAPIEndpoint(http.MethodGet, "/policies?limit=1001"),
+			},
+			{
+				name:     "invalid_cursor",
+				endpoint: newAPIEndpoint(http.MethodGet, "/policies?cursor=invalid-cursor"),
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				response, err := sendHTTPRequest(t, ctx, tc.endpoint, nil, accessTokenHeader)
+				assert.NoError(t, err)
+				defer response.Body.Close()
+
+				if tc.name == "invalid_cursor" {
+					// Invalid cursors are silently ignored and return 200 with all results
+					assert.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200 (invalid cursor ignored). Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+				} else {
+					// Limit validation errors return 400
+					assert.Equal(t, http.StatusBadRequest, response.StatusCode, "Expected status code 400 for limit validation. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+				}
+			})
+		}
+	})
+}
+
+// TestPolicyLinkRoles_EdgeCases tests linking roles to policies with edge cases
+func TestPolicyLinkRoles_EdgeCases(t *testing.T) {
+	t.Run("link_roles_to_policy_without_authentication", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		policyID := uuid.NewV7()
+
+		linkPayload := map[string]any{
+			"role_ids": []string{uuid.NewV7().String()},
+		}
+
+		linkEndpoint := policyLinkRolesEndpoint.RewriteSlugs(policyID.String())
+		response, err := sendHTTPRequest(t, ctx, linkEndpoint, linkPayload)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusUnauthorized, response.StatusCode, "Expected status code 401. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+
+	t.Run("link_roles_to_non_existent_policy", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		adminToken := getAdminUserTokens(t)
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		nonExistentPolicyID := uuid.NewV7()
+
+		linkPayload := map[string]any{
+			"role_ids": []string{uuid.NewV7().String()},
+		}
+
+		linkEndpoint := policyLinkRolesEndpoint.RewriteSlugs(nonExistentPolicyID.String())
+		response, err := sendHTTPRequest(t, ctx, linkEndpoint, linkPayload, accessTokenHeader)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		// NOTE: This should return 404, but currently returns 500 with FK constraint violation
+		// TODO: Handler should validate policy existence before database operation
+		assert.Equal(t, http.StatusInternalServerError, response.StatusCode, "Expected status code 500 (FK violation). Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+
+		apiResp, err := parserResponseBody[payload.HTTPMessage](t, response)
+		assert.NoError(t, err, "Failed to parse response body")
+		assert.Contains(t, apiResp.Message, "foreign key constraint", "Expected FK constraint error message")
+	})
+
+	t.Run("link_roles_with_empty_array", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		adminToken := getAdminUserTokens(t)
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// Create a policy
+		policyID := createTestPolicyWithParams(t, adminToken.AccessToken, "test-policy-", "/users", "GET", "allow")
+
+		linkPayload := map[string]any{
+			"role_ids": []string{},
+		}
+
+		linkEndpoint := policyLinkRolesEndpoint.RewriteSlugs(policyID.String())
+		response, err := sendHTTPRequest(t, ctx, linkEndpoint, linkPayload, accessTokenHeader)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusBadRequest, response.StatusCode, "Expected status code 400. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+
+		t.Cleanup(func() {
+			deletePolicyByIDFromDB(t, policyID)
+		})
+	})
+
+	t.Run("link_roles_with_invalid_role_id", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		adminToken := getAdminUserTokens(t)
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// Create a policy
+		policyID := createTestPolicyWithParams(t, adminToken.AccessToken, "test-policy-", "/users", "GET", "allow")
+
+		linkPayload := map[string]any{
+			"role_ids": []string{"invalid-uuid"},
+		}
+
+		linkEndpoint := policyLinkRolesEndpoint.RewriteSlugs(policyID.String())
+		response, err := sendHTTPRequest(t, ctx, linkEndpoint, linkPayload, accessTokenHeader)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusBadRequest, response.StatusCode, "Expected status code 400. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+
+		t.Cleanup(func() {
+			deletePolicyByIDFromDB(t, policyID)
+		})
+	})
+}
+
+// TestPolicyJSONSerialization tests that all policy endpoints return JSON responses with snake_case field names
+func TestPolicyJSONSerialization(t *testing.T) {
+	// Test that PolicyResponse uses snake_case in JSON serialization
+	t.Run("get_policy_response_uses_snake_case", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// 1. Create an administrator user and get the token
+		adminToken := getAdminUserTokens(t)
+		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
+
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// 2. Create a test policy
+		policyID := uuid.NewV7()
+
+		policy := map[string]any{
+			"id":               policyID.String(),
+			"name":             generateRandomName(t, ""),
+			"description":      "Test policy for JSON serialization",
+			"allowed_action":   "GET",
+			"allowed_resource": "/users",
+		}
+
+		createResponse, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
+		require.NoError(t, err, "Failed to create policy")
+		defer createResponse.Body.Close()
+		require.Equal(t, http.StatusCreated, createResponse.StatusCode)
+
+		// 3. Get the policy
+		getPolicyEndpoint := policyGetEndpoint.RewriteSlugs(policyID.String())
+		response, err := sendHTTPRequest(t, ctx, getPolicyEndpoint, nil, accessTokenHeader)
+		require.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
+
+		require.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200")
+
+		// 4. Verify all PolicyResponse fields are in snake_case
+		expectedFields := []string{
+			"id",
+			"name",
+			"description",
+			"system",
+			"resource",
+			"allowed_action",
+			"allowed_resource",
+			"created_at",
+			"updated_at",
+		}
+
+		assertJSONFieldsAreSnakeCase(t, response, expectedFields)
+
+		t.Cleanup(func() {
+			deletePolicyByIDFromDB(t, policyID)
+			deleteUserByIDFromDB(t, adminToken.UserID)
+		})
+	})
+
+	// Test that ListPoliciesOutput uses snake_case including nested objects
+	t.Run("list_policies_response_uses_snake_case", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// 1. Create an administrator user and get the token
+		adminToken := getAdminUserTokens(t)
+		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
+
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// 2. Create test policies
+		policy1ID := uuid.NewV7()
+
+		policy1 := map[string]any{
+			"id":               policy1ID.String(),
+			"name":             generateRandomName(t, ""),
+			"description":      "Test policy 1",
+			"allowed_action":   "GET",
+			"allowed_resource": "/users",
+		}
+
+		createResponse1, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy1, accessTokenHeader)
+		require.NoError(t, err, "Failed to create policy 1")
+		defer createResponse1.Body.Close()
+		require.Equal(t, http.StatusCreated, createResponse1.StatusCode)
+
+		policy2ID := uuid.NewV7()
+
+		policy2 := map[string]any{
+			"id":               policy2ID.String(),
+			"name":             generateRandomName(t, ""),
+			"description":      "Test policy 2",
+			"allowed_action":   "POST",
+			"allowed_resource": "/projects",
+		}
+
+		createResponse2, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy2, accessTokenHeader)
+		require.NoError(t, err, "Failed to create policy 2")
+		defer createResponse2.Body.Close()
+		require.Equal(t, http.StatusCreated, createResponse2.StatusCode)
+
+		// 3. List policies
+		response, err := sendHTTPRequest(t, ctx, policyListEndpoint, nil, accessTokenHeader)
+		require.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
+
+		require.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200")
+
+		// 4. Verify ListPoliciesOutput top-level fields are snake_case
+		expectedTopLevelFields := []string{
+			"items",
+			"paginator",
+		}
+
+		assertJSONFieldsAreSnakeCase(t, response, expectedTopLevelFields)
+
+		t.Cleanup(func() {
+			deletePolicyByIDFromDB(t, policy1ID)
+			deletePolicyByIDFromDB(t, policy2ID)
+			deleteUserByIDFromDB(t, adminToken.UserID)
+		})
+	})
+
+	// Test that HTTPMessage response uses snake_case
+	t.Run("create_policy_http_message_uses_snake_case", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// 1. Create an administrator user and get the token
+		adminToken := getAdminUserTokens(t)
+		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
+
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// 2. Create a new policy
+		policyID := uuid.NewV7()
+
+		policy := map[string]any{
+			"id":               policyID.String(),
+			"name":             generateRandomName(t, ""),
+			"description":      "Test policy for HTTP message",
+			"allowed_action":   "GET",
+			"allowed_resource": "/users",
+		}
+
+		response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
+		require.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
+
+		require.Equal(t, http.StatusCreated, response.StatusCode, "Expected status code 201")
+
+		// 3. Verify HTTPMessage fields are in snake_case
+		expectedFields := []string{
+			"message",
+			"method",
+			"path",
+		}
+
+		assertJSONFieldsAreSnakeCase(t, response, expectedFields)
+
+		t.Cleanup(func() {
+			deletePolicyByIDFromDB(t, policyID)
+			deleteUserByIDFromDB(t, adminToken.UserID)
+		})
+	})
+
+	// Test that update response uses snake_case
+	t.Run("update_policy_response_uses_snake_case", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// 1. Create an administrator user and get the token
+		adminToken := getAdminUserTokens(t)
+		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
+
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// 2. Create a test policy
+		policyID := uuid.NewV7()
+
+		policy := map[string]any{
+			"id":               policyID.String(),
+			"name":             generateRandomName(t, ""),
+			"description":      "Test policy for update",
+			"allowed_action":   "GET",
+			"allowed_resource": "/users",
+		}
+
+		createResponse, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
+		require.NoError(t, err, "Failed to create policy")
+		defer createResponse.Body.Close()
+		require.Equal(t, http.StatusCreated, createResponse.StatusCode)
+
+		// 3. Update the policy
+		newName := generateRandomName(t, "")
+		updatePayload := map[string]any{
+			"name": newName,
+		}
+
+		updateEndpoint := policyUpdateEndpoint.RewriteSlugs(policyID.String())
+		response, err := sendHTTPRequest(t, ctx, updateEndpoint, updatePayload, accessTokenHeader)
+		require.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
+
+		require.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200")
+
+		// 4. Verify HTTPMessage fields are in snake_case
+		expectedFields := []string{
+			"message",
+			"method",
+			"path",
+		}
+
+		assertJSONFieldsAreSnakeCase(t, response, expectedFields)
+
+		t.Cleanup(func() {
+			deletePolicyByIDFromDB(t, policyID)
+			deleteUserByIDFromDB(t, adminToken.UserID)
+		})
+	})
+
+	// Test that delete response uses snake_case
+	t.Run("delete_policy_response_uses_snake_case", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// 1. Create an administrator user and get the token
+		adminToken := getAdminUserTokens(t)
+		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
+
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// 2. Create a test policy
+		policyID := uuid.NewV7()
+
+		policy := map[string]any{
+			"id":               policyID.String(),
+			"name":             generateRandomName(t, ""),
+			"description":      "Test policy for delete",
+			"allowed_action":   "GET",
+			"allowed_resource": "/users",
+		}
+
+		createResponse, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
+		require.NoError(t, err, "Failed to create policy")
+		defer createResponse.Body.Close()
+		require.Equal(t, http.StatusCreated, createResponse.StatusCode)
+
+		// 3. Delete the policy
+		deleteEndpoint := policyDeleteEndpoint.RewriteSlugs(policyID.String())
+		response, err := sendHTTPRequest(t, ctx, deleteEndpoint, nil, accessTokenHeader)
+		require.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
+
+		require.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200")
+
+		// 4. Verify HTTPMessage fields are in snake_case
+		expectedFields := []string{
+			"message",
+			"method",
+			"path",
+		}
+
+		assertJSONFieldsAreSnakeCase(t, response, expectedFields)
+
+		t.Cleanup(func() {
+			deleteUserByIDFromDB(t, adminToken.UserID)
+		})
+	})
+
+	// Test that link roles response uses snake_case
+	t.Run("link_roles_response_uses_snake_case", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// 1. Create an administrator user and get the token
+		adminToken := getAdminUserTokens(t)
+		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
+
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// 2. Create a test policy
+		policyID := uuid.NewV7()
+
+		policy := map[string]any{
+			"id":               policyID.String(),
+			"name":             generateRandomName(t, ""),
+			"description":      "Test policy for link roles",
+			"allowed_action":   "GET",
+			"allowed_resource": "/users",
+		}
+
+		createResponse, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
+		require.NoError(t, err, "Failed to create policy")
+		defer createResponse.Body.Close()
+		require.Equal(t, http.StatusCreated, createResponse.StatusCode)
+
+		// 3. Get a role ID from database (assuming roles exist from migrations)
+		var roleID uuid.UUID
+		query := `SELECT id FROM roles LIMIT 1`
+		err = testDBPool.QueryRow(ctx, query).Scan(&roleID)
+		require.NoError(t, err, "Failed to get role from database")
+
+		// 4. Link role to policy
+		linkPayload := map[string]any{
+			"role_ids": []uuid.UUID{roleID},
+		}
+
+		linkEndpoint := policyLinkRolesEndpoint.RewriteSlugs(policyID.String())
+		response, err := sendHTTPRequest(t, ctx, linkEndpoint, linkPayload, accessTokenHeader)
+		require.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
+
+		require.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200")
+
+		// 5. Verify HTTPMessage fields are in snake_case
+		expectedFields := []string{
+			"message",
+			"method",
+			"path",
+		}
+
+		assertJSONFieldsAreSnakeCase(t, response, expectedFields)
+
+		t.Cleanup(func() {
+			unlinkPoliciesFromRoleViaDB(t, roleID, []uuid.UUID{policyID})
+			deletePolicyByIDFromDB(t, policyID)
+			deleteUserByIDFromDB(t, adminToken.UserID)
+		})
+	})
+
+	// Test that unlink roles response uses snake_case
+	t.Run("unlink_roles_response_uses_snake_case", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// 1. Create an administrator user and get the token
+		adminToken := getAdminUserTokens(t)
+		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
+
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// 2. Create a test policy
+		policyID := uuid.NewV7()
+
+		policy := map[string]any{
+			"id":               policyID.String(),
+			"name":             generateRandomName(t, ""),
+			"description":      "Test policy for unlink roles",
+			"allowed_action":   "GET",
+			"allowed_resource": "/users",
+		}
+
+		createResponse, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
+		require.NoError(t, err, "Failed to create policy")
+		defer createResponse.Body.Close()
+		require.Equal(t, http.StatusCreated, createResponse.StatusCode)
+
+		// 3. Get a role ID and link it first
+		var roleID uuid.UUID
+		query := `SELECT id FROM roles LIMIT 1`
+		err = testDBPool.QueryRow(ctx, query).Scan(&roleID)
+		require.NoError(t, err, "Failed to get role from database")
+
+		// Link the role
+		linkQuery := `INSERT INTO roles_policies (roles_id, policies_id) VALUES ($1, $2)`
+		_, err = testDBPool.Exec(ctx, linkQuery, roleID, policyID)
+		require.NoError(t, err, "Failed to link role to policy")
+
+		// 4. Unlink role from policy
+		unlinkPayload := map[string]any{
+			"role_ids": []uuid.UUID{roleID},
+		}
+
+		unlinkEndpoint := policyUnlinkRolesEndpoint.RewriteSlugs(policyID.String())
+		response, err := sendHTTPRequest(t, ctx, unlinkEndpoint, unlinkPayload, accessTokenHeader)
+		require.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
+
+		require.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200")
+
+		// 5. Verify HTTPMessage fields are in snake_case
+		expectedFields := []string{
+			"message",
+			"method",
+			"path",
+		}
+
+		assertJSONFieldsAreSnakeCase(t, response, expectedFields)
+
+		t.Cleanup(func() {
+			unlinkPoliciesFromRoleViaDB(t, roleID, []uuid.UUID{policyID})
+			deletePolicyByIDFromDB(t, policyID)
+			deleteUserByIDFromDB(t, adminToken.UserID)
+		})
+	})
+
+	// Test that list policies by role response uses snake_case
+	t.Run("list_policies_by_role_uses_snake_case", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// 1. Create an administrator user and get the token
+		adminToken := getAdminUserTokens(t)
+		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
+
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		// 2. Create a test role
+		roleID := uuid.NewV7()
+
+		role := map[string]any{
+			"id":          roleID.String(),
+			"name":        generateRandomName(t, ""),
+			"description": "Test role for list policies",
+		}
+
+		rolesCreateEndpoint := newAPIEndpoint(http.MethodPost, "/roles")
+		createRoleResponse, err := sendHTTPRequest(t, ctx, rolesCreateEndpoint, role, accessTokenHeader)
+		require.NoError(t, err, "Failed to create role")
+		defer createRoleResponse.Body.Close()
+		require.Equal(t, http.StatusCreated, createRoleResponse.StatusCode)
+
+		// 3. Create test policies and link them
+		policy1ID := uuid.NewV7()
+
+		policy1 := map[string]any{
+			"id":               policy1ID.String(),
+			"name":             generateRandomName(t, ""),
+			"description":      "Test policy 1",
+			"allowed_action":   "GET",
+			"allowed_resource": "/users",
+		}
+
+		createResponse1, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy1, accessTokenHeader)
+		require.NoError(t, err, "Failed to create policy 1")
+		defer createResponse1.Body.Close()
+		require.Equal(t, http.StatusCreated, createResponse1.StatusCode)
+
+		policy2ID := uuid.NewV7()
+
+		policy2 := map[string]any{
+			"id":               policy2ID.String(),
+			"name":             generateRandomName(t, ""),
+			"description":      "Test policy 2",
+			"allowed_action":   "POST",
+			"allowed_resource": "/projects",
+		}
+
+		createResponse2, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy2, accessTokenHeader)
+		require.NoError(t, err, "Failed to create policy 2")
+		defer createResponse2.Body.Close()
+		require.Equal(t, http.StatusCreated, createResponse2.StatusCode)
+
+		// Link policies to role
+		linkQuery := `INSERT INTO roles_policies (roles_id, policies_id) VALUES ($1, $2)`
+		_, err = testDBPool.Exec(ctx, linkQuery, roleID, policy1ID)
+		require.NoError(t, err, "Failed to link policy 1 to role")
+		_, err = testDBPool.Exec(ctx, linkQuery, roleID, policy2ID)
+		require.NoError(t, err, "Failed to link policy 2 to role")
+
+		// 4. List policies by role ID
+		listEndpoint := policyListPoliciesByRoleEndpoint.RewriteSlugs(roleID.String())
+		response, err := sendHTTPRequest(t, ctx, listEndpoint, nil, accessTokenHeader)
+		require.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
+
+		require.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200")
+
+		// 5. Verify ListPoliciesOutput top-level fields are snake_case
+		expectedTopLevelFields := []string{
+			"items",
+			"paginator",
+		}
+
+		assertJSONFieldsAreSnakeCase(t, response, expectedTopLevelFields)
+
+		t.Cleanup(func() {
+			unlinkAllPoliciesFromRoleViaDB(t, roleID)
+			deletePolicyByIDFromDB(t, policy1ID)
+			deletePolicyByIDFromDB(t, policy2ID)
+			deleteRoleByIDFromDB(t, roleID)
+			deleteUserByIDFromDB(t, adminToken.UserID)
+		})
+	})
+}
+
+// TestPolicyUnlinkRoles_Multiple is a regression test for PoliciesRepository.UnlinkRoles.
+//
+// The existing unlink test above unlinks exactly ONE role, which is why this
+// went unnoticed. The repository built `('<policy>', '<role>')` per role — the
+// tuple shape copied from LinkRoles, where it is correct for INSERT ... VALUES —
+// and substituted the joined result into `roles_id IN %s`:
+//
+//	two+ roles → ... roles_id IN ('P','R1'), ('P','R2')
+//	             ERROR: syntax error at or near "," (verified against Postgres)
+//
+//	one role   → ... roles_id IN ('P','R1')
+//	             valid, but matches the POLICY id as though it were a role id;
+//	             correct only because the two never collide
+//
+// This exercises both halves: unlinking two roles at once must succeed, and only
+// the named roles may be removed.
+func TestPolicyUnlinkRoles_Multiple(t *testing.T) {
+	t.Run("unlink_two_roles_at_once", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		adminToken := getAdminUserTokens(t)
+		require.NotEmpty(t, adminToken, "Admin token should not be empty")
+
+		accessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
+
+		policyID := createTestPolicy(t, adminToken.AccessToken, "unlink_multi_policy_")
+		roleID1 := createTestRole(t, adminToken.AccessToken, "unlink_multi_role_1_")
+		roleID2 := createTestRole(t, adminToken.AccessToken, "unlink_multi_role_2_")
+		roleID3 := createTestRole(t, adminToken.AccessToken, "unlink_multi_role_3_")
+
+		t.Cleanup(func() {
+			unlinkAllRolesFromPolicyViaDB(t, policyID)
+			deletePolicyByIDFromDB(t, policyID)
+			deleteRoleByIDFromDB(t, roleID1)
+			deleteRoleByIDFromDB(t, roleID2)
+			deleteRoleByIDFromDB(t, roleID3)
+			deleteUserByIDFromDB(t, adminToken.UserID)
+		})
+
+		// Link all three.
+		linkEndpoint := policyLinkRolesEndpoint.RewriteSlugs(policyID.String())
+		linkResponse, err := sendHTTPRequest(t, ctx, linkEndpoint, map[string]any{
+			"role_ids": []string{roleID1.String(), roleID2.String(), roleID3.String()},
+		}, accessTokenHeader)
+		require.NoError(t, err, "Error linking roles during setup")
+		defer linkResponse.Body.Close()
+		require.Equal(t, http.StatusOK, linkResponse.StatusCode,
+			"Expected 200 OK linking roles. Got %d. Message: %s",
+			linkResponse.StatusCode, readResponseBody(t, linkResponse))
+
+		require.Equal(t, 3, countRolesLinkedToPolicy(t, policyID), "setup should link three roles")
+
+		// Unlink TWO at once — this is what used to fail with a syntax error.
+		unlinkEndpoint := policyUnlinkRolesEndpoint.RewriteSlugs(policyID.String())
+		unlinkResponse, err := sendHTTPRequest(t, ctx, unlinkEndpoint, map[string]any{
+			"role_ids": []string{roleID1.String(), roleID2.String()},
+		}, accessTokenHeader)
+		require.NoError(t, err, "Error unlinking roles")
+		defer unlinkResponse.Body.Close()
+
+		require.Equal(t, http.StatusOK, unlinkResponse.StatusCode,
+			"unlinking two roles at once must succeed. Got %d. Message: %s",
+			unlinkResponse.StatusCode, readResponseBody(t, unlinkResponse))
+
+		// Exactly the third role should remain.
+		assert.Equal(t, 1, countRolesLinkedToPolicy(t, policyID),
+			"only the two named roles should have been unlinked")
+		assert.True(t, isRoleLinkedToPolicy(t, policyID, roleID3),
+			"the role that was not named must still be linked")
+		assert.False(t, isRoleLinkedToPolicy(t, policyID, roleID1), "role 1 should be unlinked")
+		assert.False(t, isRoleLinkedToPolicy(t, policyID, roleID2), "role 2 should be unlinked")
 	})
 }

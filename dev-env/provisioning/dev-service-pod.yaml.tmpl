@@ -20,9 +20,28 @@ metadata:
 spec:
   containers:
     - name: postgres
-      image: docker.io/library/postgres:17
+      # PostgreSQL 18 for native uuidv7(); no pgvector needed.
+      image: docker.io/library/postgres:18
+      # TLS is on in development on purpose: a code path that only runs in
+      # production is a code path nobody has tested. See
+      # docs/certificates/postgres-tls.md.
+      #
+      # runAsUser is required, not cosmetic. PostgreSQL refuses to start if its
+      # key file is group- or world-readable, so the key is 0600 — and the
+      # server can only read it while running as the uid that owns it.
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
       args:
         - postgres
+        - -c
+        - ssl=on
+        - -c
+        - ssl_cert_file=/certs/server.crt
+        - -c
+        - ssl_key_file=/certs/server.key
+        - -c
+        - ssl_ca_file=/certs/ca.crt
       env:
         - name: TZ
           value: UTC
@@ -40,12 +59,44 @@ spec:
       volumeMounts:
         - name: db-volume-host
           mountPath: /var/lib/postgresq/data
+        - name: dev-certs
+          mountPath: /certs
+          readOnly: true
     - name: valkey
       image: docker.io/valkey/valkey:latest
+      # TLS is on the standard port, so the service reaches it without
+      # overriding cache.server.addresses — which matters, because that flag
+      # appends to its default rather than replacing it, and two addresses make
+      # valkey-go attempt cluster discovery against a non-cluster server.
+      #
+      # 6380 is cleartext for the integration suite, which talks to Valkey
+      # directly to inspect keys and is a test harness rather than the service.
+      # A production server should use --port 0 to refuse cleartext entirely.
+      args:
+        - valkey-server
+        - --tls-port
+        - "6379"
+        - --port
+        - "6380"
+        - --tls-cert-file
+        - /certs/server.crt
+        - --tls-key-file
+        - /certs/server.key
+        - --tls-ca-cert-file
+        - /certs/ca.crt
+        - --tls-auth-clients
+        - "no"
       ports:
         - containerPort: 6379
           hostPort: 6379
           protocol: TCP
+        - containerPort: 6380
+          hostPort: 6380
+          protocol: TCP
+      volumeMounts:
+        - name: dev-certs
+          mountPath: /certs
+          readOnly: true
     - name: grafana
       image: docker.io/grafana/grafana:latest
       args:
@@ -55,6 +106,9 @@ spec:
           hostPort: 3000
           protocol: TCP
       volumeMounts:
+        - name: grafana-configuration
+          mountPath: /etc/grafana/grafana.ini
+          readOnly: true
         - mountPath: /etc/grafana/provisioning/datasources/grafana-ds.yaml:Z
           name: grafana-datasources
           readOnly: false
@@ -65,7 +119,9 @@ spec:
           name: grafana-dashboard
           readOnly: false
     - name: tempo
-      image: docker.io/grafana/tempo:latest
+      # Pinned to the stable 2.x line: :latest is Tempo v3 (experimental
+      # ingest-storage / live-store), whose metrics-generator emits no series.
+      image: docker.io/grafana/tempo:2.8.1
       args:
         - --config.file=/mnt/config/tempo-local-config.yaml
       ports:
@@ -102,6 +158,12 @@ spec:
         - "--web.console.templates=/etc/prometheus/consoles"
         - "--web.enable-lifecycle"
         - "--web.enable-otlp-receiver"
+        # Accept Prometheus remote_write from the Tempo metrics-generator
+        # (service graph + span metrics).
+        - "--web.enable-remote-write-receiver"
+        # Ingest exemplars pushed via OTLP / remote_write so latency panels can
+        # link to the trace that produced them.
+        - "--enable-feature=exemplar-storage"
       ports:
         - containerPort: 9090
           hostPort: 9090
@@ -111,6 +173,8 @@ spec:
           name: prometheus
         - mountPath: /etc/prometheus/prometheus.yml:Z
           name: prometheus-config
+        - mountPath: /etc/prometheus/alerts.yml:Z
+          name: prometheus-alerts
 
     # https://github.com/axllent/mailpit
     - name: mailpit
@@ -128,10 +192,22 @@ spec:
 
   # volumes
   volumes:
+    - name: dev-certs
+      # In the repository's gitignored certs/ directory rather than under
+      # $HOME/tmp, so run.sh and .air.toml can name the CA with a relative path.
+      # air passes its arguments verbatim with no shell expansion, so $HOME in
+      # an argument would reach the flag parser literally.
+      hostPath:
+        path: ${CERTS_DIR}
+        type: DirectoryOrCreate
     - name: db-volume-host
       hostPath:
         path: ${HOME}/tmp/${PROJECT_NAME}/db-volume-host
         type: DirectoryOrCreate
+    - name: grafana-configuration
+      hostPath:
+        path: ${HOME}/tmp/${PROJECT_NAME}/grafana-configuration/grafana.ini
+        type: File
     - name: grafana-datasources
       hostPath:
         path: ${HOME}/tmp/${PROJECT_NAME}/grafana-ds/grafana-ds.yaml
@@ -159,4 +235,8 @@ spec:
     - name: prometheus-config
       hostPath:
         path: ${HOME}/tmp/${PROJECT_NAME}/dev-env/prometheus.yaml
+        type: File
+    - name: prometheus-alerts
+      hostPath:
+        path: ${HOME}/tmp/${PROJECT_NAME}/dev-env/alerts.yaml
         type: File

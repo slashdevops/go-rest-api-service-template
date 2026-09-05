@@ -1,17 +1,19 @@
 package main
 
 import (
+	"cmp"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
 	"os"
-	"sort"
+	"runtime/debug"
+	"slices"
 	"strings"
+	"uuid"
 
-	"github.com/google/uuid"
-	"github.com/p2p-b2b/go-rest-api-service-template/internal/config"
-	"github.com/p2p-b2b/go-rest-api-service-template/internal/version"
+	"github.com/slashdevops/go-rest-api-service-template/internal/config"
+	"github.com/slashdevops/go-rest-api-service-template/internal/version"
 )
 
 var (
@@ -20,7 +22,7 @@ var (
 	showVersion     bool
 	showLongVersion bool
 	showHelp        bool
-	swaggerJSONFile = config.Field[string]{Value: "./docs/swagger.json"}
+	swaggerJSONFile = config.Field[string]{Value: "./docs/api/swagger.json"}
 )
 
 func init() {
@@ -47,10 +49,14 @@ func init() {
 
 	// implement the version flag
 	if showVersion {
-		_, err := fmt.Printf("%s version: %s\n", appName, version.Version)
-		if err != nil {
-			slog.Error("failed to print version", "error", err)
-			os.Exit(1)
+		if version.Version == "0.0.0" {
+			if info, ok := debug.ReadBuildInfo(); ok {
+				fmt.Printf("Version: %s\n", info.Main.Version)
+			} else {
+				fmt.Printf("Version: %s\n", version.Version)
+			}
+		} else {
+			fmt.Printf("Version: %s\n", version.Version)
 		}
 
 		os.Exit(0)
@@ -58,19 +64,22 @@ func init() {
 
 	// implement the long version flag
 	if showLongVersion {
-		_, err := fmt.Printf("%s version: %s,  Git Commit: %s, Build Date: %s, Go Version: %s, OS/Arch: %s/%s\n",
-			appName,
-			version.Version,
-			version.GitCommit,
-			version.BuildDate,
-			version.GoVersion,
-			version.GoVersionOS,
-			version.GoVersionArch,
-		)
-		if err != nil {
-			slog.Error("failed to print long version", "error", err)
-			os.Exit(1)
+		var sb strings.Builder
+
+		if info, ok := debug.ReadBuildInfo(); ok {
+			fmt.Fprintf(&sb, "%s version: %s, ", appName, info.Main.Version)
+			fmt.Fprintf(&sb, "Git commit: %s, ", info.Main.Sum)
+			fmt.Fprintf(&sb, "Go version: %s\n", info.GoVersion)
+		} else {
+			fmt.Fprintf(&sb, "%s version: %s, ", appName, version.Version)
+			fmt.Fprintf(&sb, "Build date: %s, ", version.BuildDate)
+			fmt.Fprintf(&sb, "Build user: %s, ", version.BuildUser)
+			fmt.Fprintf(&sb, "Git commit: %s, ", version.GitCommit)
+			fmt.Fprintf(&sb, "Git branch: %s, ", version.GitBranch)
+			fmt.Fprintf(&sb, "Go version: %s\n", version.GoVersion)
 		}
+
+		fmt.Print(sb.String())
 
 		os.Exit(0)
 	}
@@ -99,10 +108,14 @@ func main() {
 	}
 
 	excludes := map[string]string{
-		"/ui":            "GET",
-		"/users/health":  "GET",
-		"/version":       "GET",
-		"/health/status": "GET",
+		"/ui":                 "GET",
+		"/projects/health":    "GET",
+		"/permissions/health": "GET",
+		"/roles/health":       "GET",
+		"/tokens/health":      "GET",
+		"/users/health":       "GET",
+		"/version":            "GET",
+		"/health/status":      "GET",
 	}
 
 	var records []Record
@@ -124,10 +137,7 @@ func main() {
 
 			var id uuid.UUID
 			if data.OperationID == "" {
-				id, err = uuid.NewV7()
-				if err != nil {
-					panic(err)
-				}
+				id = uuid.NewV7()
 			} else {
 				id, err = uuid.Parse(data.OperationID)
 				if err != nil {
@@ -160,11 +170,11 @@ func main() {
 			}
 
 			record := Record{
-				ID:          "'" + id.String() + "'",
-				Summary:     "'" + data.Summary + "'",
-				Description: "'" + data.Description + "'",
-				Method:      "'" + strings.ToUpper(method) + "'",
-				Path:        "'" + path + "'",
+				ID:          sqlQuote(id.String()),
+				Summary:     sqlQuote(data.Summary),
+				Description: sqlQuote(data.Description),
+				Method:      sqlQuote(strings.ToUpper(method)),
+				Path:        sqlQuote(path),
 				System:      "TRUE",
 			}
 
@@ -173,8 +183,30 @@ func main() {
 	}
 
 	// sort the records by path
-	sort.Slice(records, func(i, j int) bool {
-		return records[i].Path < records[j].Path
+	// Sort on (Path, Method), not Path alone.
+	//
+	// The output of this program is pasted into
+	// database/migrations/3100_roles_policies_tables_upsert.sql, so the ordering
+	// has to be a function of the swagger spec and nothing else. Two things
+	// conspired against that:
+	//
+	//   - sw.Paths is a map, and Go randomises map iteration order, so the slice
+	//     reaches the sort in a different order on every run;
+	//   - sorting on Path alone leaves every same-path/different-method group
+	//     tied, and sort.Slice is not stable, so tied rows came out in whatever
+	//     order the randomised walk happened to produce.
+	//
+	// The rows were always the same 136; only their order moved. That is worse
+	// than it sounds — regenerating produced a large diff every single time, so
+	// a real change to the endpoint set was indistinguishable from noise.
+	//
+	// (Path, Method) is unique per operation, so this comparator is total and
+	// there are no ties left for stability to matter.
+	slices.SortFunc(records, func(a, b Record) int {
+		return cmp.Or(
+			cmp.Compare(a.Path, b.Path),
+			cmp.Compare(a.Method, b.Method),
+		)
 	})
 
 	idMaxWidth += 2
@@ -186,7 +218,8 @@ func main() {
 
 	for i, record := range records {
 		if i == len(records)-1 {
-			_, err := fmt.Printf("(%-*s, %-*s, %-*s, %-*s, %-*s, %-*s);\n",
+			_, err := fmt.Printf(
+				"(%-*s, %-*s, %-*s, %-*s, %-*s, %-*s);\n",
 				idMaxWidth, record.ID,
 				summaryMaxWidth, record.Summary,
 				descriptionMaxWidth, record.Description,
@@ -199,7 +232,8 @@ func main() {
 				os.Exit(1)
 			}
 		} else {
-			_, err := fmt.Printf("(%-*s, %-*s, %-*s, %-*s, %-*s, %-*s),\n",
+			_, err := fmt.Printf(
+				"(%-*s, %-*s, %-*s, %-*s, %-*s, %-*s),\n",
 				idMaxWidth, record.ID,
 				summaryMaxWidth, record.Summary,
 				descriptionMaxWidth, record.Description,
@@ -213,6 +247,17 @@ func main() {
 			}
 		}
 	}
+}
+
+// sqlQuote wraps a value in single quotes and escapes any it contains.
+//
+// Without this, one apostrophe in a handler's @Summary or @Description -- "a
+// product's name" -- ends the SQL string literal early and the generated
+// migration does not parse. The generator emitted the value raw, so the failure
+// showed up as a syntax error in a 90-line INSERT rather than anywhere near the
+// annotation that caused it.
+func sqlQuote(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
 }
 
 type Record struct {
@@ -226,24 +271,24 @@ type Record struct {
 
 // swagger is the struct that represents the swagger.json file
 type swagger struct {
-	Swagger string `json:"swagger"`
-	Info    struct {
-		Title       string `json:"title"`
-		Description string `json:"description"`
-		Version     string `json:"version"`
-	} `json:"info"`
 	Paths map[string]map[string]struct {
-		Description string   `json:"description"`
-		Consumes    []string `json:"consumes"`
-		Produces    []string `json:"produces"`
-		Tags        []string `json:"tags"`
-		Summary     string   `json:"summary"`
-		OperationID string   `json:"operationId"`
-		Responses   map[string]struct {
+		Responses map[string]struct {
 			Description string `json:"description"`
 			Schema      struct {
 				Type string `json:"type"`
 			} `json:"schema"`
 		} `json:"responses"`
+		Description string   `json:"description"`
+		Summary     string   `json:"summary"`
+		OperationID string   `json:"operationId"`
+		Consumes    []string `json:"consumes"`
+		Produces    []string `json:"produces"`
+		Tags        []string `json:"tags"`
 	} `json:"paths"`
+	Info struct {
+		Title       string `json:"title"`
+		Description string `json:"description"`
+		Version     string `json:"version"`
+	} `json:"info"`
+	Swagger string `json:"swagger"`
 }

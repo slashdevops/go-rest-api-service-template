@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/slashdevops/go-rest-api-service-template/internal/config"
 	"go.opentelemetry.io/otel"
 
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
@@ -20,25 +21,26 @@ import (
 
 // OpenTelemetryTracerConfig represents the configuration of the OpenTelemetry tracer.
 type OpenTelemetryTracerConfig struct {
-	Name                      string
 	Resources                 *resource.Resource
+	Name                      string
 	TraceEndpoint             string
-	TracePort                 int
 	TraceExporter             string
+	TracePort                 int
 	TraceExporterBatchTimeout time.Duration
+	// TraceSampling is the head-sampling percentage (0-100). It is applied as a
+	// ParentBased(TraceIDRatioBased) sampler so this service honours the
+	// sampling decision of an upstream caller in a distributed trace.
+	TraceSampling int
 }
 
 // OpenTelemetryTracer represents the traces of the service.
 // It is used to collect and export traces using OpenTelemetry.
 // It is initialized with the OpenTelemetryTracerConfig and provides methods to set up and shutdown the traces.
 type OpenTelemetryTracer struct {
-	ctx  context.Context
-	name string
+	ctx context.Context
 
-	traceEndpoint             string
-	tracePort                 int
-	traceExporter             string
-	traceExporterBatchTimeout time.Duration
+	// Tracer is the OpenTelemetry trace tracer.
+	Tracer otelTrace.Tracer
 
 	// Resource is the OpenTelemetry resource.
 	res *resource.Resource
@@ -46,8 +48,13 @@ type OpenTelemetryTracer struct {
 	// TracerProvider is the OpenTelemetry trace provider.
 	tp *trace.TracerProvider
 
-	// Tracer is the OpenTelemetry trace tracer.
-	Tracer otelTrace.Tracer
+	name string
+
+	traceEndpoint             string
+	traceExporter             string
+	tracePort                 int
+	traceExporterBatchTimeout time.Duration
+	traceSampling             int
 }
 
 func NewOpenTelemetryTracer(ctx context.Context, conf *OpenTelemetryTracerConfig) *OpenTelemetryTracer {
@@ -59,6 +66,7 @@ func NewOpenTelemetryTracer(ctx context.Context, conf *OpenTelemetryTracerConfig
 		tracePort:                 conf.TracePort,
 		traceExporter:             conf.TraceExporter,
 		traceExporterBatchTimeout: conf.TraceExporterBatchTimeout,
+		traceSampling:             conf.TraceSampling,
 
 		res: conf.Resources,
 
@@ -68,7 +76,7 @@ func NewOpenTelemetryTracer(ctx context.Context, conf *OpenTelemetryTracerConfig
 
 func (ref *OpenTelemetryTracer) SetupTraces() error {
 	// when testing, we don't want to set up the tracer
-	if ref.traceExporter == "noop" {
+	if ref.traceExporter == config.ExporterNoop {
 		slog.Warn("No tracer exporter configured, use 'noop' for testing purposes only")
 
 		tp := noop.NewTracerProvider()
@@ -145,7 +153,11 @@ func (ref *OpenTelemetryTracer) newTraceExporter(ctx context.Context) (trace.Spa
 }
 
 func (ref *OpenTelemetryTracer) newTraceProvider(exp trace.SpanExporter) (*trace.TracerProvider, error) {
-	sampler := trace.TraceIDRatioBased(0.5)
+	// ParentBased honours the upstream caller's sampling decision in a
+	// distributed trace; only root spans fall back to the ratio sampler.
+	// TraceSampling is a 0-100 percentage.
+	ratio := float64(ref.traceSampling) / 100.0
+	sampler := trace.ParentBased(trace.TraceIDRatioBased(ratio))
 
 	p := trace.NewTracerProvider(
 		trace.WithResource(ref.res),

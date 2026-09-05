@@ -12,6 +12,12 @@ K := $(foreach exec,$(EXECUTABLES),\
 GIT_REPOSITORY_NAME            ?= $(shell git remote get-url origin | cut -d '/' -f 2 | cut -d '.' -f 1)
 GIT_REPOSITORY_NAME_UNDERSCORE := $(subst -,_,$(GIT_REPOSITORY_NAME))
 
+# PROJECT_MODULE is the full module path, major-version suffix included
+# (github.com/slashdevops/go-rest-api-service-template/v2). It is read from go.mod rather than rebuilt from
+# the namespace and name, because the -ldflags -X symbol paths below must match the module
+# path exactly: a stale path names a symbol that does not exist, the linker ignores it
+# silently, and the binaries ship reporting version 0.0.0.
+PROJECT_MODULE    ?= $(shell awk '/^module /{print $$2}' go.mod)
 PROJECT_NAME      ?= $(shell grep module go.mod | cut -d '/' -f 3)
 PROJECT_NAMESPACE ?= $(shell grep module go.mod | cut -d '/' -f 2 )
 PROJECT_MODULES_PATH := $(shell ls -d cmd/*)
@@ -24,6 +30,11 @@ TEMPLATE_NAME_UNDERSCORE := $(subst -,_,$(TEMPLATE_NAME))
 BUILD_DIR       := ./build
 DIST_DIR        := ./dist
 DIST_ASSETS_DIR := $(DIST_DIR)/assets
+
+# Third-party license reporting. The module itself is ignored: go-licenses would
+# otherwise try to classify our own packages as vendored dependencies.
+LICENSES_DIR    ?= $(BUILD_DIR)/licenses
+LICENSES_IGNORE := $(PROJECT_MODULE)
 
 PROJECT_COVERAGE_FILE ?= $(BUILD_DIR)/coverage.txt
 PROJECT_COVERAGE_MODE	?= atomic
@@ -39,11 +50,11 @@ BUILD_DATE      := $(shell date +'%Y-%m-%dT%H:%M:%S')
 
 GO_LDFLAGS_OPTIONS ?= -s -w
 define EXTRA_GO_LDFLAGS_OPTIONS
--X '"'github.com/$(PROJECT_NAMESPACE)/$(PROJECT_NAME)/internal/version.Version=$(GIT_VERSION)'"' \
--X '"'github.com/$(PROJECT_NAMESPACE)/$(PROJECT_NAME)/internal/version.BuildDate=$(BUILD_DATE)'"' \
--X '"'github.com/$(PROJECT_NAMESPACE)/$(PROJECT_NAME)/internal/version.GitCommit=$(GIT_COMMIT)'"' \
--X '"'github.com/$(PROJECT_NAMESPACE)/$(PROJECT_NAME)/internal/version.GitBranch=$(GIT_BRANCH)'"' \
--X '"'github.com/$(PROJECT_NAMESPACE)/$(PROJECT_NAME)/internal/version.BuildUser=$(GIT_USER_EMAIL)'"'
+-X '"'$(PROJECT_MODULE)/internal/version.Version=$(GIT_VERSION)'"' \
+-X '"'$(PROJECT_MODULE)/internal/version.BuildDate=$(BUILD_DATE)'"' \
+-X '"'$(PROJECT_MODULE)/internal/version.GitCommit=$(GIT_COMMIT)'"' \
+-X '"'$(PROJECT_MODULE)/internal/version.GitBranch=$(GIT_BRANCH)'"' \
+-X '"'$(PROJECT_MODULE)/internal/version.BuildUser=$(GIT_USER_EMAIL)'"'
 endef
 
 GO_LDFLAGS     := -ldflags "$(GO_LDFLAGS_OPTIONS) $(EXTRA_GO_LDFLAGS_OPTIONS)"
@@ -74,37 +85,84 @@ ifeq ($(UNAME_S),Darwin)
 	SED_CMD := sed -i .removeit
 endif
 
-# this is used to detect the database type
-DB_USERNAME 	:= username
-DB_NAME 			:= go-rest-api-service-template
-DB_HOST 			:= localhost
-ER_MODEL_DIR 	:= ./database/model
-
 ######## Functions ########
 # this is a function that will execute a command and print a message
 # MAKE_DEBUG=true make <target> will print the command
 # MAKE_STOP_ON_ERRORS=true make any fail will stop the execution if the command fails, this is useful for CI
 # NOTE: if the command has a > it will print the output into the original redirect of the command
-MAKE_STOP_ON_ERRORS := false
-MAKE_DEBUG := false
+MAKE_STOP_ON_ERRORS ?= false
+MAKE_DEBUG          ?= false
+
+# The Valkey CA the ratelimitvalkey suite needs, when the dev stack has made one.
+#
+# Those 9 tests connect to Valkey and SKIP when they cannot -- and a skipped test
+# reports `ok`, so a suite that verified nothing is indistinguishable from one
+# that passed. The dev stack is TLS-only, so with no CA they skip, the package
+# measures 17.6% against its 80% floor, and `make test-coverage` fails on a
+# package that has nothing wrong with it. That is the state this repo shipped in.
+#
+# Set automatically rather than documented, because a step you have to remember
+# is a step that gets skipped -- and skipping it here is silent. CI has no dev
+# certs and gets a plaintext Valkey service container instead; see pr.yaml.
+#
+# ABSOLUTE, because `go test` runs each package in its own directory.
+VALKEY_TEST_CA_FILE := $(CURDIR)/certs/dev/ca.crt
+ifneq ($(wildcard $(VALKEY_TEST_CA_FILE)),)
+TEST_ENV := VALKEY_TEST_CA=$(VALKEY_TEST_CA_FILE)
+endif
 
 define exec_cmd
 $(if $(filter $(MAKE_DEBUG),true),\
 	${1} \
 , \
 	$(if $(filter $(MAKE_STOP_ON_ERRORS),true),\
-		@ERROR_OCCURRED=0; ${1} > /dev/null || ERROR_OCCURRED=1; if [ $$ERROR_OCCURRED -eq 0 ]; then printf "  🤞 ${1} ✅\n"; else printf "  ${1} ❌ 🖕\n"; exit 1; fi \
+		$(if $(findstring >, $1),\
+			@${1} 2>/dev/null && printf "  🤞 ${1} ✅\n" || (printf "  ${1} ❌ 🖕\n"; exit 1) \
+		, \
+			@${1}  > /dev/null && printf "  🤞 ${1} ✅\n" || (printf "  ${1} ❌ 🖕\n"; exit 1) \
+		) \
 	, \
 		$(if $(findstring >, $1),\
-			@${1} 2>/dev/null && printf "  🤞 ${1} ✅\n" || printf "  ${1} ❌ 🖕\n" \
+			@${1} 2>/dev/null; _exit_code=$$?; if [ $$_exit_code -eq 0 ]; then printf "  🤞 ${1} ✅\n"; else printf "  ${1} ❌ 🖕\n"; fi; exit $$_exit_code \
 		, \
-			@${1} > /dev/null 2>&1 && printf '  🤞 ${1} ✅\n' || printf '  ${1} ❌ 🖕\n' \
+			@${1} > /dev/null 2>&1; _exit_code=$$?; if [ $$_exit_code -eq 0 ]; then printf '  🤞 ${1} ✅\n'; else printf '  ${1} ❌ 🖕\n'; fi; exit $$_exit_code \
 		) \
 	) \
 )
 
-endef # don't remove the white space at the end of the line
-# this is a function that will execute a command and print a message
+endef # don't remove the white line before endef
+
+# GOVERSION is the toolchain currently building this project, e.g. "go1.27.0".
+GOVERSION := $(shell go env GOVERSION)
+
+# ensure_tool,<binary>,<module@version>
+#
+# Installs a Go tool only when it is missing or was built by an OLDER toolchain
+# than the project's. This is not a speed optimisation, it is a correctness one:
+# a tool that parses Go source cannot read a stdlib newer than the compiler that
+# built it, and the two tools here fail in opposite ways.
+#
+#   - govulncheck fails LOUDLY: "Int (function) is not a type" out of
+#     math/rand/v2 plus a wall of "file requires newer Go version".
+#   - betteralign fails SILENTLY: it prints "analysis skipped due to errors in
+#     package" for every package and exits 0, which reads exactly like "nothing
+#     to align". It went unnoticed until the Go 1.27 bump.
+#
+# The comparison is "not older than", not "equal to". A tool whose own go.mod
+# selects a newer toolchain than ours is fine, and demanding equality there would
+# reinstall it on every single invocation.
+define ensure_tool
+@tool="$$(command -v $(1) 2>/dev/null || true)"; \
+	ver="$$([ -n "$$tool" ] && go version "$$tool" 2>/dev/null | awk '{print $$2}' || true)"; \
+	if [ -n "$$ver" ] && [ "$$(printf '%s\n%s\n' "$(GOVERSION)" "$$ver" | sort -V | head -n 1)" = "$(GOVERSION)" ]; then \
+		printf "  🤞 $(1) is current ($$ver) ✅\n"; \
+	else \
+		if [ -n "$$ver" ]; then printf "👉 $(1) was built with $$ver, rebuilding with $(GOVERSION)...\n"; \
+		else printf "👉 Installing $(1) with $(GOVERSION)...\n"; fi; \
+		go install $(2) > /dev/null 2>&1 && printf "  🤞 go install $(2) ✅\n" || { printf "  go install $(2) ❌ 🖕\n"; exit 1; }; \
+	fi
+
+endef # don't remove the white line before endef
 
 ###############################################################################
 ######## Targets ##############################################################
@@ -118,6 +176,19 @@ all: clean build ## Clean, test and build the application.  Execute by default w
 go-fmt: ## Format go code
 	@printf "👉 Formatting go code...\n"
 	$(call exec_cmd, go fmt ./... )
+
+# Deliberately not a dependency of `build`: betteralign rewrites source files,
+# and a build target that silently edits the tree is a bad surprise. Run it when
+# you have changed a struct.
+.PHONY: go-betteralign
+go-betteralign: install-betteralign ## Re-align struct fields for optimal memory layout (rewrites source)
+	@printf "👉 Aligning struct fields...\n"
+	$(call exec_cmd, betteralign -apply ./... )
+
+.PHONY: go-betteralign-check
+go-betteralign-check: install-betteralign ## Report struct fields that could be better aligned (no changes)
+	@printf "👉 Checking struct field alignment...\n"
+	$(call exec_cmd, betteralign ./... )
 
 .PHONY: go-vet
 go-vet: ## Vet go code
@@ -140,6 +211,7 @@ go-mod-update: go-mod-tidy ## Update go.mod and go.sum
 	$(foreach DEP, $(PROJECT_DEPENDENCIES), \
 		$(call exec_cmd, go get -u $(DEP)) \
 	)
+	$(call exec_cmd, go mod tidy)
 
 .PHONY: go-mod-vendor
 go-mod-vendor: ## Create mod vendor
@@ -177,7 +249,7 @@ go-test-coverage: test ## Shows in you browser the test coverage report per pack
 .PHONY: test
 test: $(PROJECT_COVERAGE_FILE) go-generate go-mod-tidy go-fmt go-vet ## Run tests
 	@printf "👉 Running tests...\n"
-	$(call exec_cmd, go test \
+	$(call exec_cmd, $(TEST_ENV) go test \
 		-v -race \
 		-coverprofile=$(PROJECT_COVERAGE_FILE) \
 		-covermode=$(PROJECT_COVERAGE_MODE) \
@@ -200,13 +272,24 @@ test-integration: stop-integration-test go-generate go-mod-tidy go-fmt go-vet st
 	) \
   make stop-integration-test
 
+.PHONY: test-eval
+test-eval: ## Run the RAG retrieval quality gate (needs: make start-dev-env + air + ollama)
+	@printf "👉 Running RAG evaluation harness...\n"
+	@printf "   Requires the dev stack and Ollama with nomic-embed-text pulled.\n"
+	@printf "   The suite skips loudly (never silently) if anything is missing.\n"
+	$(call exec_cmd, go test \
+		-v -count=1 \
+		-tags=eval \
+		./tests/eval \
+	)
+
 ###############################################################################
 ##@ Build commands
 .PHONY: build
 build: go-generate go-fmt go-vet docs-swagger  ## Build the API service only
 	@printf "👉 Building...\n"
 	$(foreach proj_mod, $(PROJECT_MODULES_NAME), \
-		$(if $(filter go-rest%,$(proj_mod)), \
+		$(if $(filter $(PROJECT_NAME),$(proj_mod)), \
 			$(call exec_cmd, CGO_ENABLED=$(GO_CGO_ENABLED) go build $(GO_LDFLAGS) $(GO_OPTS) -o $(BUILD_DIR)/$(proj_mod) ./cmd/$(proj_mod)/ ) \
 			$(call exec_cmd, chmod +x $(BUILD_DIR)/$(proj_mod) ) \
 		) \
@@ -247,6 +330,13 @@ build-dist-zip: ## Build the application for all platforms defined in GO_OS and 
 
 ###############################################################################
 ##@ Check commands
+
+# podman is what this repo uses locally; CI runners have docker and no podman,
+# and the two are argument-compatible for `run --rm -v`. Overridable rather than
+# detected, so the failure mode is a clear "command not found" rather than a
+# silently different engine.
+CONTAINER_ENGINE ?= podman
+
 .PHONY: lint
 lint: install-golangci-lint ## Run linters
 	@printf "👉 Running linters...\n"
@@ -257,93 +347,139 @@ vulncheck: install-govulncheck ## Check vulnerabilities
 	@printf "👉 Checking vulnerabilities...\n"
 	$(call exec_cmd, govulncheck ./...)
 
-###############################################################################
-##@ Docs commands
+.PHONY: check-alerts
+check-alerts: ## Validate and unit-test the Prometheus alert rules
+	@printf "👉 Checking Prometheus alert rules...\n"
+	$(call exec_cmd, $(CONTAINER_ENGINE) run --rm -v $(CURDIR)/dev-env/configuration/prometheus:/rules:ro -w /rules --entrypoint promtool docker.io/prom/prometheus:latest check rules alerts.yaml)
+	$(call exec_cmd, $(CONTAINER_ENGINE) run --rm -v $(CURDIR)/dev-env/configuration/prometheus:/rules:ro -w /rules --entrypoint promtool docker.io/prom/prometheus:latest test rules alerts_test.yaml)
+
+.PHONY: arch-test
+arch-test: ## Run the hexagonal architecture test (forbids infra imports under internal/core/...)
+	@printf "👉 Running architecture test (hexagonal invariant)...\n"
+	$(call exec_cmd, go test -count=1 -run TestCoreHasNoInfraImports ./internal/core/)
+
+.PHONY: licenses
+licenses: install-go-licenses ## Generate third-party license reports (CSV) for every binary in cmd/
+	@printf "👉 Generating third-party license reports...\n"
+	$(call exec_cmd, mkdir -p $(LICENSES_DIR))
+	$(foreach proj_mod, $(PROJECT_MODULES_NAME), \
+		$(call exec_cmd, go-licenses csv --ignore $(LICENSES_IGNORE) $(PROJECT_MODULE)/cmd/$(proj_mod) > $(LICENSES_DIR)/$(proj_mod)-third-party-licenses.csv) \
+	)
+
+.PHONY: licenses-check
+licenses-check: install-go-licenses ## Verify third-party dependency licenses are allowed for every binary in cmd/
+	@printf "👉 Checking third-party licenses...\n"
+	$(foreach proj_mod, $(PROJECT_MODULES_NAME), \
+		$(call exec_cmd, go-licenses check --ignore $(LICENSES_IGNORE) $(PROJECT_MODULE)/cmd/$(proj_mod)) \
+	)
+
 # this is necessary to avoid a comma in the call function
 COMMA_SIGN := ,
+###############################################################################
+##@ Docs commands
 .PHONY: docs-swagger
 docs-swagger: install-swag install-go-swagger ## Generate swagger documentation
 	@printf "👉 Generating swagger documentation...\n"
 	$(foreach proj_mod, $(PROJECT_MODULES_NAME), \
-		$(if $(filter go-rest%,$(proj_mod)), \
+		$(if $(filter $(PROJECT_NAME),$(proj_mod)), \
 			$(call exec_cmd, swag fmt \
 				--dir ./cmd/$(proj_mod)$(COMMA_SIGN)./internal \
 			) \
 			$(call exec_cmd, swag init \
-				--dir ./cmd/$(proj_mod)$(COMMA_SIGN)./internal/http/handler \
-				--output ./docs \
+				--dir ./cmd/$(proj_mod)$(COMMA_SIGN)./internal/adapter/driving/http/handler \
+				--output ./docs/api \
 				--parseDependency true \
 				--parseInternal true \
 			) \
 			$(call exec_cmd, swagger generate markdown \
-				--spec ./docs/swagger.json \
-				--target ./docs/  \
+				--spec ./docs/api/swagger.json \
+				--target ./docs/api/  \
 			) \
 		) \
 	)
+
+.PHONY: docs-api-resources
+docs-api-resources: docs-swagger ## Generate the authz resource rows from swagger.json, for 3100_roles_policies_tables_upsert.sql
+	@printf "👉 Generating the authz resource rows from ./docs/api/swagger.json...\n"
+	@printf "   Paste the block below over the generated rows in\n"
+	@printf "   database/migrations/3100_roles_policies_tables_upsert.sql, after the\n"
+	@printf "   '-- automatic generate with the program apiendpoints' marker.\n"
+	@printf "   A new endpoint also needs its row added by a NEW migration: an existing\n"
+	@printf "   database will not re-run 3100.\n\n"
+	@go run ./cmd/apiendpoints/main.go
 
 ###############################################################################
 ##@ Tools commands
 .PHONY: install-air
 install-air: ## Install air for hot reload (https://github.com/cosmtrek/air)
-	@printf "👉 Installing air...\n"
-	$(call exec_cmd, go install github.com/air-verse/air@latest )
+	$(call ensure_tool,air,github.com/air-verse/air@latest)
 
 .PHONY: install-swag
 install-swag: ## Install swag for swagger documentation (https://github.com/swaggo/http-swagger)
-	@printf "👉 Installing swag...\n"
-	$(call exec_cmd, go install github.com/swaggo/swag/cmd/swag@latest )
+	$(call ensure_tool,swag,github.com/swaggo/swag/cmd/swag@latest)
 
 .PHONY: install-go-swagger
 install-go-swagger: ## Install swag for swagger documentation (https://github.com/swaggo/http-swagger)
-	@printf "👉 Installing swag...\n"
-	$(call exec_cmd, go install github.com/go-swagger/go-swagger/cmd/swagger@latest )
+	$(call ensure_tool,swagger,github.com/go-swagger/go-swagger/cmd/swagger@latest)
 
 .PHONY: install-goose
 install-goose: ## Install goose for database migrations (
-	@printf "👉 Installing goose...\n"
-	$(call exec_cmd, go install github.com/pressly/goose/v3/cmd/goose@latest )
+	$(call ensure_tool,goose,github.com/pressly/goose/v3/cmd/goose@latest)
 
 .PHONY: install-go-test-coverage
 install-go-test-coverage: ## Install got tool for test coverage (https://github.com/vladopajic/go-test-coverage)
-	@printf "👉 Installing got tool for test coverage...\n"
-	$(call exec_cmd, go install github.com/vladopajic/go-test-coverage/v2@latest )
+	$(call ensure_tool,go-test-coverage,github.com/vladopajic/go-test-coverage/v2@latest)
 
 .PHONY: install-govulncheck
 install-govulncheck: ## Install govulncheck for vulnerabilities check (https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck#section-documentation)
-	@printf "👉 Installing govulncheck...\n"
-	$(call exec_cmd, go install golang.org/x/vuln/cmd/govulncheck@latest )
+	$(call ensure_tool,govulncheck,golang.org/x/vuln/cmd/govulncheck@latest)
+
+.PHONY: install-go-licenses
+install-go-licenses: ## Install go-licenses for third-party license reporting (https://github.com/google/go-licenses)
+	$(call ensure_tool,go-licenses,github.com/google/go-licenses@latest)
 
 .PHONY: install-golangci-lint
 install-golangci-lint: ## Install golangci-lint for linting (https://golangci-lint.run/)
-	@printf "👉 Installing golangci-lint...\n"
-	$(call exec_cmd, go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2 )
+	$(call ensure_tool,golangci-lint,github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2)
+
+.PHONY: install-betteralign
+install-betteralign: ## Install betteralign for struct field alignment (https://github.com/dkorunic/betteralign)
+	$(call ensure_tool,betteralign,github.com/dkorunic/betteralign/cmd/betteralign@latest)
+
+.PHONY: tools
+tools: install-air install-swag install-go-swagger install-goose install-go-test-coverage install-govulncheck install-go-licenses install-golangci-lint install-betteralign ## Install or rebuild every Go tool this repo uses
+	@printf "👉 All tools present and built with $(GOVERSION)\n"
 
 ###############################################################################
 ##@ Development commands
 .PHONY: stop-dev-env
 stop-dev-env: ## Run the application in development mode
 	@printf "👉 Stopping application in development mode...\n"
+		$(call exec_cmd, PROJECT_NAME=$(PROJECT_NAME) CERTS_DIR=$(CURDIR)/certs/dev envsubst < ./dev-env/provisioning/dev-service-pod.yaml.tmpl > ./dev-env/provisioning/dev-service-pod.yaml)
 		$(call exec_cmd, podman play kube --down ./dev-env/provisioning/dev-service-pod.yaml )
 
 .PHONY: start-dev-env
 start-dev-env: stop-dev-env install-air install-swag install-goose ## Run the application in development mode.  WARNING: This will stop the current running application deleting the data
 	@printf "👉 Running application in development mode...\n"
-		$(call exec_cmd, PROJECT_NAME=$(PROJECT_NAME) envsubst < ./dev-env/provisioning/dev-service-pod.yaml.tmpl > ./dev-env/provisioning/dev-service-pod.yaml)
+		$(call exec_cmd, PROJECT_NAME=$(PROJECT_NAME) CERTS_DIR=$(CURDIR)/certs/dev envsubst < ./dev-env/provisioning/dev-service-pod.yaml.tmpl > ./dev-env/provisioning/dev-service-pod.yaml)
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/db-volume-host )
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/tempo-volume-host )
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/prometheus-volume-host )
+		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/grafana-configuration )
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/grafana-ds )
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/grafana-dashboard-config )
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/grafana-dashboard )
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/dev-env)
+		$(call exec_cmd, ./dev-env/scripts/generate-dev-certs.sh $(CURDIR)/certs/dev )
 		$(call exec_cmd, chmod 777 $(HOME)/tmp/$(PROJECT_NAME)/tempo-volume-host )
 		$(call exec_cmd, chmod 777 $(HOME)/tmp/$(PROJECT_NAME)/prometheus-volume-host )
 
+		$(call exec_cmd, cp ./dev-env/configuration/grafana/configuration/grafana.ini $(HOME)/tmp/$(PROJECT_NAME)/grafana-configuration/grafana.ini)
 		$(call exec_cmd, cp ./dev-env/configuration/grafana/datasource/grafana-ds.yaml $(HOME)/tmp/$(PROJECT_NAME)/grafana-ds/grafana-ds.yaml)
 		$(call exec_cmd, cp ./dev-env/configuration/grafana/dashboard/default.yaml $(HOME)/tmp/$(PROJECT_NAME)/grafana-dashboard-config/default.yaml)
 		$(call exec_cmd, cp ./dev-env/configuration/grafana/dashboard/*.json $(HOME)/tmp/$(PROJECT_NAME)/grafana-dashboard/)
 		$(call exec_cmd, cp ./dev-env/configuration/prometheus/prometheus.yaml $(HOME)/tmp/$(PROJECT_NAME)/dev-env/prometheus.yaml )
+		$(call exec_cmd, cp ./dev-env/configuration/prometheus/alerts.yaml $(HOME)/tmp/$(PROJECT_NAME)/dev-env/alerts.yaml )
 		$(call exec_cmd, cp ./dev-env/configuration/tempo/tempo-local-config.yaml $(HOME)/tmp/$(PROJECT_NAME)/dev-env/tempo-local-config.yaml )
 
 		$(call exec_cmd, podman play kube ./dev-env/provisioning/dev-service-pod.yaml )
@@ -395,7 +531,7 @@ container-build-integration-test: build-dist ## Build the container image, requi
 	)
 
 .PHONY: container-build
-container-build: build-dist ## Build the container image, requires make build-dist
+container-build: ## Build the container image, requires make build-dist
 	@printf "👉 Building container images...\n"
 	$(foreach OS, $(CONTAINER_OS), \
 		$(foreach ARCH, $(CONTAINER_ARCH), \
@@ -416,10 +552,10 @@ container-build: build-dist ## Build the container image, requires make build-di
 	)
 
 .PHONY: container-login
-container-login: ## Login to the container registry. Requires REPOSITORY_REGISTRY_TOKEN env var
+container-login: ## Login to the container registry. Requires REPOSITORY_REGISTRY_TOKEN and REPOSITORY_REGISTRY_USERNAME env var
 	@printf "👉 Logging in to container registry...\n"
 	$(foreach REPO, $(CONTAINER_REPOS), \
-		$(call exec_cmd, echo $(REPOSITORY_REGISTRY_TOKEN) | podman login $(REPO) --username $(CONTAINER_NAMESPACE) --password-stdin ) \
+		$(call exec_cmd, echo $(REPOSITORY_REGISTRY_TOKEN) | podman login $(REPO) --username $(REPOSITORY_REGISTRY_USERNAME) --password-stdin ) \
 	)
 
 .PHONY: container-publish

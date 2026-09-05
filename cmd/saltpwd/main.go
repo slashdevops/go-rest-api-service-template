@@ -4,9 +4,12 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"runtime/debug"
+	"strings"
 
-	"github.com/p2p-b2b/go-rest-api-service-template/internal/version"
 	"golang.org/x/crypto/bcrypt"
+
+	"github.com/slashdevops/go-rest-api-service-template/internal/version"
 )
 
 const (
@@ -50,6 +53,7 @@ func ComparePasswords(hashedPwd string, plainPwd string) bool {
 
 func main() {
 	showVersion := flag.Bool("version", false, "Show version")
+	showVersionLong := flag.Bool("version.long", false, "Show long version")
 	showHelp := flag.Bool("help", false, "Show help")
 
 	plainPwd := flag.String("password", "", "Password to hash. Must be quoted in single quotes ('')")
@@ -105,11 +109,45 @@ func main() {
 	}
 
 	if *showVersion {
-		_, err := fmt.Printf("%s version: %s\n", appName, version.Version)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error printing version: %v\n", err)
-			os.Exit(1)
+		if version.Version == "0.0.0" {
+			if info, ok := debug.ReadBuildInfo(); ok {
+				fmt.Printf("Version: %s\n", info.Main.Version)
+			} else {
+				fmt.Printf("Version: %s\n", version.Version)
+			}
+		} else {
+			fmt.Printf("Version: %s\n", version.Version)
 		}
+
+		os.Exit(0)
+	}
+
+	if *showVersionLong {
+		var sb strings.Builder
+
+		if version.Version == "0.0.0" {
+			if info, ok := debug.ReadBuildInfo(); ok {
+				fmt.Fprintf(&sb, "%s version: %s, ", appName, info.Main.Version)
+				fmt.Fprintf(&sb, "Git commit: %s, ", info.Main.Sum)
+				fmt.Fprintf(&sb, "Go version: %s\n", info.GoVersion)
+			} else {
+				fmt.Fprintf(&sb, "%s version: %s, ", appName, version.Version)
+				fmt.Fprintf(&sb, "Build date: %s, ", version.BuildDate)
+				fmt.Fprintf(&sb, "Build user: %s, ", version.BuildUser)
+				fmt.Fprintf(&sb, "Git commit: %s, ", version.GitCommit)
+				fmt.Fprintf(&sb, "Git branch: %s, ", version.GitBranch)
+				fmt.Fprintf(&sb, "Go version: %s\n", version.GoVersion)
+			}
+		} else {
+			fmt.Fprintf(&sb, "%s version: %s, ", appName, version.Version)
+			fmt.Fprintf(&sb, "Build date: %s, ", version.BuildDate)
+			fmt.Fprintf(&sb, "Build user: %s, ", version.BuildUser)
+			fmt.Fprintf(&sb, "Git commit: %s, ", version.GitCommit)
+			fmt.Fprintf(&sb, "Git branch: %s, ", version.GitBranch)
+			fmt.Fprintf(&sb, "Go version: %s\n", version.GoVersion)
+		}
+
+		fmt.Print(sb.String())
 
 		os.Exit(0)
 	}

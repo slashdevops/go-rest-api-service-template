@@ -124,8 +124,14 @@ type IDP struct {
 	// Name is the name of the IDP
 	Name string
 
-	// RedirectURL is the URL to redirect to after authentication (callback URL)
-	RedirectURL string
+	// CallbackURL is the URL to redirect to after authentication (callback URL)
+	CallbackURL string
+
+	// LoginRedirectURL is the URL to redirect to after login authentication (callback URL)
+	LoginRedirectURL string
+
+	// RegisterRedirectURL is the URL to redirect to after registration authentication (callback URL)
+	RegisterRedirectURL string
 
 	// ClientID is the client ID for the IDP
 	ClientID string
@@ -143,10 +149,14 @@ func (s *SliceIDPVar) String() string {
 
 	for _, idp := range *s {
 		idps = append(idps,
-			fmt.Sprintf("%s%s%s%s%s%s%s",
+			fmt.Sprintf("%s%s%s%s%s%s%s%s%s%s%s",
 				idp.Name,
 				idpPartsSeparator,
-				idp.RedirectURL,
+				idp.CallbackURL,
+				idpPartsSeparator,
+				idp.LoginRedirectURL,
+				idpPartsSeparator,
+				idp.RegisterRedirectURL,
 				idpPartsSeparator,
 				idp.ClientID,
 				idpPartsSeparator,
@@ -165,13 +175,13 @@ func (s *SliceIDPVar) Set(value string) error {
 
 	parts := strings.SplitSeq(value, ",")
 	for part := range parts {
-		idpParts := strings.SplitN(part, "#", 4)
+		idpParts := strings.SplitN(part, "#", 6)
 
-		if len(idpParts) != 4 {
+		if len(idpParts) != 6 {
 			return fmt.Errorf(
-				"invalid IDP format: %s. This should be in the format 'name%sredirectURL%sclientID%sclientSecret'",
+				"invalid IDP format: %s. This should be in the format 'name%sredirectURL%sloginRedirectURL%sregisterRedirectURL%sclientID%sclientSecret'",
 				part,
-				idpPartsSeparator, idpPartsSeparator, idpPartsSeparator,
+				idpPartsSeparator, idpPartsSeparator, idpPartsSeparator, idpPartsSeparator, idpPartsSeparator,
 			)
 		}
 
@@ -179,10 +189,12 @@ func (s *SliceIDPVar) Set(value string) error {
 		// in case the idps was separated by commas with spaces (, )
 		// of parts was separated by dashes with spaces (# )
 		*s = append(*s, IDP{
-			Name:         strings.TrimSpace(idpParts[0]),
-			RedirectURL:  strings.TrimSpace(idpParts[1]),
-			ClientID:     strings.TrimSpace(idpParts[2]),
-			ClientSecret: strings.TrimSpace(idpParts[3]),
+			Name:                strings.TrimSpace(idpParts[0]),
+			CallbackURL:         strings.TrimSpace(idpParts[1]),
+			LoginRedirectURL:    strings.TrimSpace(idpParts[2]),
+			RegisterRedirectURL: strings.TrimSpace(idpParts[3]),
+			ClientID:            strings.TrimSpace(idpParts[4]),
+			ClientSecret:        strings.TrimSpace(idpParts[5]),
 		})
 	}
 
@@ -203,6 +215,9 @@ func (s *SliceIDPVar) IsBoolFlag() bool {
 // It holds the flag name, environment variable name, description, and value
 // This should be used to define configuration fields in structs
 type Field[T any] struct {
+
+	// Value is the value of the configuration item
+	Value T
 	// FlagName is the name used for the command line flag
 	FlagName string
 
@@ -211,9 +226,6 @@ type Field[T any] struct {
 
 	// EnVarName is the name used for the environment variable
 	EnVarName string
-
-	// Value is the value of the configuration item
-	Value T
 }
 
 // NewField creates a new configuration field
@@ -285,6 +297,7 @@ func GetEnv[T any](key string, defaultValue T) T {
 
 			return any(slices).(T)
 		case SliceIDPVar:
+
 			idps := SliceIDPVar{}
 			if err := idps.Set(value); err != nil {
 				return defaultValue
@@ -363,6 +376,41 @@ func SetEnvVarFromFile() error {
 
 		if err := scanner.Err(); err != nil {
 			return err
+		}
+	}
+
+	return nil
+}
+
+// LoadAndValidate is a convenience function that loads environment variables
+// and validates multiple configuration objects in a single call.
+//
+// It calls ParseEnvVars() on each config that implements EnvVarsParser,
+// then calls Validate() on each config that implements Validator.
+//
+// Returns the first validation error encountered, or nil if all configs are valid.
+//
+// Example usage:
+//
+//	dbCfg := NewDatabaseConfig()
+//	cacheCfg := NewCacheConfig()
+//	if err := LoadAndValidate(dbCfg, cacheCfg); err != nil {
+//	    log.Fatal(err)
+//	}
+func LoadAndValidate(configs ...any) error {
+	// First pass: Parse environment variables
+	for _, cfg := range configs {
+		if parser, ok := cfg.(EnvVarsParser); ok {
+			parser.ParseEnvVars()
+		}
+	}
+
+	// Second pass: Validate configurations
+	for _, cfg := range configs {
+		if validator, ok := cfg.(Validator); ok {
+			if err := validator.Validate(); err != nil {
+				return err
+			}
 		}
 	}
 

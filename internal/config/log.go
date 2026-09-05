@@ -4,11 +4,26 @@ import (
 	"os"
 	"slices"
 	"strings"
+
+	"github.com/slashdevops/go-rest-api-service-template/pkg/cslog"
 )
 
 const (
-	ValidLogLevel  = "debug|info|warn|error"
-	ValidLogFormat = "text|json"
+	// ValidLogLevel is what the flag help advertises.
+	//
+	// Validate also accepts "ctrace" and "cfatal" -- see ValidLogLevelHidden.
+	ValidLogLevel = "debug|info|warn|error"
+
+	// ValidLogLevelHidden are two extra levels Validate accepts but the help
+	// does not advertise: ctrace is below debug (it logs every SQL query) and
+	// cfatal is above error.
+	//
+	// They are named here rather than left as bare strings in Validate because
+	// .air.toml RUNS ON ctrace -- so the dev stack uses a level the help text
+	// calls invalid, and an operator copying the dev configuration hits a value
+	// they cannot find documented anywhere.
+	ValidLogLevelHidden = "ctrace|cfatal"
+	ValidLogFormat      = "text|json"
 
 	DefaultLogLevel     = "info"
 	DefaultLogFormat    = "text"
@@ -31,7 +46,7 @@ type LogConfig struct {
 // NewLogConfig creates a new logger configuration
 func NewLogConfig() *LogConfig {
 	return &LogConfig{
-		Level:     NewField("log.level", "LOG_LEVEL", "Log Level. Possible values ["+ValidLogLevel+"]", DefaultLogLevel),
+		Level:     NewField("log.level", "LOG_LEVEL", "Log Level. Possible values ["+ValidLogLevel+"]. Also accepted, for development: ["+ValidLogLevelHidden+"] -- ctrace logs every SQL query", DefaultLogLevel),
 		Format:    NewField("log.format", "LOG_FORMAT", "Log Format. Possible values ["+ValidLogFormat+"]", DefaultLogFormat),
 		Output:    NewField("log.output", "LOG_OUTPUT", "Log Output", DefaultLogOutput),
 		Debug:     NewField("debug", "DEBUG", "Debug mode. Short hand for log.level=debug", DefaultLogDebug),
@@ -52,6 +67,20 @@ func (c *LogConfig) ParseEnvVars() {
 // Validate validates the logger configuration values
 func (c *LogConfig) Validate() error {
 	if !slices.Contains(strings.Split(ValidLogLevel, "|"), c.Level.Value) {
+
+		// hidden log level trace, this is not documented to users
+		// but can be used for very verbose logging during development
+		// used for logging sql queries for example
+		if c.Level.Value == "ctrace" {
+			c.Level.Value = cslog.LogLevelTrace.String()
+			return nil
+		}
+
+		if c.Level.Value == "cfatal" {
+			c.Level.Value = cslog.LogLevelFatal.String()
+			return nil
+		}
+
 		return &InvalidConfigurationError{
 			Field:   "log.level",
 			Value:   c.Level.Value,

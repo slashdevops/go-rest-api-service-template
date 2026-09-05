@@ -27,8 +27,39 @@ server.crt
 tmp/
 .env
 certs/
-dev.env
 
-# local database volume
-go-rest-api-service-template-db-volume-host/
+# frontend
+.DS_Store
+node_modules
+dist
+test-results/
+package-lock.json
+yarn.lock
+vite.config.js.timestamp-*
+/packages/create-svelte/template/CHANGELOG.md
+/packages/package/test/**/package
+/documentation/types.js
+.env
+.vercel_build_output
+.svelte-kit
+.cloudflare
+.pnpm-debug.log
+.netlify
+.turbo
+.vercel
+.test-tmp
+symlink-from
+.idea/
+dev.env
+tmp/
+
+# ER Model
+/database/model/
+
 dev-env/provisioning/dev-service-pod.yaml
+database-fulfil
+go-rest-api-service-template
+
+# Integration-test environment file — committed as .example only;
+# real credentials live in the untracked tests/integration/integration.env
+tests/integration/integration.env

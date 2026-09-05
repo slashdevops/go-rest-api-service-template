@@ -8,6 +8,15 @@ import (
 )
 
 const (
+	// ExporterNoop is the exporter that exports nothing. It is a value the
+	// health check has to recognise -- "configured" and "exporting" are not
+	// the same thing, and only this value tells them apart.
+	ExporterNoop = "noop"
+
+	// ExporterOTLPHTTP is the exporter that ships to a collector, and so the
+	// only one with a host the health check can reach for.
+	ExporterOTLPHTTP = "otlp-http"
+
 	ValidTraceExporters    = "console|otlp-http|noop"
 	ValidMetricExporters   = "console|otlp-http|prometheus|noop"
 	ValidTaceSamplingMin   = 0
@@ -23,27 +32,27 @@ const (
 	DefaultTraceExporter             = "console"
 	DefaultTraceExporterBatchTimeout = 5 * time.Second
 	DefaultTraceSampling             = 100
-
-	DefaultMetricEndpoint = "localhost"
-	DefaultMetricPort     = 9090
-	DefaultMetricExporter = "console"
-	DefaultMetricInterval = 15 * time.Second
+	DefaultMetricEndpoint            = "localhost"
+	DefaultMetricPort                = 9090
+	DefaultMetricExporter            = "console"
+	DefaultMetricInterval            = 15 * time.Second
 )
 
 type OpenTelemetryConfig struct {
-	TraceEndpoint             Field[string]
+	TraceEndpoint Field[string]
+	TraceExporter Field[string]
+
+	MetricEndpoint Field[string]
+	MetricExporter Field[string]
+
+	AttributeServiceName      string
+	AttributeServiceVersion   string
 	TracePort                 Field[int]
-	TraceExporter             Field[string]
 	TraceExporterBatchTimeout Field[time.Duration]
 	TraceSampling             Field[int]
 
-	MetricEndpoint Field[string]
 	MetricPort     Field[int]
-	MetricExporter Field[string]
 	MetricInterval Field[time.Duration]
-
-	AttributeServiceName    string
-	AttributeServiceVersion string
 }
 
 func NewOpenTelemetryConfig(appName string, appVersion string) *OpenTelemetryConfig {

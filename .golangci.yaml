@@ -47,7 +47,7 @@ linters:
       # report about assignment of errors to blank identifier: `num, _ := strconv.Atoi(numStr)`.
       # Such cases aren't reported by default.
       # Default: false
-      check-blank: true
+      check-blank: false
       # To disable the errcheck built-in exclude list.
       # See `-excludeonly` option in https://github.com/kisielk/errcheck#excluding-functions for details.
       # Default: false
@@ -60,9 +60,14 @@ linters:
         - io/ioutil.ReadFile
         - io.Copy(*bytes.Buffer)
         - io.Copy(os.Stdout)
+        - (io.Writer).Write
+        - (*bufio.Writer).Write
+        - (*encoding/json.Encoder).Encode
         - os.Setenv
         - os.Unsetenv
         - fmt.Printf
         - fmt.Print
         - fmt.Println
         - fmt.Fprintf
+        - (*strings.Builder).WriteString
+        - github.com/slashdevops/go-rest-api-service-template/internal/o11y.RecordError

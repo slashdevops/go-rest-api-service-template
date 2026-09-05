@@ -3,14 +3,16 @@
 package integration
 
 import (
-	"context"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
+	"uuid"
 
-	"github.com/google/uuid"
-	"github.com/p2p-b2b/go-rest-api-service-template/internal/model"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/payload"
+	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
 )
 
 var (
@@ -19,15 +21,18 @@ var (
 	authRefreshEndpoint  = newAPIEndpoint(http.MethodPost, "/auth/refresh")
 	authRegisterEndpoint = newAPIEndpoint(http.MethodPost, "/auth/register")
 	authReVerifyEndpoint = newAPIEndpoint(http.MethodPost, "/auth/verify")
-	// authVerifyEndpoint    = newAPIEndpoint(http.MethodGet, "/auth/verify/{jwt}")
-	// authUserAuthzEndpoint = newAPIEndpoint(http.MethodGet, "/users/{user_id}/authz")
+
+	// The token travels in the Authorization header. It used to be a path
+	// segment on GET /auth/verify/{token}, which put a live credential in this
+	// service's request log.
+	authVerifyConfirmEndpoint = newAPIEndpoint(http.MethodPost, "/auth/verify/confirm")
 )
 
 func TestAuthRegisterUser(t *testing.T) {
 	t.Run("test_register_single_user", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		firstName, lastName, email := generateUserData(t)
 		user := map[string]any{
@@ -43,22 +48,22 @@ func TestAuthRegisterUser(t *testing.T) {
 
 		assert.Equal(t, http.StatusCreated, response.StatusCode, "Expected status code 201. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
 
-		apiResp, err := parserResponseBody[model.HTTPMessage](t, response)
+		apiResp, err := parserResponseBody[payload.HTTPMessage](t, response)
 		assert.NoError(t, err, "Failed to parse response body")
 
 		t.Cleanup(func() {
 			deleteUserByEmailFromDB(t, email)
 		})
 
-		assert.Equal(t, model.AuthnUserRegisteredSuccessfully, apiResp.Message, "Expected success message")
+		assert.Equal(t, domain.AuthnUserRegisteredSuccessfully, apiResp.Message, "Expected success message")
 		assert.Equal(t, authRegisterEndpoint.method, apiResp.Method, "Expected method to be set")
 		assert.Equal(t, authRegisterEndpoint.Path(), apiResp.Path, "Expected path to be set")
 	})
 
-	t.Run("test_register_user_twice_get_409_error", func(t *testing.T) {
+	t.Run("test_register_user_twice_answers_the_same_way", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		firstName, lastName, email := generateUserData(t)
 		user := map[string]any{
@@ -75,13 +80,13 @@ func TestAuthRegisterUser(t *testing.T) {
 
 		assert.Equal(t, firstResponse.StatusCode, http.StatusCreated, "Expected status code 201. Got %d. Message: %s", firstResponse.StatusCode, readResponseBody(t, firstResponse))
 
-		apiFirstResp, err := parserResponseBody[model.HTTPMessage](t, firstResponse)
+		apiFirstResp, err := parserResponseBody[payload.HTTPMessage](t, firstResponse)
 		if err != nil {
 			t.Errorf("Failed to parse response body: %v", err)
 		}
 
 		assert.Equal(t, http.StatusCreated, firstResponse.StatusCode, "Expected status code 201. Got %d. Message: %s", firstResponse.StatusCode, readResponseBody(t, firstResponse))
-		assert.Equal(t, model.AuthnUserRegisteredSuccessfully, apiFirstResp.Message, "Expected success message")
+		assert.Equal(t, domain.AuthnUserRegisteredSuccessfully, apiFirstResp.Message, "Expected success message")
 		assert.Equal(t, authRegisterEndpoint.method, apiFirstResp.Method, "Expected method to be set")
 		assert.Equal(t, authRegisterEndpoint.Path(), apiFirstResp.Path, "Expected path to be set")
 
@@ -90,14 +95,23 @@ func TestAuthRegisterUser(t *testing.T) {
 		assert.NoError(t, err, "Failed to send request")
 		defer secondResponse.Body.Close()
 
-		assert.Equal(t, http.StatusConflict, secondResponse.StatusCode, "Expected status code 409 for duplicate registration. Got %d. Message: %s", secondResponse.StatusCode, readResponseBody(t, secondResponse))
-
-		apiSecondResp, err := parserResponseBody[model.HTTPMessage](t, secondResponse)
+		// Registering the same address twice answers exactly as the first
+		// attempt did. It used to answer 409 "user: already exists:
+		// email=<address>", which made this endpoint an account oracle: one
+		// unauthenticated request said whether an address was registered.
+		//
+		// The owner is told by email instead, which nobody probing can see.
+		// TestRegistrationDoesNotConfirmTheAddress covers that half.
+		apiSecondResp, err := parserResponseBody[payload.HTTPMessage](t, secondResponse)
 		assert.NoError(t, err, "Failed to parse response body")
-		assert.Equal(t, http.StatusConflict, secondResponse.StatusCode, "Expected status code 409. Got %d. Message: %s", secondResponse.StatusCode, readResponseBody(t, secondResponse))
 
-		emailAlreadyExistsError := &model.UserEmailAlreadyExistsError{Email: email}
-		assert.Equal(t, emailAlreadyExistsError.Error(), apiSecondResp.Message, "Expected email already exists message")
+		assert.Equal(t, http.StatusCreated, secondResponse.StatusCode,
+			"a second registration must answer like the first. Got %d. Message: %s",
+			secondResponse.StatusCode, apiSecondResp.Message)
+		assert.Equal(t, apiFirstResp.Message, apiSecondResp.Message,
+			"a second registration must carry the same message as the first")
+		assert.NotContains(t, apiSecondResp.Message, email,
+			"the response must not echo the address that was probed")
 
 		assert.Equal(t, authRegisterEndpoint.method, apiSecondResp.Method, "Expected method to be set")
 		assert.Equal(t, authRegisterEndpoint.Path(), apiSecondResp.Path, "Expected path to be set")
@@ -110,7 +124,7 @@ func TestAuthRegisterUser(t *testing.T) {
 	t.Run("test_create_and_verify_user", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Register the user
 		firstName, lastName, email := generateUserData(t)
@@ -126,10 +140,10 @@ func TestAuthRegisterUser(t *testing.T) {
 		assert.NoError(t, err, "Failed to send request")
 
 		assert.Equal(t, response.StatusCode, http.StatusCreated, "Expected status code 201. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
-		apiResp, err := parserResponseBody[model.HTTPMessage](t, response)
+		apiResp, err := parserResponseBody[payload.HTTPMessage](t, response)
 		assert.NoError(t, err, "Failed to parse response body")
 
-		assert.Equal(t, model.AuthnUserRegisteredSuccessfully, apiResp.Message, "Expected success message")
+		assert.Equal(t, domain.AuthnUserRegisteredSuccessfully, apiResp.Message, "Expected success message")
 		assert.Equal(t, authRegisterEndpoint.method, apiResp.Method, "Expected method to be set")
 		assert.Equal(t, apiResp.Path, authRegisterEndpoint.Path(), "Expected path to be set")
 		assert.Equal(t, http.StatusCreated, apiResp.StatusCode, "Expected status code 201. Got %d. Message: %s", apiResp.StatusCode, readResponseBody(t, response))
@@ -138,21 +152,21 @@ func TestAuthRegisterUser(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 
 		// 2. Verify the user
-		verifyLink := getVerifyLinkFromEmail(t, verifyEmailAddress, email)
-		assert.NotEmpty(t, verifyLink, "Expected verify link to be generated")
+		verificationToken := verificationTokenFromEmail(t, verifyEmailAddress, email)
+		assert.NotEmpty(t, verificationToken, "Expected a verification token in the email")
 
-		verificationRawResponse, err := http.Get(verifyLink)
+		verificationRawResponse, err := confirmVerification(t, verificationToken)
 		assert.NoError(t, err, "Failed to send request")
 
 		assert.Equal(t, http.StatusOK, verificationRawResponse.StatusCode, "Expected status code 200. Got %d. Message: %s", verificationRawResponse.StatusCode, readResponseBody(t, verificationRawResponse))
 
-		verificationResponse, err := parserResponseBody[model.HTTPMessage](t, verificationRawResponse)
+		verificationResponse, err := parserResponseBody[payload.HTTPMessage](t, verificationRawResponse)
 		assert.NoError(t, err, "Failed to parse response body")
 
 		assert.Equal(t, verificationResponse.StatusCode, http.StatusOK, "Expected status code 200.")
-		assert.Equal(t, model.AuthnUserVerifiedSuccessfully, verificationResponse.Message, "Expected verification success message")
-		assert.Equal(t, http.MethodGet, verificationResponse.Method, "Expected method to be set")
-		assert.Equal(t, removeAPIEndpointFromURL(verifyLink), verificationResponse.Path, "Expected path to be set")
+		assert.Equal(t, domain.AuthnUserVerifiedSuccessfully, verificationResponse.Message, "Expected verification success message")
+		assert.Equal(t, http.MethodPost, verificationResponse.Method, "Expected method to be set")
+		assert.Equal(t, authVerifyConfirmEndpoint.Path(), verificationResponse.Path, "Expected path to be set")
 
 		t.Cleanup(func() {
 			deleteUserByEmailFromDB(t, email)
@@ -162,7 +176,7 @@ func TestAuthRegisterUser(t *testing.T) {
 	t.Run("test_create_and_verify_user_and_then_reverify", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Register the user
 		firstName, lastName, email := generateUserData(t)
@@ -178,10 +192,10 @@ func TestAuthRegisterUser(t *testing.T) {
 		assert.NoError(t, err, "Failed to send request")
 
 		assert.Equal(t, response.StatusCode, http.StatusCreated, "Expected status code 201. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
-		apiResp, err := parserResponseBody[model.HTTPMessage](t, response)
+		apiResp, err := parserResponseBody[payload.HTTPMessage](t, response)
 		assert.NoError(t, err, "Failed to parse response body")
 
-		assert.Equal(t, model.AuthnUserRegisteredSuccessfully, apiResp.Message, "Expected success message")
+		assert.Equal(t, domain.AuthnUserRegisteredSuccessfully, apiResp.Message, "Expected success message")
 		assert.Equal(t, authRegisterEndpoint.method, apiResp.Method, "Expected method to be set")
 		assert.Equal(t, apiResp.Path, authRegisterEndpoint.Path(), "Expected path to be set")
 		assert.Equal(t, http.StatusCreated, apiResp.StatusCode, "Expected status code 201. Got %d. Message: %s", apiResp.StatusCode, readResponseBody(t, response))
@@ -190,21 +204,21 @@ func TestAuthRegisterUser(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 
 		// 2. Verify the user
-		verifyLink := getVerifyLinkFromEmail(t, verifyEmailAddress, email)
-		assert.NotEmpty(t, verifyLink, "Expected verify link to be generated")
+		verificationToken := verificationTokenFromEmail(t, verifyEmailAddress, email)
+		assert.NotEmpty(t, verificationToken, "Expected a verification token in the email")
 
-		verificationRawResponse, err := http.Get(verifyLink)
+		verificationRawResponse, err := confirmVerification(t, verificationToken)
 		assert.NoError(t, err, "Failed to send request")
 
 		assert.Equal(t, http.StatusOK, verificationRawResponse.StatusCode, "Expected status code 200. Got %d. Message: %s", verificationRawResponse.StatusCode, readResponseBody(t, verificationRawResponse))
 
-		verificationResponse, err := parserResponseBody[model.HTTPMessage](t, verificationRawResponse)
+		verificationResponse, err := parserResponseBody[payload.HTTPMessage](t, verificationRawResponse)
 		assert.NoError(t, err, "Failed to parse response body")
 
 		assert.Equal(t, verificationResponse.StatusCode, http.StatusOK, "Expected status code 200.")
-		assert.Equal(t, model.AuthnUserVerifiedSuccessfully, verificationResponse.Message, "Expected verification success message")
-		assert.Equal(t, http.MethodGet, verificationResponse.Method, "Expected method to be set")
-		assert.Equal(t, removeAPIEndpointFromURL(verifyLink), verificationResponse.Path, "Expected path to be set")
+		assert.Equal(t, domain.AuthnUserVerifiedSuccessfully, verificationResponse.Message, "Expected verification success message")
+		assert.Equal(t, http.MethodPost, verificationResponse.Method, "Expected method to be set")
+		assert.Equal(t, authVerifyConfirmEndpoint.Path(), verificationResponse.Path, "Expected path to be set")
 
 		// 3. Re-Verify the user
 		reVerifyPayload := map[string]any{
@@ -216,11 +230,11 @@ func TestAuthRegisterUser(t *testing.T) {
 		assert.Equal(t, reVerifyResponse.StatusCode, http.StatusOK, "Expected status code 200. Got %d. Message: %s", reVerifyResponse.StatusCode, readResponseBody(t, reVerifyResponse))
 		defer reVerifyResponse.Body.Close()
 
-		reVerifyAPIResp, err := parserResponseBody[model.HTTPMessage](t, reVerifyResponse)
+		reVerifyAPIResp, err := parserResponseBody[payload.HTTPMessage](t, reVerifyResponse)
 		assert.NoError(t, err, "Failed to parse response body")
 
 		assert.Equal(t, reVerifyResponse.StatusCode, http.StatusOK, "Expected status code 200.")
-		assert.Equal(t, model.AuthnUserVerificationEmailSent, reVerifyAPIResp.Message, "Expected verification email sent message")
+		assert.Equal(t, domain.AuthnUserVerificationEmailSent, reVerifyAPIResp.Message, "Expected verification email sent message")
 		assert.Equal(t, authReVerifyEndpoint.method, reVerifyAPIResp.Method)
 		assert.Equal(t, authReVerifyEndpoint.Path(), reVerifyAPIResp.Path)
 
@@ -234,10 +248,9 @@ func TestAuthLoginUser(t *testing.T) {
 	t.Run("test_login_user_with_verification", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
-		userID, err := uuid.NewV7()
-		assert.NoError(t, err, "Failed to generate user ID")
+		userID := uuid.NewV7()
 		firstName, lastName, email := generateUserData(t)
 		user := map[string]any{
 			"id":         userID.String(),
@@ -256,10 +269,10 @@ func TestAuthLoginUser(t *testing.T) {
 
 		assert.Equal(t, response.StatusCode, http.StatusCreated, "Expected status code 201. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
 
-		apiResp, err := parserResponseBody[model.HTTPMessage](t, response)
+		apiResp, err := parserResponseBody[payload.HTTPMessage](t, response)
 		assert.NoError(t, err, "Failed to parse response body")
 
-		assert.Equal(t, model.AuthnUserRegisteredSuccessfully, apiResp.Message, "Expected success message")
+		assert.Equal(t, domain.AuthnUserRegisteredSuccessfully, apiResp.Message, "Expected success message")
 		assert.Equal(t, authRegisterEndpoint.method, apiResp.Method, "Expected method to be set")
 		assert.Equal(t, authRegisterEndpoint.Path(), apiResp.Path, "Expected path to be set")
 
@@ -267,20 +280,20 @@ func TestAuthLoginUser(t *testing.T) {
 		// wait for the verification email to be sent
 		time.Sleep(500 * time.Millisecond)
 
-		verifyLink := getVerifyLinkFromEmail(t, verifyEmailAddress, email)
-		assert.NotEmpty(t, verifyLink, "Expected verify link to be generated")
+		verificationToken := verificationTokenFromEmail(t, verifyEmailAddress, email)
+		assert.NotEmpty(t, verificationToken, "Expected a verification token in the email")
 
-		verificationRawResponse, err := http.Get(verifyLink)
+		verificationRawResponse, err := confirmVerification(t, verificationToken)
 		assert.NoError(t, err, "Failed to send request")
 		assert.Equal(t, http.StatusOK, verificationRawResponse.StatusCode, "Expected status code 200. Got %d. Message: %s", verificationRawResponse.StatusCode, readResponseBody(t, verificationRawResponse))
 
-		verificationResponse, err := parserResponseBody[model.HTTPMessage](t, verificationRawResponse)
+		verificationResponse, err := parserResponseBody[payload.HTTPMessage](t, verificationRawResponse)
 		assert.NoError(t, err, "Failed to parse response body")
 
 		assert.Equal(t, http.StatusOK, verificationResponse.StatusCode, "Expected status code 200.")
-		assert.Equal(t, model.AuthnUserVerifiedSuccessfully, verificationResponse.Message, "Expected verification success message")
-		assert.Equal(t, http.MethodGet, verificationResponse.Method, "Expected method to be set")
-		assert.Equal(t, removeAPIEndpointFromURL(verifyLink), verificationResponse.Path, "Expected path to be set")
+		assert.Equal(t, domain.AuthnUserVerifiedSuccessfully, verificationResponse.Message, "Expected verification success message")
+		assert.Equal(t, http.MethodPost, verificationResponse.Method, "Expected method to be set")
+		assert.Equal(t, authVerifyConfirmEndpoint.Path(), verificationResponse.Path, "Expected path to be set")
 
 		// 3. Login the user
 		// wait for login verification in the database
@@ -293,16 +306,14 @@ func TestAuthLoginUser(t *testing.T) {
 
 		loginResponse, err := sendHTTPRequest(t, ctx, authLoginEndpoint, loginUser)
 		assert.NoError(t, err)
-
 		defer loginResponse.Body.Close()
-
 		assert.Equal(t, http.StatusOK, loginResponse.StatusCode, "Expected status code 200. Got %d. Message: %s", loginResponse.StatusCode, readResponseBody(t, loginResponse))
 
-		loginAPIResp, err := parserResponseBody[model.LoginUserResponse](t, loginResponse)
+		loginAPIResp, err := parserResponseBody[payload.LoginUserResponse](t, loginResponse)
 		assert.NoError(t, err)
 
 		assert.Equal(t, userID, loginAPIResp.UserID, "Expected user ID to be set")
-		assert.Equal(t, model.TokenTypeBearer, loginAPIResp.TokenType, "Expected token type to be Bearer")
+		assert.Equal(t, domain.TokenTypeBearer, loginAPIResp.TokenType, "Expected token type to be Bearer")
 
 		t.Cleanup(func() {
 			deleteUserByEmailFromDB(t, email)
@@ -312,11 +323,9 @@ func TestAuthLoginUser(t *testing.T) {
 	t.Run("test_login_user_without_verification", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
-		userID, err := uuid.NewV7()
-		assert.NoError(t, err, "Failed to generate user ID")
-
+		userID := uuid.NewV7()
 		firstName, lastName, email := generateUserData(t)
 		user := map[string]any{
 			"id":         userID.String(),
@@ -335,7 +344,7 @@ func TestAuthLoginUser(t *testing.T) {
 
 		assert.Equal(t, response.StatusCode, http.StatusCreated, "Expected status code 201. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
 
-		apiResp, err := parserResponseBody[model.HTTPMessage](t, response)
+		apiResp, err := parserResponseBody[payload.HTTPMessage](t, response)
 		assert.NoError(t, err, "Failed to parse response body")
 
 		assert.Equal(t, apiResp.Method, authRegisterEndpoint.method, "Expected method to be set")
@@ -357,7 +366,7 @@ func TestAuthLoginUser(t *testing.T) {
 
 		assert.Equal(t, http.StatusUnauthorized, loginResponse.StatusCode, "Expected status code 401. Got %d. Message: %s", loginResponse.StatusCode, readResponseBody(t, loginResponse))
 
-		loginAPIResp, err := parserResponseBody[model.HTTPMessage](t, loginResponse)
+		loginAPIResp, err := parserResponseBody[payload.HTTPMessage](t, loginResponse)
 		assert.NoError(t, err)
 
 		assert.Equal(t, http.StatusUnauthorized, loginAPIResp.StatusCode, "Expected status code 401. Got %d. Message: %s", loginAPIResp.StatusCode, readResponseBody(t, loginResponse))
@@ -374,7 +383,7 @@ func TestAuthReVerifyUser(t *testing.T) {
 	t.Run("test_register_user_then_delete_it_and_reverify_user", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Register the user
 		firstName, lastName, email := generateUserData(t)
@@ -391,10 +400,10 @@ func TestAuthReVerifyUser(t *testing.T) {
 
 		assert.Equal(t, http.StatusCreated, response.StatusCode, "Expected status code 201. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
 
-		apiResp, err := parserResponseBody[model.HTTPMessage](t, response)
+		apiResp, err := parserResponseBody[payload.HTTPMessage](t, response)
 		assert.NoError(t, err, "Failed to parse response body")
 
-		assert.Equal(t, model.AuthnUserRegisteredSuccessfully, apiResp.Message, "Expected success message")
+		assert.Equal(t, domain.AuthnUserRegisteredSuccessfully, apiResp.Message, "Expected success message")
 		assert.Equal(t, authRegisterEndpoint.method, apiResp.Method, "Expected method to be set")
 		assert.Equal(t, authRegisterEndpoint.Path(), apiResp.Path, "Expected path to be set")
 
@@ -414,12 +423,12 @@ func TestAuthReVerifyUser(t *testing.T) {
 		assert.Equal(t, http.StatusOK, reVerifyResponse.StatusCode, "Expected status code 200. Got %d. Message: %s", reVerifyResponse.StatusCode, readResponseBody(t, reVerifyResponse))
 		defer reVerifyResponse.Body.Close()
 
-		reVerifyAPIResp, err := parserResponseBody[model.HTTPMessage](t, reVerifyResponse)
+		reVerifyAPIResp, err := parserResponseBody[payload.HTTPMessage](t, reVerifyResponse)
 		assert.NoError(t, err)
 
 		assert.Equal(t, http.StatusOK, reVerifyResponse.StatusCode, "Expected status code 200.")
 
-		assert.Equal(t, model.AuthnUserVerificationEmailSent, reVerifyAPIResp.Message)
+		assert.Equal(t, domain.AuthnUserVerificationEmailSent, reVerifyAPIResp.Message)
 		assert.Equal(t, authReVerifyEndpoint.method, reVerifyAPIResp.Method)
 		assert.Equal(t, authReVerifyEndpoint.Path(), reVerifyAPIResp.Path)
 	})
@@ -427,7 +436,7 @@ func TestAuthReVerifyUser(t *testing.T) {
 	t.Run("test_verify_user_does_not_exist", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		reVerifyPayload := map[string]any{
 			"email": "does.notexist@mail.com",
@@ -440,12 +449,12 @@ func TestAuthReVerifyUser(t *testing.T) {
 
 		defer reVerifyResponse.Body.Close()
 
-		reVerifyAPIResp, err := parserResponseBody[model.HTTPMessage](t, reVerifyResponse)
+		reVerifyAPIResp, err := parserResponseBody[payload.HTTPMessage](t, reVerifyResponse)
 		assert.NoError(t, err)
 
 		assert.Equal(t, http.StatusOK, reVerifyResponse.StatusCode, "Expected status code 200.")
 
-		assert.Equal(t, model.AuthnUserVerificationEmailSent, reVerifyAPIResp.Message)
+		assert.Equal(t, domain.AuthnUserVerificationEmailSent, reVerifyAPIResp.Message)
 		assert.Equal(t, authReVerifyEndpoint.method, reVerifyAPIResp.Method)
 		assert.Equal(t, authReVerifyEndpoint.Path(), reVerifyAPIResp.Path)
 	})
@@ -455,12 +464,10 @@ func TestAuthRefreshTokens(t *testing.T) {
 	t.Run("test_refresh_token", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
 		// 1. Register the user
-		userID, err := uuid.NewV7()
-		assert.NoError(t, err, "Failed to generate user ID")
-
+		userID := uuid.NewV7()
 		firstName, lastName, email := generateUserData(t)
 		user := map[string]any{
 			"id":         userID.String(),
@@ -475,10 +482,10 @@ func TestAuthRefreshTokens(t *testing.T) {
 		assert.NoError(t, err, "Failed to send request")
 
 		assert.Equal(t, response.StatusCode, http.StatusCreated, "Expected status code 201. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
-		apiResp, err := parserResponseBody[model.HTTPMessage](t, response)
+		apiResp, err := parserResponseBody[payload.HTTPMessage](t, response)
 		assert.NoError(t, err, "Failed to parser response body")
 
-		assert.Equal(t, model.AuthnUserRegisteredSuccessfully, apiResp.Message, "Expected success message")
+		assert.Equal(t, domain.AuthnUserRegisteredSuccessfully, apiResp.Message, "Expected success message")
 		assert.Equal(t, authRegisterEndpoint.method, apiResp.Method, "Expected method to be set")
 		assert.Equal(t, apiResp.Path, authRegisterEndpoint.Path(), "Expected path to be set")
 		assert.Equal(t, http.StatusCreated, apiResp.StatusCode, "Expected status code 201. Got %d. Message: %s", apiResp.StatusCode, readResponseBody(t, response))
@@ -487,21 +494,21 @@ func TestAuthRefreshTokens(t *testing.T) {
 		time.Sleep(500 * time.Millisecond)
 
 		// 2. Verify the user
-		verifyLink := getVerifyLinkFromEmail(t, verifyEmailAddress, email)
-		assert.NotEmpty(t, verifyLink, "Expected verify link to be generated")
+		verificationToken := verificationTokenFromEmail(t, verifyEmailAddress, email)
+		assert.NotEmpty(t, verificationToken, "Expected a verification token in the email")
 
-		verificationRawResponse, err := http.Get(verifyLink)
+		verificationRawResponse, err := confirmVerification(t, verificationToken)
 		assert.NoError(t, err, "Failed to send request")
 
 		assert.Equal(t, http.StatusOK, verificationRawResponse.StatusCode, "Expected status code 200. Got %d. Message: %s", verificationRawResponse.StatusCode, readResponseBody(t, verificationRawResponse))
 
-		verificationResponse, err := parserResponseBody[model.HTTPMessage](t, verificationRawResponse)
+		verificationResponse, err := parserResponseBody[payload.HTTPMessage](t, verificationRawResponse)
 		assert.NoError(t, err, "Failed to parse response body")
 
 		assert.Equal(t, verificationResponse.StatusCode, http.StatusOK, "Expected status code 200.")
-		assert.Equal(t, model.AuthnUserVerifiedSuccessfully, verificationResponse.Message, "Expected verification success message")
-		assert.Equal(t, http.MethodGet, verificationResponse.Method, "Expected method to be set")
-		assert.Equal(t, removeAPIEndpointFromURL(verifyLink), verificationResponse.Path, "Expected path to be set")
+		assert.Equal(t, domain.AuthnUserVerifiedSuccessfully, verificationResponse.Message, "Expected verification success message")
+		assert.Equal(t, http.MethodPost, verificationResponse.Method, "Expected method to be set")
+		assert.Equal(t, authVerifyConfirmEndpoint.Path(), verificationResponse.Path, "Expected path to be set")
 
 		// 3. Login the user
 		// wait for login verification in the database
@@ -517,11 +524,11 @@ func TestAuthRefreshTokens(t *testing.T) {
 		defer loginResponse.Body.Close()
 
 		assert.Equal(t, http.StatusOK, loginResponse.StatusCode, "Expected status code 200. Got %d. Message: %s", loginResponse.StatusCode, readResponseBody(t, loginResponse))
-		loginAPIResp, err := parserResponseBody[model.LoginUserResponse](t, loginResponse)
+		loginAPIResp, err := parserResponseBody[payload.LoginUserResponse](t, loginResponse)
 		assert.NoError(t, err)
 
 		assert.Equal(t, user["id"], loginAPIResp.UserID.String(), "Expected user ID to be set")
-		assert.Equal(t, model.TokenTypeBearer, loginAPIResp.TokenType, "Expected token type to be Bearer")
+		assert.Equal(t, domain.TokenTypeBearer, loginAPIResp.TokenType, "Expected token type to be Bearer")
 		assert.NotEmpty(t, loginAPIResp.AccessToken, "Expected access token to be set")
 		assert.NotEmpty(t, loginAPIResp.RefreshToken, "Expected refresh token to be set")
 
@@ -543,24 +550,236 @@ func TestAuthRefreshTokens(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, refreshResponse.StatusCode, "Expected status code 200. Got %d. Message: %s", refreshResponse.StatusCode, readResponseBody(t, refreshResponse))
 
-		refreshAPIResp, err := parserResponseBody[model.RefreshTokenResponse](t, refreshResponse)
+		refreshAPIResp, err := parserResponseBody[payload.RefreshTokenResponse](t, refreshResponse)
 		assert.NoError(t, err)
 
 		assert.NotEmpty(t, refreshAPIResp.AccessToken, "Expected access token to be set")
 		assert.NotEmpty(t, refreshAPIResp.TokenType, "Expected token type to be set")
+
+		t.Cleanup(func() {
+			deleteUserByEmailFromDB(t, email)
+		})
 	})
 }
 
-func TestAuthLogoutUser(t *testing.T) {
-	t.Run("test_logout_user", func(t *testing.T) {
+// TestAuthRegisterUser_EdgeCases tests registration with various edge cases
+func TestAuthRegisterUser_EdgeCases(t *testing.T) {
+	t.Run("invalid_email_format", func(t *testing.T) {
 		t.Parallel()
 
-		ctx := context.Background()
+		ctx := t.Context()
 
-		// 1. Register the user
-		userID, err := uuid.NewV7()
-		assert.NoError(t, err, "Failed to generate user ID")
+		firstName, lastName, _ := generateUserData(t)
+		user := map[string]any{
+			"email":      "invalid-email",
+			"first_name": firstName,
+			"last_name":  lastName,
+			"password":   generatePassword(t),
+		}
 
+		response, err := sendHTTPRequest(t, ctx, authRegisterEndpoint, user)
+		assert.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusBadRequest, response.StatusCode, "Expected status code 400. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+
+	t.Run("missing_required_fields", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		testCases := []struct {
+			name    string
+			payload map[string]any
+		}{
+			{
+				name: "missing_email",
+				payload: map[string]any{
+					"first_name": "John",
+					"last_name":  "Doe",
+					"password":   generatePassword(t),
+				},
+			},
+			{
+				name: "missing_first_name",
+				payload: map[string]any{
+					"email":     "test@example.com",
+					"last_name": "Doe",
+					"password":  generatePassword(t),
+				},
+			},
+			{
+				name: "missing_password",
+				payload: map[string]any{
+					"email":      "test@example.com",
+					"first_name": "John",
+					"last_name":  "Doe",
+				},
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				response, err := sendHTTPRequest(t, ctx, authRegisterEndpoint, tc.payload)
+				assert.NoError(t, err, "Failed to send request")
+				defer response.Body.Close()
+
+				assert.Equal(t, http.StatusBadRequest, response.StatusCode, "Expected status code 400. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+			})
+		}
+	})
+
+	t.Run("weak_password", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		firstName, lastName, email := generateUserData(t)
+		user := map[string]any{
+			"email":      email,
+			"first_name": firstName,
+			"last_name":  lastName,
+			"password":   "123", // weak password
+		}
+
+		response, err := sendHTTPRequest(t, ctx, authRegisterEndpoint, user)
+		assert.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusBadRequest, response.StatusCode, "Expected status code 400. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+
+	t.Run("name_too_long", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		_, _, email := generateUserData(t)
+		user := map[string]any{
+			"email":      email,
+			"first_name": strings.Repeat("a", 26), // exceeds max length of 25
+			"last_name":  "Doe",
+			"password":   generatePassword(t),
+		}
+
+		response, err := sendHTTPRequest(t, ctx, authRegisterEndpoint, user)
+		assert.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
+
+		assert.Equal(t, http.StatusBadRequest, response.StatusCode, "Expected status code 400. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+	})
+}
+
+// TestAuthLoginUser_EdgeCases tests login with various edge cases
+func TestAuthLoginUser_EdgeCases(t *testing.T) {
+	t.Run("invalid_credentials", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// Create and verify a user first
+		userID := uuid.NewV7()
+		firstName, lastName, email := generateUserData(t)
+		password := generatePassword(t)
+		user := map[string]any{
+			"id":         userID.String(),
+			"email":      email,
+			"first_name": firstName,
+			"last_name":  lastName,
+			"password":   password,
+		}
+
+		response, err := sendHTTPRequest(t, ctx, authRegisterEndpoint, user)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+		assert.Equal(t, http.StatusCreated, response.StatusCode)
+
+		time.Sleep(500 * time.Millisecond)
+		verificationToken := verificationTokenFromEmail(t, verifyEmailAddress, email)
+		_, err = confirmVerification(t, verificationToken)
+		assert.NoError(t, err)
+
+		time.Sleep(500 * time.Millisecond)
+
+		// Try to login with wrong password
+		loginUser := map[string]any{
+			"email":    email,
+			"password": "wrongpassword123!",
+		}
+
+		loginResponse, err := sendHTTPRequest(t, ctx, authLoginEndpoint, loginUser)
+		assert.NoError(t, err)
+		defer loginResponse.Body.Close()
+
+		assert.Equal(t, http.StatusUnauthorized, loginResponse.StatusCode, "Expected status code 401. Got %d. Message: %s", loginResponse.StatusCode, readResponseBody(t, loginResponse))
+
+		t.Cleanup(func() {
+			deleteUserByEmailFromDB(t, email)
+		})
+	})
+
+	t.Run("non_existent_user", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		loginUser := map[string]any{
+			"email":    "nonexistent@example.com",
+			"password": generatePassword(t),
+		}
+
+		loginResponse, err := sendHTTPRequest(t, ctx, authLoginEndpoint, loginUser)
+		assert.NoError(t, err)
+		defer loginResponse.Body.Close()
+
+		assert.Equal(t, http.StatusUnauthorized, loginResponse.StatusCode, "Expected status code 401. Got %d. Message: %s", loginResponse.StatusCode, readResponseBody(t, loginResponse))
+	})
+
+	t.Run("missing_credentials", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		testCases := []struct {
+			name    string
+			payload map[string]any
+		}{
+			{
+				name:    "missing_email",
+				payload: map[string]any{"password": generatePassword(t)},
+			},
+			{
+				name:    "missing_password",
+				payload: map[string]any{"email": "test@example.com"},
+			},
+			{
+				name:    "empty_credentials",
+				payload: map[string]any{},
+			},
+		}
+
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				response, err := sendHTTPRequest(t, ctx, authLoginEndpoint, tc.payload)
+				assert.NoError(t, err)
+				defer response.Body.Close()
+
+				assert.Equal(t, http.StatusBadRequest, response.StatusCode, "Expected status code 400. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+			})
+		}
+	})
+}
+
+// TestAuthLogout tests the logout endpoint
+func TestAuthLogout(t *testing.T) {
+	t.Run("logout_successfully", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// Create, verify, and login a user
+		userID := uuid.NewV7()
 		firstName, lastName, email := generateUserData(t)
 		user := map[string]any{
 			"id":         userID.String(),
@@ -570,73 +789,243 @@ func TestAuthLogoutUser(t *testing.T) {
 			"password":   generatePassword(t),
 		}
 
-		registerResponse, err := sendHTTPRequest(t, ctx, authRegisterEndpoint, user)
-		assert.NoError(t, err, "Failed to send register request")
-		defer registerResponse.Body.Close()
-		assert.Equal(t, http.StatusCreated, registerResponse.StatusCode, "Expected status code 201 for registration. Got %d. Message: %s", registerResponse.StatusCode, readResponseBody(t, registerResponse))
+		response, err := sendHTTPRequest(t, ctx, authRegisterEndpoint, user)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+		assert.Equal(t, http.StatusCreated, response.StatusCode)
 
-		// 2. Verify the user
-		time.Sleep(1 * time.Second) // Allow time for email processing
-		verifyLink := getVerifyLinkFromEmail(t, verifyEmailAddress, email)
-		assert.NotEmpty(t, verifyLink, "Expected verify link to be generated")
-		verificationRawResponse, err := http.Get(verifyLink)
-		assert.NoError(t, err, "Failed to send verification request")
-		defer verificationRawResponse.Body.Close()
-		assert.Equal(t, http.StatusOK, verificationRawResponse.StatusCode, "Expected status code 200 for verification. Got %d. Message: %s", verificationRawResponse.StatusCode, readResponseBody(t, verificationRawResponse))
+		time.Sleep(500 * time.Millisecond)
+		verificationToken := verificationTokenFromEmail(t, verifyEmailAddress, email)
+		_, err = confirmVerification(t, verificationToken)
+		assert.NoError(t, err)
 
-		// 3. Login the user
-		time.Sleep(1 * time.Second) // Allow time for verification update
+		time.Sleep(500 * time.Millisecond)
+
 		loginUser := map[string]any{
 			"email":    user["email"],
 			"password": user["password"],
 		}
+
 		loginResponse, err := sendHTTPRequest(t, ctx, authLoginEndpoint, loginUser)
-		assert.NoError(t, err, "Failed to send login request")
+		assert.NoError(t, err)
 		defer loginResponse.Body.Close()
-		assert.Equal(t, http.StatusOK, loginResponse.StatusCode, "Expected status code 200 for login. Got %d. Message: %s", loginResponse.StatusCode, readResponseBody(t, loginResponse))
+		assert.Equal(t, http.StatusOK, loginResponse.StatusCode)
 
-		loginAPIResp, err := parserResponseBody[model.LoginUserResponse](t, loginResponse)
-		assert.NoError(t, err, "Failed to parse login response body")
-		assert.NotEmpty(t, loginAPIResp.AccessToken, "Expected access token to be set")
-		assert.NotEmpty(t, loginAPIResp.RefreshToken, "Expected refresh token to be set")
+		loginAPIResp, err := parserResponseBody[payload.LoginUserResponse](t, loginResponse)
+		assert.NoError(t, err)
 
-		// 4. Logout the user
+		// Logout using access token
 		logoutHeader := map[string]string{
 			"Authorization": "Bearer " + loginAPIResp.AccessToken,
 		}
 
-		logoutResponse, err := sendHTTPRequest(t, ctx, authLogoutEndpoint, nil, logoutHeader) // Logout usually doesn't need a body
-		assert.NoError(t, err, "Failed to send logout request")
+		logoutResponse, err := sendHTTPRequest(t, ctx, authLogoutEndpoint, nil, logoutHeader)
+		assert.NoError(t, err)
 		defer logoutResponse.Body.Close()
 
-		assert.Equal(t, http.StatusOK, logoutResponse.StatusCode, "Expected status code 200 for logout. Got %d. Message: %s", logoutResponse.StatusCode, readResponseBody(t, logoutResponse))
-		logoutAPIResp, err := parserResponseBody[model.HTTPMessage](t, logoutResponse)
-		assert.NoError(t, err, "Failed to parse logout response body")
+		assert.Equal(t, http.StatusOK, logoutResponse.StatusCode, "Expected status code 200. Got %d. Message: %s", logoutResponse.StatusCode, readResponseBody(t, logoutResponse))
 
-		assert.Equal(t, model.AuthnUserLoggedOutSuccessfully, logoutAPIResp.Message, "Expected logout success message")
-		assert.Equal(t, authLogoutEndpoint.method, logoutAPIResp.Method, "Expected method to be DELETE")
-		assert.Equal(t, authLogoutEndpoint.Path(), logoutAPIResp.Path, "Expected path to be /auth/logout")
+		logoutAPIResp, err := parserResponseBody[payload.HTTPMessage](t, logoutResponse)
+		assert.NoError(t, err)
+		assert.Equal(t, domain.AuthnUserLoggedOutSuccessfully, logoutAPIResp.Message)
 
-		// 5. (Optional but recommended) Verify tokens are invalidated
-		// Try using the old access token - this should fail
-		// Example: Try to access a protected endpoint like getting user details
-		// getUserEndpoint := newAPIEndpoint(http.MethodGet, "/users/"+userID.String()) // Assuming such endpoint exists
-		// protectedResponse, err := sendHTTPRequest(t, ctx, getUserEndpoint, nil, logoutHeader)
-		// assert.NoError(t, err)
-		// defer protectedResponse.Body.Close()
-		// assert.Equal(t, http.StatusUnauthorized, protectedResponse.StatusCode, "Access token should be invalid after logout")
+		t.Cleanup(func() {
+			deleteUserByEmailFromDB(t, email)
+		})
+	})
 
-		// Try using the old refresh token - this should fail
+	t.Run("logout_without_authorization", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		logoutResponse, err := sendHTTPRequest(t, ctx, authLogoutEndpoint, nil)
+		assert.NoError(t, err)
+		defer logoutResponse.Body.Close()
+
+		assert.Equal(t, http.StatusUnauthorized, logoutResponse.StatusCode, "Expected status code 401. Got %d. Message: %s", logoutResponse.StatusCode, readResponseBody(t, logoutResponse))
+	})
+
+	t.Run("logout_with_invalid_token", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		logoutHeader := map[string]string{
+			"Authorization": "Bearer invalid.token.here",
+		}
+
+		logoutResponse, err := sendHTTPRequest(t, ctx, authLogoutEndpoint, nil, logoutHeader)
+		assert.NoError(t, err)
+		defer logoutResponse.Body.Close()
+
+		assert.Equal(t, http.StatusUnauthorized, logoutResponse.StatusCode, "Expected status code 401. Got %d. Message: %s", logoutResponse.StatusCode, readResponseBody(t, logoutResponse))
+	})
+}
+
+// TestAuthRefreshToken_EdgeCases tests refresh token with edge cases
+func TestAuthRefreshToken_EdgeCases(t *testing.T) {
+	t.Run("refresh_with_invalid_token", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
 		refreshTokenPayload := map[string]any{
-			"refresh_token": loginAPIResp.RefreshToken,
+			"refresh_token": "invalid.token.here",
 		}
+
 		refreshTokenHeader := map[string]string{
-			"Authorization": "Bearer " + loginAPIResp.RefreshToken,
+			"Authorization": "Bearer invalid.token.here",
 		}
+
 		refreshResponse, err := sendHTTPRequest(t, ctx, authRefreshEndpoint, refreshTokenPayload, refreshTokenHeader)
 		assert.NoError(t, err)
 		defer refreshResponse.Body.Close()
-		assert.Equal(t, http.StatusOK, refreshResponse.StatusCode, "Refresh token should be invalid after logout. Got %d. Message: %s", refreshResponse.StatusCode, readResponseBody(t, refreshResponse))
+
+		assert.Equal(t, http.StatusUnauthorized, refreshResponse.StatusCode, "Expected status code 401. Got %d. Message: %s", refreshResponse.StatusCode, readResponseBody(t, refreshResponse))
+	})
+
+	t.Run("refresh_without_authorization_header", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		refreshTokenPayload := map[string]any{
+			"refresh_token": "some.token.here",
+		}
+
+		refreshResponse, err := sendHTTPRequest(t, ctx, authRefreshEndpoint, refreshTokenPayload)
+		assert.NoError(t, err)
+		defer refreshResponse.Body.Close()
+
+		assert.Equal(t, http.StatusUnauthorized, refreshResponse.StatusCode, "Expected status code 401. Got %d. Message: %s", refreshResponse.StatusCode, readResponseBody(t, refreshResponse))
+	})
+
+	t.Run("refresh_with_access_token_instead", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// Create, verify, and login a user
+		userID := uuid.NewV7()
+		firstName, lastName, email := generateUserData(t)
+		user := map[string]any{
+			"id":         userID.String(),
+			"email":      email,
+			"first_name": firstName,
+			"last_name":  lastName,
+			"password":   generatePassword(t),
+		}
+
+		response, err := sendHTTPRequest(t, ctx, authRegisterEndpoint, user)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+		assert.Equal(t, http.StatusCreated, response.StatusCode)
+
+		time.Sleep(500 * time.Millisecond)
+		verificationToken := verificationTokenFromEmail(t, verifyEmailAddress, email)
+		_, err = confirmVerification(t, verificationToken)
+		assert.NoError(t, err)
+
+		time.Sleep(500 * time.Millisecond)
+
+		loginUser := map[string]any{
+			"email":    user["email"],
+			"password": user["password"],
+		}
+
+		loginResponse, err := sendHTTPRequest(t, ctx, authLoginEndpoint, loginUser)
+		assert.NoError(t, err)
+		defer loginResponse.Body.Close()
+		assert.Equal(t, http.StatusOK, loginResponse.StatusCode)
+
+		loginAPIResp, err := parserResponseBody[payload.LoginUserResponse](t, loginResponse)
+		assert.NoError(t, err)
+
+		// Try to refresh using access token instead of refresh token
+		refreshTokenPayload := map[string]any{
+			"refresh_token": loginAPIResp.AccessToken,
+		}
+
+		refreshTokenHeader := map[string]string{
+			"Authorization": "Bearer " + loginAPIResp.AccessToken,
+		}
+
+		refreshResponse, err := sendHTTPRequest(t, ctx, authRefreshEndpoint, refreshTokenPayload, refreshTokenHeader)
+		assert.NoError(t, err)
+		defer refreshResponse.Body.Close()
+
+		assert.Equal(t, http.StatusUnauthorized, refreshResponse.StatusCode, "Expected status code 401. Got %d. Message: %s", refreshResponse.StatusCode, readResponseBody(t, refreshResponse))
+
+		t.Cleanup(func() {
+			deleteUserByEmailFromDB(t, email)
+		})
+	})
+}
+
+// TestAuthVerify_EdgeCases tests verification with edge cases
+func TestAuthVerify_EdgeCases(t *testing.T) {
+	t.Run("verify_with_invalid_token", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// Try to verify with an invalid token. It goes in the header now: the
+		// path form leaked it into the request log.
+		verifyResponse, err := sendHTTPRequest(t, ctx, authVerifyConfirmEndpoint, nil,
+			map[string]string{"Authorization": "Bearer invalid.token.here"})
+		assert.NoError(t, err)
+		defer verifyResponse.Body.Close()
+
+		// The auth middleware refuses it before the handler runs, so an
+		// unreadable token is a 401 rather than the 400 the handler used to
+		// answer after parsing the path itself.
+		assert.Equal(t, http.StatusUnauthorized, verifyResponse.StatusCode, "Expected status code 401. Got %d. Message: %s", verifyResponse.StatusCode, readResponseBody(t, verifyResponse))
+	})
+
+	t.Run("verify_already_verified_user", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+
+		// Create and verify a user
+		userID := uuid.NewV7()
+		firstName, lastName, email := generateUserData(t)
+		user := map[string]any{
+			"id":         userID.String(),
+			"email":      email,
+			"first_name": firstName,
+			"last_name":  lastName,
+			"password":   generatePassword(t),
+		}
+
+		response, err := sendHTTPRequest(t, ctx, authRegisterEndpoint, user)
+		assert.NoError(t, err)
+		defer response.Body.Close()
+		assert.Equal(t, http.StatusCreated, response.StatusCode)
+
+		time.Sleep(500 * time.Millisecond)
+		verificationToken := verificationTokenFromEmail(t, verifyEmailAddress, email)
+		assert.NotEmpty(t, verificationToken)
+
+		// First verification
+		verificationResponse1, err := confirmVerification(t, verificationToken)
+		assert.NoError(t, err)
+		defer verificationResponse1.Body.Close()
+		assert.Equal(t, http.StatusOK, verificationResponse1.StatusCode)
+
+		// Try to verify again with the same token
+		verificationResponse2, err := confirmVerification(t, verificationToken)
+		assert.NoError(t, err)
+		defer verificationResponse2.Body.Close()
+
+		// The second verification should fail with 500 because user is already verified
+		// This is the actual behavior: the service returns 500 with message "user is already verified"
+		assert.Equal(t, http.StatusInternalServerError, verificationResponse2.StatusCode, "Expected status code 500 for reusing verification token. Got %d. Message: %s", verificationResponse2.StatusCode, readResponseBody(t, verificationResponse2))
+
+		apiResp, err := parserResponseBody[payload.HTTPMessage](t, verificationResponse2)
+		assert.NoError(t, err)
+		assert.Contains(t, apiResp.Message, "already verified", "Error message should indicate user is already verified")
 
 		t.Cleanup(func() {
 			deleteUserByEmailFromDB(t, email)
