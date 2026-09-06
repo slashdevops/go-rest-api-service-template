@@ -449,6 +449,23 @@ high but steady reads as a plateau; a gauge pinned at zero does not.
 `rate_limit_rules_staleness_seconds` reports **`-1`** when the set has never
 loaded. Zero would read as perfectly fresh.
 
+### `rate_limits` is the entity, `ratelimit` is the mechanism
+
+Two spellings exist on purpose, and each names a different thing. A
+**`rate_limits`** file holds the entity, the `RateLimit` rule row an operator
+creates, lists and edits: `domain/rate_limits.go`, `repositorypg/rate_limits.go`,
+`handler/rate_limits.go`, `usecase/rate_limits.go`, and the per-replica mirror
+`usecase/rate_limits_mirror.go`, the twin of `token_lifetimes_mirror.go`. That
+is the same snake-case plural every other entity file uses. **`ratelimit`** is
+the limiter itself, where a Go package name cannot carry an underscore: the
+`ratelimit` port and its `ratelimitmemory`, `ratelimitvalkey` and
+`ratelimitbreaker` adapters, the mock of that port, the middleware, the
+`config/ratelimit.go` group whose flags start `ratelimit.`, and the `app`
+wiring named after them. Name a new file for what it holds: a rule is
+`rate_limits_<topic>.go`, a limiter is `ratelimit_<topic>.go`. The metric
+names (`rate_limit_rules_*`, `rate_limit_store_up`) are wire names and stay
+as they are.
+
 ## Client IP and the rate limiter
 
 The per-IP rate limiter keys on [`ClientIPResolver`](../internal/adapter/driving/http/middleware/clientip.go),
