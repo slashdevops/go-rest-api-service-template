@@ -144,8 +144,6 @@ INSERT INTO policies (id, resources_id, name, description, allowed_action, allow
 ('0199489b-f2f0-718e-a94d-b05a296eb818', '0199489b-f2f0-718e-a94d-b05a296eb818', 'Allow update my information', 'Allow update my information', 'PUT', '/me', TRUE),
 -- Allow reset password
 ('01991b30-2c97-7d5d-a426-7bb7f7c84775', '01991917-2720-758d-8104-94a0368acecb', 'Allow reset password', 'Allow reset password', 'POST', '/auth/password/reset', TRUE),
--- Allow list users
-('019ab091-fb85-7b0c-bfec-673266ed8bd0', '01982303-f0f9-7daf-809b-4f7880ca9e40', 'Allow list users', 'Allow list users', 'GET', '/users', TRUE),
 -- Seeing your own limits is granted to every authenticated user, exactly as GET /me and
 -- GET /me/authz already are: a user who cannot find out why a creation was refused has to guess.
 -- The project endpoint (/projects/{project_id}/resources_limits) deliberately gets no blanket
@@ -176,6 +174,7 @@ INSERT INTO policies (id, resources_id, name, description, allowed_action, allow
 ('01a0771b-32e7-7251-8ad1-f36516b4f050', '01982303-f0f9-7e9f-9bb9-81d42a9eb30a', 'Manager: delete project', 'Delete a project the caller belongs to', 'DELETE', '/projects/*', TRUE),
 ('01a0771b-32e7-7252-984f-91c48bae3947', '01986f44-3a65-7a21-9c2b-392f2b0eacf7', 'Manager: add project users', 'Add users to a project', 'POST', '/projects/*/users', TRUE),
 ('01a0771b-32e7-7256-8a5b-8e53c6a03246', '01986f44-3a65-7a19-a92d-e6100dd80807', 'Manager: remove project users', 'Remove users from a project', 'DELETE', '/projects/*/users', TRUE),
+('019ab091-fb85-7b0c-bfec-673266ed8bd0', '01982303-f0f9-7daf-809b-4f7880ca9e40', 'Manager: list users', 'List users, to pick the members of a project the caller manages', 'GET', '/users', TRUE),
 ('01a0771b-32e7-725a-be85-9af6ab709eca', '01982303-f0f9-7daf-809b-4f7880ca9e40', 'User manager: list users', 'List users', 'GET', '/users', TRUE),
 ('01a0771b-32e7-725b-bf37-d2ed45141d78', '01982303-f0f9-7e78-bddf-389144c4beaf', 'User manager: create user', 'Create a user', 'POST', '/users', TRUE),
 ('01a0771b-32e7-7266-b73c-fad8c06a08ed', '01982303-f0f9-7e25-85f4-4d9d47622702', 'User manager: read user', 'Read a user', 'GET', '/users/*', TRUE),
@@ -204,7 +203,6 @@ INSERT INTO roles_policies (roles_id, policies_id) VALUES
 ('019822af-b448-7514-a670-f7acef5d6f77', '019822c9-9775-73d4-bd51-67ccc8a3964b'),
 ('019822af-b448-7514-a670-f7acef5d6f77', '01986fee-b58f-703a-92d3-f1f64ea48710'),
 ('019822af-b448-7514-a670-f7acef5d6f77', '01991b30-2c97-7d5d-a426-7bb7f7c84775'),
-('019822af-b448-7514-a670-f7acef5d6f77', '019ab091-fb85-7b0c-bfec-673266ed8bd0'),
 ('019822af-b448-7514-a670-f7acef5d6f77', '01a01119-62f4-7a96-9d4a-41c2f56e4086'),
 ('019822af-b448-7514-a670-f7acef5d6f77', '01a07576-4ce5-74fd-9e86-ad854feecf73'),
 ('019822af-b448-7514-a670-f7acef5d6f77', '01a07576-4ce5-75b2-ac8e-0c24302f69c5'),
@@ -241,6 +239,10 @@ INSERT INTO roles_policies (roles_id, policies_id) VALUES
 ('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-7251-8ad1-f36516b4f050'),
 ('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-7252-984f-91c48bae3947'),
 ('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-7256-8a5b-8e53c6a03246'),
+-- Listing users is what lets a manager pick members. It was granted to
+-- AuthenticatedUser, so every account could enumerate every other one and
+-- saw an Admin > Users page it could not act on.
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '019ab091-fb85-7b0c-bfec-673266ed8bd0'),
 ('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-725a-be85-9af6ab709eca'),
 ('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-725b-bf37-d2ed45141d78'),
 ('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-7266-b73c-fad8c06a08ed'),
