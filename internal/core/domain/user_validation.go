@@ -8,9 +8,16 @@ const (
 	ValidUserLastNameMinLength  = 2
 	ValidUserLastNameMaxLength  = 25
 	ValidUserEmailMinLength     = 6
-	ValidUserEmailMaxLength     = 50
-	ValidUserPasswordMinLength  = 6
-	ValidUserPasswordMaxLength  = 255
+	// RFC 5321's cap, and users.email is a VARCHAR(254) to match. It was 50
+	// here and in the column while ValidateEmail allowed 254, so an address of
+	// 51 to 254 characters passed validation and died in Postgres as a 500.
+	ValidUserEmailMaxLength = MaxEmailLength
+	// Eight is the floor NIST SP 800-63B sets for a user-chosen password; six
+	// was below it. Seventy-two is bcrypt's input limit: x/crypto refuses a
+	// longer password with ErrPasswordTooLong, so the old cap of 255 accepted
+	// a password that could not be hashed and answered a 500 for it.
+	ValidUserPasswordMinLength = 8
+	ValidUserPasswordMaxLength = 72
 )
 
 // InvalidUserUpdateError represents an invalid user update error.

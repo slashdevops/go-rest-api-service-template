@@ -11378,6 +11378,7 @@ Status: Internal Server Error
 | last_name | string (formatted string)| `string` |  | | User's last name | `Doe` |
 | local_account | boolean| `bool` |  | | Indicates if this is a locally managed account (vs SSO/federated) | `true` |
 | updated_at | date-time (formatted string)| `strfmt.DateTime` |  | | Timestamp when the user account was last updated | `2021-01-01T00:00:00Z` |
+| verified | boolean| `bool` |  | | Indicates if the email address has been verified (by the verification link or an identity provider) | `true` |
 
 
 

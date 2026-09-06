@@ -128,7 +128,7 @@ func (req *LoginUserInput) Validate() error {
 	}
 
 	if req.LoginMethod == LoginMethodPassword {
-		errs.Add(ValidatePassword(req.Password, FieldPassword))
+		errs.Add(ValidateLoginPassword(req.Password, FieldPassword))
 	}
 
 	if errs.HasErrors() {

@@ -241,6 +241,11 @@ func (ref *AuthnService) LoginUser(ctx context.Context, input *domain.LoginUserI
 
 		return nil, ref.rejectLogin(ctx, span, start, attrs, "no account for that address")
 
+	// An unverified account is also disabled, so the second case would catch
+	// it; naming it first is for the operator reading the span.
+	case user.Verified != nil && !*user.Verified:
+		return nil, ref.rejectLogin(ctx, span, start, attrs, "account is not verified")
+
 	case user.Disabled != nil && *user.Disabled:
 		return nil, ref.rejectLogin(ctx, span, start, attrs, "account is disabled")
 
@@ -413,6 +418,10 @@ func (ref *AuthnService) RegisterUser(ctx context.Context, input *domain.Registe
 		user.LocalAccount = new(false)
 	}
 
+	// A local registration has to prove its address by following the link;
+	// an identity provider has already proven its subject.
+	user.Verified = new(input.RegisterMethod != domain.RegisterMethodPassword)
+
 	if err := ref.userService.Create(ctx, user); err != nil {
 		// An address that already has an account answers exactly like one that
 		// does not.
@@ -571,17 +580,19 @@ func (ref *AuthnService) VerifyUser(ctx context.Context, jwtToken string) error 
 		return o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
 	}
 
-	if user.Disabled == nil || !*user.Disabled {
+	if user.Verified != nil && *user.Verified {
 		errorType := &domain.UserAlreadyVerifiedError{Email: email}
 		return o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
 	}
 
-	isDisabled := new(bool)
-	*isDisabled = false
-
+	// Verification proves the address and opens the account in one step: the
+	// only reason a fresh registration is disabled is that its link has not
+	// been followed yet. An administrator who wants an unverified account to
+	// stay shut deletes it; there is nothing to keep.
 	updateInput := &domain.UpdateUserInput{
 		ID:       user.ID,
-		Disabled: isDisabled,
+		Verified: new(true),
+		Disabled: new(false),
 	}
 
 	if err := ref.userService.UpdateByID(ctx, updateInput); err != nil {
@@ -627,7 +638,7 @@ func (ref *AuthnService) ReVerifyUser(ctx context.Context, email string) error {
 	}
 
 	// grateful answer when user is already verified, because security reason
-	if user.Disabled != nil && !*user.Disabled {
+	if user.Verified != nil && *user.Verified {
 		slog.Warn("service.Authn.ReVerifyUser: user already verified", "email", email)
 		return nil
 	}
@@ -638,6 +649,20 @@ func (ref *AuthnService) ReVerifyUser(ctx context.Context, email string) error {
 		return nil
 	}
 
+	slog.Debug("service.Authn.ReVerifyUser: enqueuing verification email", "to", user.Email)
+	if err := ref.sendVerificationEmail(ctx, user); err != nil {
+		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "user re-verification email sent successfully")
+
+	return nil
+}
+
+// sendVerificationEmail mints a verification token for the account and hands
+// it to the notifier. Re-verification and a password recovery on an
+// unverified account send the same mail.
+func (ref *AuthnService) sendVerificationEmail(ctx context.Context, user *domain.User) error {
 	jwtClaims := domain.JWTClaims{
 		Email:         user.Email,
 		Subject:       user.ID.String(),
@@ -648,21 +673,15 @@ func (ref *AuthnService) ReVerifyUser(ctx context.Context, email string) error {
 
 	emailToken, err := ref.tokenSigner.Sign(ctx, jwtClaims)
 	if err != nil {
-		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		return err
 	}
 
 	recipient := notifier.Recipient{
 		Name:  fmt.Sprintf("%s %s", user.FirstName, user.LastName),
 		Email: user.Email,
 	}
-	slog.Debug("service.Authn.ReVerifyUser: enqueuing verification email", "to", user.Email)
-	if err := ref.notifier.SendAccountVerification(ctx, recipient, emailToken, ref.userVerificationTokenTTL.String()); err != nil {
-		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-	}
 
-	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "user re-verification email sent successfully")
-
-	return nil
+	return ref.notifier.SendAccountVerification(ctx, recipient, emailToken, ref.userVerificationTokenTTL.String())
 }
 
 // RefreshAccessToken refreshes an access token.
@@ -1013,15 +1032,35 @@ func (ref *AuthnService) RecoverPassword(ctx context.Context, input *domain.Reco
 		return ref.silentRecovery(ctx, span, start, attrs, "no account for this address")
 	}
 
-	if user.Disabled != nil && *user.Disabled {
-		return ref.silentRecovery(ctx, span, start, attrs, "the account is disabled")
-	}
-
 	// Only a local account has a password to recover. Saying so out loud
 	// identifies which addresses use SSO, which is exactly what an attacker
 	// choosing a target wants to know.
 	if user.LocalAccount == nil || !*user.LocalAccount {
 		return ref.silentRecovery(ctx, span, start, attrs, "the account authenticates through an identity provider")
+	}
+
+	// An account that never followed its verification link cannot reset a
+	// password it cannot use yet, but the person asking is almost always its
+	// owner who lost that first mail. They get it again: the same answer on
+	// the wire, a different mail in the inbox. This used to be refused
+	// silently, because "unverified" and "disabled" were one flag and this
+	// branch could not tell them apart -- so "forgot password" on a fresh
+	// registration sent nothing and looked like a broken mailer.
+	if user.Verified != nil && !*user.Verified {
+		span.SetAttributes(attribute.String("authn.recovery.no_email_reason", "the account is not verified; the verification email was sent instead"))
+		slog.Debug("service.Authn.RecoverPassword: unverified account, sending the verification email instead")
+
+		if err := ref.sendVerificationEmail(ctx, user); err != nil {
+			return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		}
+
+		o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "verification email sent in place of a password recovery")
+
+		return nil
+	}
+
+	if user.Disabled != nil && *user.Disabled {
+		return ref.silentRecovery(ctx, span, start, attrs, "the account is disabled")
 	}
 
 	jwtClaims := domain.JWTClaims{

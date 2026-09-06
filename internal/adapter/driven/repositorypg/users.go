@@ -172,8 +172,8 @@ func (ref *UsersRepository) Insert(ctx context.Context, input *domain.InsertUser
 
 	// insert the user
 	query1 := `
-        INSERT INTO users (id, first_name, last_name, email, password_hash, disabled, local_account)
-        VALUES ($1, $2, $3, $4, $5, $6, $7);
+        INSERT INTO users (id, first_name, last_name, email, password_hash, disabled, verified, local_account)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
     `
 
 	slog.Debug("repository.Users.Insert", "query",
@@ -184,6 +184,7 @@ func (ref *UsersRepository) Insert(ctx context.Context, input *domain.InsertUser
 			input.Email,
 			input.PasswordHash,
 			input.Disabled,
+			input.Verified,
 			input.LocalAccount,
 		))
 
@@ -199,6 +200,7 @@ func (ref *UsersRepository) Insert(ctx context.Context, input *domain.InsertUser
 		input.Email,
 		input.PasswordHash,
 		disabled,
+		input.Verified != nil && *input.Verified,
 		input.LocalAccount != nil && *input.LocalAccount,
 	)
 	if txErr != nil {
@@ -285,6 +287,12 @@ func (ref *UsersRepository) UpdateByID(ctx context.Context, input *domain.Update
 		args = append(args, nil)
 	}
 
+	if input.Verified != nil {
+		args = append(args, *input.Verified)
+	} else {
+		args = append(args, nil)
+	}
+
 	query := `
         UPDATE users SET
             first_name    = COALESCE(NULLIF($2, first_name), first_name),
@@ -293,6 +301,7 @@ func (ref *UsersRepository) UpdateByID(ctx context.Context, input *domain.Update
             password_hash = COALESCE(NULLIF($5, password_hash), password_hash),
             disabled      = COALESCE($6, disabled),
             local_account = COALESCE($7, local_account),
+            verified      = COALESCE($8, verified),
             updated_at    = CURRENT_TIMESTAMP
         WHERE id = $1;
     `
@@ -379,6 +388,7 @@ func (ref *UsersRepository) SelectByID(ctx context.Context, id uuid.UUID) (*doma
             email,
             password_hash,
             disabled,
+            verified,
             admin,
             local_account,
             created_at,
@@ -399,6 +409,7 @@ func (ref *UsersRepository) SelectByID(ctx context.Context, id uuid.UUID) (*doma
 		&item.Email,
 		&item.PasswordHash,
 		&item.Disabled,
+		&item.Verified,
 		&item.Admin,
 		&item.LocalAccount,
 		&item.CreatedAt,
@@ -448,6 +459,7 @@ func (ref *UsersRepository) SelectByEmail(ctx context.Context, email string) (*d
             email,
             password_hash,
             disabled,
+            verified,
             local_account,
             created_at,
             updated_at
@@ -467,6 +479,7 @@ func (ref *UsersRepository) SelectByEmail(ctx context.Context, email string) (*d
 		&item.Email,
 		&item.PasswordHash,
 		&item.Disabled,
+		&item.Verified,
 		&item.LocalAccount,
 		&item.CreatedAt,
 		&item.UpdatedAt,
@@ -512,6 +525,7 @@ func (ref *UsersRepository) SelectByRoleID(ctx context.Context, roleID uuid.UUID
 		"email",
 		"password_hash",
 		"disabled",
+		"verified",
 		"local_account",
 		"created_at",
 		"updated_at",
@@ -709,6 +723,7 @@ func (ref *UsersRepository) SelectByProjectID(ctx context.Context, projectID uui
 		"email",
 		"password_hash",
 		"disabled",
+		"verified",
 		"local_account",
 		"created_at",
 		"updated_at",
@@ -899,6 +914,7 @@ func (ref *UsersRepository) Select(ctx context.Context, input *domain.SelectUser
 		"email",
 		"password_hash",
 		"disabled",
+		"verified",
 		"local_account",
 		"created_at",
 		"updated_at",
@@ -1420,6 +1436,7 @@ func (ref *UsersRepository) buildScanFields(item *domain.User, requestedFields s
 			&item.Email,
 			&item.PasswordHash,
 			&item.Disabled,
+			&item.Verified,
 			&item.LocalAccount,
 			&item.CreatedAt,
 			&item.UpdatedAt,
@@ -1447,6 +1464,8 @@ func (ref *UsersRepository) buildScanFields(item *domain.User, requestedFields s
 			scanFields = append(scanFields, &item.PasswordHash)
 		case "disabled":
 			scanFields = append(scanFields, &item.Disabled)
+		case "verified":
+			scanFields = append(scanFields, &item.Verified)
 		case "local_account":
 			scanFields = append(scanFields, &item.LocalAccount)
 		case "created_at":

@@ -23,7 +23,9 @@ func (req *LoginUserRequest) Validate() error {
 		req.Email = normalizedEmail
 	}
 
-	errs.Add(domain.ValidatePassword(req.Password, domain.FieldPassword))
+	// A login is checked against the hash, not against the policy for choosing
+	// a password: see domain.ValidateLoginPassword.
+	errs.Add(domain.ValidateLoginPassword(req.Password, domain.FieldPassword))
 
 	if errs.HasErrors() {
 		return &errs
