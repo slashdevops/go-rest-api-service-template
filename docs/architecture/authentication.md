@@ -937,3 +937,23 @@ they last up to a year and have to be reissued. This is a one-time cost of
 Tracked in the auth review; listed here so the shape of what is missing is
 visible from the architecture docs.
 
+
+## Editing the login throttle
+
+Three properties of `authn.login.throttle.*` that a refactor is likely to
+break, each the answer to a question already asked in review:
+
+- **`Attempt` always spends; `Succeed` refunds.** Only failures accumulate,
+  but the mechanism is consume-then-refund rather than a non-consuming check,
+  because a non-consuming check is not expressible on a token bucket:
+  `golang.org/x/time/rate` will not return a token whose time to act has
+  already passed, so reserve-then-cancel silently spends on exactly the
+  immediately available tokens a check would look at. Do not "optimise" it
+  back.
+- **It delays, it never locks.** Anyone who knows an address can spend its
+  budget; a refilling ceiling is what stops that being an account they can
+  keep shut. Do not replace it with a lockout an operator has to clear.
+- **The budget is per replica.** Valkey is optional (`cache.enabled=false` is
+  supported) so a cache-backed throttle would silently not exist, and Postgres
+  would mean a disk write per unauthenticated request. N × a small number is
+  still bounded, which the unthrottled path was not.

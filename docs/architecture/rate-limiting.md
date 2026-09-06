@@ -585,3 +585,86 @@ required: naming a verb beats `*` at every tier, so a default would quietly
 answer a different question than the one asked. Each entry carries prose saying
 *why* it won its scope, because a tier number does not answer "why not the other
 rule".
+
+## Client IP resolution
+
+The per-IP rate limiter keys on [`ClientIPResolver`](../internal/adapter/driving/http/middleware/clientip.go),
+which honours `X-Forwarded-For` / `X-Real-IP` **only when the peer is a
+configured trusted proxy**. This is a security boundary, not a convenience:
+
+- **`http.server.trusted.proxies` is empty by default**, and empty means the
+  headers are ignored entirely and the bucket is keyed on `RemoteAddr`. A
+  deployment behind a proxy must set it to the proxy's IPs or CIDR blocks, or
+  every client behind that proxy shares one bucket.
+- **Never read a forwarding header without checking the peer.** The resolver
+  exists because the old code read `X-Forwarded-For` unconditionally: a caller
+  rotating the header drew a fresh budget on every request, so the limiter did
+  not weaken, it disappeared. Measured against the running API with the limiter
+  at 5 req/s, 30 password guesses went from `{401: 7, 429: 23}` to `{401: 30}`.
+- The chain is walked **right to left**, returning the first hop that is not
+  itself trusted — a trusted proxy appends what it saw, so everything to the
+  left of our own hops is client-supplied. An unreadable chain falls back to the
+  peer, which over-limits rather than trusting a guess.
+- The startup log states which posture is active, and warns when nothing is
+  trusted. Keep that: neither posture is visible from a request, and they fail
+  in opposite directions.
+
+`make test` covers this in
+`middleware/clientip_test.go` and `middleware/ratelimit_clientip_test.go`;
+both were verified to fail when the peer check is removed.
+
+**The limiter is on in `.air.toml`** (100 req/s, burst 300) so the dev stack
+matches the shipped default. It was previously disabled there, which is why the
+bypass was invisible locally. Two full integration runs see zero 429s at those
+values — if you lower them, re-check.
+
+## The valkey tests need a reachable Valkey, or they skip
+
+`ratelimitvalkey`'s tests connect to `127.0.0.1:6379` and skip when the ping
+fails. **`make test` now sets `VALKEY_TEST_CA` for you** from
+`certs/dev/ca.crt` when the dev stack has generated one, so the TLS-only dev
+Valkey is reachable without remembering anything. Run a single package by hand
+with an ABSOLUTE path, because `go test` runs in the package directory:
+
+```bash
+VALKEY_TEST_CA="$PWD/certs/dev/ca.crt" go test -tags=unit ./internal/adapter/driven/ratelimitvalkey/
+```
+
+Without the variable the client speaks plaintext, which is what **CI** uses: it
+has no dev certs, so `pr.yaml` gives it a plaintext Valkey service container
+instead of a certificate to generate and keep in step. Both shapes are
+supported; which one runs depends on whether that CA file exists.
+
+**A skipped test reports `ok`, and that is the whole hazard.** A suite that
+verified nothing is indistinguishable from one that passed:
+
+- a mutation test against a skipping suite reports "ok" and proves nothing —
+  that happened while writing the notifier, twice;
+- and the same silence broke the coverage gate for everyone. The package
+  carries an 80% floor measured at 84.3% **with** a Valkey; skipping, it
+  measures 17.6%, so `make test-coverage` failed on `main` on a package that
+  had nothing wrong with it. The floor described an environment the gate never
+  reproduced.
+
+The rule that follows: **when a test can skip itself, something has to
+guarantee the conditions it needs.** Documenting the variable was not enough —
+a step you have to remember is a step that gets skipped, and this one is
+silent.
+
+
+## Naming: `rate_limits` is the entity, `ratelimit` is the mechanism
+
+Two spellings exist on purpose, and each names a different thing. A
+**`rate_limits`** file holds the entity, the `RateLimit` rule row an operator
+creates, lists and edits: `domain/rate_limits.go`, `repositorypg/rate_limits.go`,
+`handler/rate_limits.go`, `usecase/rate_limits.go`, and the per-replica mirror
+`usecase/rate_limits_mirror.go`, the twin of `token_lifetimes_mirror.go`. That
+is the same snake-case plural every other entity file uses. **`ratelimit`** is
+the limiter itself, where a Go package name cannot carry an underscore: the
+`ratelimit` port and its `ratelimitmemory`, `ratelimitvalkey` and
+`ratelimitbreaker` adapters, the mock of that port, the middleware, the
+`config/ratelimit.go` group whose flags start `ratelimit.`, and the `app`
+wiring named after them. Name a new file for what it holds: a rule is
+`rate_limits_<topic>.go`, a limiter is `ratelimit_<topic>.go`. The metric
+names (`rate_limit_rules_*`, `rate_limit_store_up`) are wire names and stay
+as they are.

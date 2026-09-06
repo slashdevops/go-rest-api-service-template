@@ -308,6 +308,20 @@ Read it alongside [Adding a new entity](./adding-an-entity.md).
   an applied migration fails silently, the one shared system-row guard, the
   63-character identifier limit that has caused two bugs, and how to prove a
   migration change did not alter the schema.
+- [Repository SQL rules](./repository-sql.md) — placeholders for values,
+  `pgx.Identifier.Sanitize` for runtime table names, an allow-list for the
+  values that can be neither, and the reachable injection each rule stops.
+
+## Development rules
+
+The rules an agent or a contributor follows while editing, with the story
+behind each, live under [`docs/development/`](../development/):
+[Go 1.27 baseline](../development/go-127-baseline.md),
+[configuration rules](../development/configuration-rules.md),
+[documentation and Swagger rules](../development/documentation-and-swagger.md),
+[CI gates](../development/ci-gates.md) and
+[the dev stack in detail](../development/dev-stack.md). `CLAUDE.md` is the
+short index of all of them.
 
 ## Background
 
