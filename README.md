@@ -225,6 +225,8 @@ make docs-api-resources # regenerate the authz resource rows for migration 00008
 | 🧬 [Database migrations](./docs/architecture/database-migrations.md) | the file set and the rules |
 | 🩺 [Health probes](./docs/architecture/health-probes.md) | which endpoint answers which question |
 | ⏱️ [HTTP timeouts](./docs/architecture/http-server-timeouts.md) | which bound covers which span |
+| 🧮 [Repository SQL rules](./docs/architecture/repository-sql.md) | placeholders, sanitised identifiers, allow-listed operators |
+| 🛠️ [Development rules](./docs/development/) | Go 1.27 baseline, configuration rules, docs and Swagger, CI gates, the dev stack in detail |
 | 🔑 [Certificates](./docs/certificates/certificates.md) | keys, TLS to PostgreSQL and Valkey |
 | 📖 [API reference](./docs/api/markdown.md) | generated from the OpenAPI spec |
 | 🤖 [Development guidelines](./CLAUDE.md) | the conventions, the hard rules and the reasons behind them |

@@ -5,6 +5,10 @@ on:
     branches:
       - main
       - release/*
+    # `edited` is here so that changing the title re-decides whether the full
+    # run is needed (see the `classify` job). It costs nothing on its own: the
+    # concurrency group below cancels the run a retitle supersedes.
+    types: [opened, synchronize, reopened, edited]
 
 # A new push to the same PR supersedes the run already in flight.
 #
@@ -34,7 +38,60 @@ defaults:
     shell: bash
 
 jobs:
+  # The semantic type in the PR title decides whether the full run is needed.
+  #
+  # A PR whose title starts with `docs`, `style` or `chore` skips the build,
+  # lint, test and coverage gates: none of them can answer differently because
+  # of a change that is, by its own declaration, not code. Two exceptions,
+  # both because the declaration would be a lie:
+  #
+  #   - `chore(deps)` still runs. A dependency bump is exactly what needs the
+  #     build -- `go get -u` has broken OPA once by moving a transitive
+  #     dependency, and `go mod tidy` was happy with it.
+  #   - a `!` after the type (a breaking change) still runs.
+  #
+  # The check is a SKIPPED JOB, never a workflow that does not run: `build` is
+  # a required status check, and a skipped job satisfies it while a workflow
+  # filtered out by `paths` reports nothing and blocks the merge.
+  #
+  # The title is read from the event payload into an environment variable and
+  # never interpolated into the script -- a PR title is attacker-controlled
+  # text and `${{ }}` inside `run:` is a shell injection.
+  classify:
+    runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.decide.outputs.skip }}
+    steps:
+      - name: Decide from the semantic title
+        id: decide
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          # The patterns live in variables: bash's parser trips over a `)`
+          # inside a bracket expression when the regex is written inline.
+          skippable='^(docs|style|chore)(\([^)]*\))?:[[:space:]]'
+          deps='^chore\(deps'
+          skip=false
+          if [[ "$PR_TITLE" =~ $skippable ]]; then
+            skip=true
+          fi
+          if [[ "$PR_TITLE" =~ $deps ]]; then
+            skip=false
+          fi
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+          {
+            echo "# Pull Request Summary"
+            echo ""
+            echo "**Title:** $PR_TITLE"
+            if [[ "$skip" == true ]]; then
+              echo ""
+              echo "Semantic type is docs/style/chore: the build, lint, test and coverage gates are skipped ✅"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build:
+    needs: classify
+    if: needs.classify.outputs.skip != 'true'
     runs-on: ubuntu-latest
 
     # DISABLED to keep the runner cheap. Uncomment to restore.
@@ -101,12 +158,16 @@ jobs:
           restore-keys: |
             gotools-${{ runner.os }}-
 
+      # The title goes through an environment variable: it is attacker-controlled
+      # text, and `${{ }}` inside `run:` would paste it into the shell.
       - name: Summary Information
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
         run: |
           echo "# Pull Request Summary" > $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Repository:** ${{ github.repository }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Pull Request:** ${{ github.event.pull_request.title }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Pull Request:** $PR_TITLE" >> $GITHUB_STEP_SUMMARY
           echo "**Author:** ${{ github.event.pull_request.user.login }}" >> $GITHUB_STEP_SUMMARY
           echo "**Branch:** ${{ github.event.pull_request.head.ref }}" >> $GITHUB_STEP_SUMMARY
           echo "**Base:** ${{ github.event.pull_request.base.ref }}" >> $GITHUB_STEP_SUMMARY

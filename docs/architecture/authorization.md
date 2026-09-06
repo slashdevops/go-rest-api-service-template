@@ -177,3 +177,15 @@ implemented.
 Grants written straight into the database bypass every invalidation and
 stay invisible until the TTL; that is by design, and it bit two live
 proofs during the review. Grant through the API.
+
+## Adding a project-scoped route
+
+A grant names a route; membership names a project. OPA expands the `*` in
+`/projects/*/…` to any uuid and cannot know membership, so
+`middleware.RequireProjectMembership` asks the database once per
+project-scoped request, keyed on the `project_id` path value, **after**
+`CheckAuthz`: no grant is 403, wrong project is 404, the same as a missing
+project. An administrator bypasses and is logged as one.
+
+A new project-scoped route needs nothing. A new path wildcard that is not
+named `project_id` gets **no** check, so name it `project_id` or add one.
