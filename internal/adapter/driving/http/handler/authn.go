@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -126,6 +125,8 @@ func (ref *AuthnHandler) RegisterRoutes(mux *http.ServeMux, accessTokenMiddlewar
 //	@Success		200		{object}	payload.LoginUserResponse	"Authentication successful - returns access and refresh tokens"
 //	@Failure		400		{object}	payload.HTTPMessage			"Invalid request body or missing required fields"
 //	@Failure		401		{object}	payload.HTTPMessage			"Invalid email or password. The same answer is given for an unknown address, a wrong password, and a disabled account"
+//	@Failure		413		{object}	payload.HTTPMessage			"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage			"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage			"Too many failed login attempts for this account; see Retry-After"
 //	@Header			429		{integer}	Retry-After					"Seconds until an attempt is possible again"
 //	@Failure		500		{object}	payload.HTTPMessage			"Internal server error during authentication"
@@ -136,10 +137,10 @@ func (ref *AuthnHandler) loginUser(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 
 	var req payload.LoginUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		errorType := &domain.InvalidRequestError{Message: "failed to decode request"}
 		e := o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -200,7 +201,7 @@ func (ref *AuthnHandler) loginUser(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -224,7 +225,7 @@ func (ref *AuthnHandler) loginUser(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -245,6 +246,8 @@ func (ref *AuthnHandler) loginUser(w http.ResponseWriter, r *http.Request) {
 //	@Success		201		{object}	payload.HTTPMessage			"Registration accepted. Answered the same way whether or not the address already has an account — deliberately, so this endpoint cannot be used to discover which addresses are registered. If the address was already taken, its owner is told by email instead and no second account is created"
 //	@Header			201		{string}	Location					"/users/{id}"	"URI of the created user resource"
 //	@Failure		400		{object}	payload.HTTPMessage			"Invalid request body or validation error"
+//	@Failure		413		{object}	payload.HTTPMessage			"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage			"Body not declared as application/json"
 //	@Failure		500		{object}	payload.HTTPMessage			"Internal server error during registration"
 //	@Router			/auth/register [post]
 func (ref *AuthnHandler) registerUser(w http.ResponseWriter, r *http.Request) {
@@ -253,10 +256,10 @@ func (ref *AuthnHandler) registerUser(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 
 	var req payload.RegisterUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		errorType := &domain.InvalidRequestError{Message: "failed to decode request"}
 		e := o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -300,7 +303,7 @@ func (ref *AuthnHandler) registerUser(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -322,6 +325,9 @@ func (ref *AuthnHandler) registerUser(w http.ResponseWriter, r *http.Request) {
 //	@Failure		400	{object}	payload.HTTPMessage	"Invalid or malformed token format"
 //	@Failure		401	{object}	payload.HTTPMessage	"Token missing, expired, or not an email verification token"
 //	@Failure		404	{object}	payload.HTTPMessage	"User not found"
+//	@Failure		409	{object}	payload.HTTPMessage	"Account already verified"
+//	@Failure		413	{object}	payload.HTTPMessage	"Request body larger than http.server.max.body.bytes"
+//	@Failure		415	{object}	payload.HTTPMessage	"Body not declared as application/json"
 //	@Failure		429	{object}	payload.HTTPMessage	"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500	{object}	payload.HTTPMessage	"Internal server error during verification"
 //	@Router			/auth/verify/confirm [post]
@@ -339,7 +345,7 @@ func (ref *AuthnHandler) confirmVerification(w http.ResponseWriter, r *http.Requ
 
 	token, err := getTokenFromContext(ctx)
 	if err != nil {
-		o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		_ = o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 		respond.WriteJSONMessage(w, r, http.StatusUnauthorized, "Invalid or expired token")
 		return
 	}
@@ -357,6 +363,15 @@ func (ref *AuthnHandler) confirmVerification(w http.ResponseWriter, r *http.Requ
 			return
 		}
 
+		// A second click on the same link. It used to fall through to the
+		// 500 branch, whose body then carried the domain's message; now that
+		// a 500 says nothing, the case needs the status it always deserved.
+		if _, ok := errors.AsType[*domain.UserAlreadyVerifiedError](err); ok {
+			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			respond.WriteJSONMessage(w, r, http.StatusConflict, e.Error())
+			return
+		}
+
 		_, isInvalidByteSeq := errors.AsType[*domain.InvalidByteSequenceError](err)
 		_, isInvalidMsgFmt := errors.AsType[*domain.InvalidMessageFormatError](err)
 		_, isUndefCol := errors.AsType[*domain.UndefinedColumnError](err)
@@ -368,7 +383,7 @@ func (ref *AuthnHandler) confirmVerification(w http.ResponseWriter, r *http.Requ
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -389,6 +404,8 @@ func (ref *AuthnHandler) confirmVerification(w http.ResponseWriter, r *http.Requ
 //	@Success		200		{object}	payload.HTTPMessage			"Verification email sent if account exists"
 //	@Failure		400		{object}	payload.HTTPMessage			"Invalid request body or email format"
 //	@Failure		401		{object}	payload.HTTPMessage			"Invalid or expired token"
+//	@Failure		413		{object}	payload.HTTPMessage			"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage			"Body not declared as application/json"
 //	@Failure		500		{object}	payload.HTTPMessage			"Internal server error during email send"
 //	@Router			/auth/verify [post]
 func (ref *AuthnHandler) reVerifyUser(w http.ResponseWriter, r *http.Request) {
@@ -397,10 +414,10 @@ func (ref *AuthnHandler) reVerifyUser(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 
 	var req payload.ReVerifyUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		errorType := &domain.InvalidRequestError{Message: "failed to decode request"}
 		e := o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -421,7 +438,7 @@ func (ref *AuthnHandler) reVerifyUser(w http.ResponseWriter, r *http.Request) {
 		// without exposing any information about the user
 		if _, ok := errors.AsType[*domain.UserNotFoundError](err); ok {
 			// gratefully handle the case where the user is not found
-			o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			_ = o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 			respond.WriteJSONMessage(w, r, http.StatusOK, domain.AuthnUserVerificationEmailSent)
 			return
 		}
@@ -437,7 +454,7 @@ func (ref *AuthnHandler) reVerifyUser(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -458,6 +475,8 @@ func (ref *AuthnHandler) reVerifyUser(w http.ResponseWriter, r *http.Request) {
 //	@Failure		400		{object}	payload.HTTPMessage			"Malformed request or invalid stored session data"
 //	@Failure		401		{object}	payload.HTTPMessage			"Invalid or missing access token. An ALREADY-REVOKED access token is accepted here, unlike everywhere else: logging out twice must succeed, because two tabs logging out at once is ordinary"
 //	@Failure		403		{object}	payload.HTTPMessage			"Insufficient permissions"
+//	@Failure		413		{object}	payload.HTTPMessage			"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage			"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage			"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage			"Internal server error during logout"
 //	@Param			body	body		payload.LogoutUserRequest	false	"Refresh token to revoke. Omitting it leaves the refresh token valid"
@@ -472,24 +491,24 @@ func (ref *AuthnHandler) logout(w http.ResponseWriter, r *http.Request) {
 	jwtClaims, ok := r.Context().Value(middleware.JwtClaims).(map[string]any)
 	if !ok {
 		errorMsg := errors.New(domain.AuthnFailedToGetUserIDFromContext)
-		o11y.RecordError(ctx, span, start, errorMsg, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, errorMsg.Error())
+		_ = o11y.RecordError(ctx, span, start, errorMsg, ref.metrics, attrs)
+		respond.WriteInternalError(w, r, errorMsg)
 		return
 	}
 
 	userIDSub, ok := jwtClaims["sub"].(string)
 	if !ok {
 		errorMsg := errors.New(domain.AuthnFailedToGetUserIDFromContext)
-		o11y.RecordError(ctx, span, start, errorMsg, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, errorMsg.Error())
+		_ = o11y.RecordError(ctx, span, start, errorMsg, ref.metrics, attrs)
+		respond.WriteInternalError(w, r, errorMsg)
 		return
 	}
 
 	userID, err := parseUUIDQueryParams(userIDSub)
 	if err != nil {
 		errorMsg := errors.New(domain.AuthnFailedToParseUserIDFromContext)
-		o11y.RecordError(ctx, span, start, errorMsg, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, errorMsg.Error())
+		_ = o11y.RecordError(ctx, span, start, errorMsg, ref.metrics, attrs)
+		respond.WriteInternalError(w, r, errorMsg)
 		return
 	}
 
@@ -498,7 +517,7 @@ func (ref *AuthnHandler) logout(w http.ResponseWriter, r *http.Request) {
 	// the refresh token is not revoked, which the service logs.
 	var req payload.LogoutUserRequest
 	if r.Body != nil {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		if err := decodeJSONBody(r, &req); err != nil && !errors.Is(err, io.EOF) {
 			slog.Debug("logout: could not decode the request body, continuing without a refresh token", "error", err)
 		}
 	}
@@ -538,40 +557,9 @@ func (ref *AuthnHandler) logout(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
-
-	// Remove authentication cookies created by IDP callback
-	http.SetCookie(w, &http.Cookie{
-		Name:     "auth.backend.accessToken",
-		Value:    "",
-		Path:     "/",
-		SameSite: http.SameSiteLaxMode,
-		Secure:   true,
-		HttpOnly: true,
-		MaxAge:   -1, // Delete the cookie immediately
-	})
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "auth.backend.refreshToken",
-		Value:    "",
-		Path:     "/",
-		SameSite: http.SameSiteLaxMode,
-		Secure:   true,
-		HttpOnly: true,
-		MaxAge:   -1, // Delete the cookie immediately
-	})
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     "auth.backend.userId",
-		Value:    "",
-		Path:     "/",
-		SameSite: http.SameSiteLaxMode,
-		Secure:   true,
-		HttpOnly: true,
-		MaxAge:   -1, // Delete the cookie immediately
-	})
 
 	slog.Debug("user logged out", "userID", userID)
 
@@ -593,6 +581,8 @@ func (ref *AuthnHandler) logout(w http.ResponseWriter, r *http.Request) {
 //	@Failure		400		{object}	payload.HTTPMessage				"Malformed body, or a refresh_token that disagrees with the Authorization header"
 //	@Failure		401		{object}	payload.HTTPMessage				"Refresh token is invalid or expired, or the account it was issued for is disabled or no longer exists"
 //	@Failure		403		{object}	payload.HTTPMessage				"Insufficient permissions"
+//	@Failure		413		{object}	payload.HTTPMessage				"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage				"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage				"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage				"Internal server error during token refresh"
 //	@Router			/auth/refresh [post]
@@ -614,7 +604,7 @@ func (ref *AuthnHandler) refreshAccessToken(w http.ResponseWriter, r *http.Reque
 		// Reaching here means the middleware did not run, which is a wiring
 		// mistake rather than anything the caller did. The caller is told the
 		// same thing every refused token gets; the detail is on the span.
-		o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		_ = o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 		respond.WriteJSONMessage(w, r, http.StatusUnauthorized, "Invalid or expired token")
 		return
 	}
@@ -625,10 +615,10 @@ func (ref *AuthnHandler) refreshAccessToken(w http.ResponseWriter, r *http.Reque
 	// client bug, and answering it by quietly picking one is how the two got
 	// out of step in the first place.
 	var req payload.RefreshTokenRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+	if err := decodeJSONBody(r, &req); err != nil && !errors.Is(err, io.EOF) {
 		errorType := &domain.InvalidRequestError{Message: "failed to decode request"}
 		e := o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -670,7 +660,7 @@ func (ref *AuthnHandler) refreshAccessToken(w http.ResponseWriter, r *http.Reque
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -682,7 +672,7 @@ func (ref *AuthnHandler) refreshAccessToken(w http.ResponseWriter, r *http.Reque
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -700,6 +690,8 @@ func (ref *AuthnHandler) refreshAccessToken(w http.ResponseWriter, r *http.Reque
 //	@Param			body	body		payload.RecoverPasswordRequest	true	"Email address for password recovery"
 //	@Success		200		{object}	payload.HTTPMessage				"Accepted. Answered the same way whether or not an account exists, is disabled, or authenticates through an identity provider — deliberately, so this endpoint cannot be used to discover which addresses have accounts"
 //	@Failure		400		{object}	payload.HTTPMessage				"Invalid request body or email format"
+//	@Failure		413		{object}	payload.HTTPMessage				"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage				"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage				"This address has been asked about too often; Retry-After says when. Keyed on the submitted address, so an address with no account is throttled exactly like a real one"
 //	@Failure		500		{object}	payload.HTTPMessage				"Internal server error during password recovery"
 //	@Router			/auth/password/recover [post]
@@ -709,9 +701,9 @@ func (ref *AuthnHandler) recoverPassword(w http.ResponseWriter, r *http.Request)
 	defer span.End()
 
 	var req payload.RecoverPasswordRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -749,7 +741,7 @@ func (ref *AuthnHandler) recoverPassword(w http.ResponseWriter, r *http.Request)
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -771,6 +763,8 @@ func (ref *AuthnHandler) recoverPassword(w http.ResponseWriter, r *http.Request)
 //	@Failure		400		{object}	payload.HTTPMessage				"Invalid request body or password validation error"
 //	@Failure		401		{object}	payload.HTTPMessage				"Invalid, expired, or already used reset token"
 //	@Failure		403		{object}	payload.HTTPMessage				"Insufficient permissions"
+//	@Failure		413		{object}	payload.HTTPMessage				"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage				"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage				"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage				"Internal server error during password reset"
 //	@Router			/auth/password/reset [post]
@@ -781,9 +775,9 @@ func (ref *AuthnHandler) resetPassword(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 
 	var req payload.ResetPasswordRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -797,7 +791,7 @@ func (ref *AuthnHandler) resetPassword(w http.ResponseWriter, r *http.Request) {
 	jwtClaims, ok := r.Context().Value(middleware.JwtClaims).(map[string]any)
 	if !ok {
 		errorMsg := domain.AuthnFailedToGetUserIDFromContext
-		o11y.RecordError(ctx, span, start, errors.New(errorMsg), ref.metrics, attrs)
+		_ = o11y.RecordError(ctx, span, start, errors.New(errorMsg), ref.metrics, attrs)
 		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, errorMsg)
 		return
 	}
@@ -805,7 +799,7 @@ func (ref *AuthnHandler) resetPassword(w http.ResponseWriter, r *http.Request) {
 	userID, ok := jwtClaims["sub"].(string)
 	if !ok {
 		errorMsg := domain.AuthnFailedToGetUserIDFromContext
-		o11y.RecordError(ctx, span, start, errors.New(errorMsg), ref.metrics, attrs)
+		_ = o11y.RecordError(ctx, span, start, errors.New(errorMsg), ref.metrics, attrs)
 		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, errorMsg)
 		return
 	}
@@ -814,14 +808,24 @@ func (ref *AuthnHandler) resetPassword(w http.ResponseWriter, r *http.Request) {
 	userUUID, err := parseUUIDQueryParams(userID)
 	if err != nil {
 		errorMsg := domain.AuthnFailedToParseUserIDFromContext
-		o11y.RecordError(ctx, span, start, errors.New(errorMsg), ref.metrics, attrs)
+		_ = o11y.RecordError(ctx, span, start, errors.New(errorMsg), ref.metrics, attrs)
 		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, errorMsg)
 		return
 	}
 
+	// The token's jti and expiry make the reset single-use. The middleware
+	// verified the token; the claims are the ones it put on the context.
+	jti, _ := uuid.Parse(fmt.Sprint(jwtClaims["jti"]))
+	tokenExpiresAt := time.Time{}
+	if exp, ok := jwtClaims["exp"].(float64); ok {
+		tokenExpiresAt = time.Unix(int64(exp), 0)
+	}
+
 	input := &domain.ResetPasswordInput{
-		UserID:   userUUID,
-		Password: req.Password,
+		UserID:         userUUID,
+		Password:       req.Password,
+		TokenID:        jti,
+		TokenExpiresAt: tokenExpiresAt,
 	}
 
 	if err := ref.service.ResetPassword(ctx, input); err != nil {
@@ -836,7 +840,7 @@ func (ref *AuthnHandler) resetPassword(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 

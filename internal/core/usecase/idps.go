@@ -463,7 +463,7 @@ func (ref *IDPsService) List(ctx context.Context, input *domain.ListIDPsInput) (
 
 	if input == nil {
 		errorValue := &domain.InvalidInputError{Message: "input is required"}
-		o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
+		_ = o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
 		return nil, errorValue
 	}
 
@@ -476,7 +476,7 @@ func (ref *IDPsService) List(ctx context.Context, input *domain.ListIDPsInput) (
 
 	out, err := ref.repository.Select(ctx, input)
 	if err != nil {
-		o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		_ = o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 		return nil, err
 	}
 
@@ -542,7 +542,7 @@ func (ref *IDPsService) GetAvailableIDPs(ctx context.Context) (*domain.SelectIDP
 
 		out, err = ref.repository.Select(ctx, input)
 		if err != nil {
-			o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			_ = o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 			return nil, err
 		}
 	} else {

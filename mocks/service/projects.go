@@ -129,6 +129,21 @@ func (mr *MockProjectsMockRecorder) SelectByUserID(ctx, input any) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SelectByUserID", reflect.TypeOf((*MockProjects)(nil).SelectByUserID), ctx, input)
 }
 
+// SelectMembership mocks base method.
+func (m *MockProjects) SelectMembership(ctx context.Context, id, userID uuid.UUID) (domain.ProjectMembership, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SelectMembership", ctx, id, userID)
+	ret0, _ := ret[0].(domain.ProjectMembership)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SelectMembership indicates an expected call of SelectMembership.
+func (mr *MockProjectsMockRecorder) SelectMembership(ctx, id, userID any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SelectMembership", reflect.TypeOf((*MockProjects)(nil).SelectMembership), ctx, id, userID)
+}
+
 // UnlinkUsers mocks base method.
 func (m *MockProjects) UnlinkUsers(ctx context.Context, input *domain.UnlinkUsersFromProjectInput) error {
 	m.ctrl.T.Helper()

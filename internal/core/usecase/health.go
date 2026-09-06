@@ -157,7 +157,7 @@ func (ref *HealthService) GetDetailedHealth(ctx context.Context) (domain.Detaile
 
 	if ref.appHealth == nil {
 		err := fmt.Errorf("app health provider not configured")
-		o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		_ = o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 		return domain.DetailedHealth{
 			Status: "unhealthy",
 			Components: map[string]domain.ComponentHealth{

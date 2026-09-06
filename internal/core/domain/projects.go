@@ -340,3 +340,36 @@ func (req *LinkUsersToProjectInput) Validate() error {
 }
 
 type UnlinkUsersFromProjectInput = LinkUsersToProjectInput
+
+// ProjectMembership is what a project-scoped request needs to know about its
+// caller: nothing, a member, or an administrator. It is a three-valued answer
+// rather than a bool because the administrator case is a BYPASS of membership
+// and is logged as one; a bool would hide which of the two admitted a request.
+type ProjectMembership int
+
+const (
+	// ProjectMembershipNone: not a member and not an administrator. The
+	// request is refused as not found, the same answer a missing project gets,
+	// so the refusal does not confirm the project exists.
+	ProjectMembershipNone ProjectMembership = iota
+	// ProjectMembershipMember: linked to the project in projects_users.
+	ProjectMembershipMember
+	// ProjectMembershipAdmin: users.admin, admitted to every project.
+	ProjectMembershipAdmin
+)
+
+func (m ProjectMembership) String() string {
+	switch m {
+	case ProjectMembershipMember:
+		return "member"
+	case ProjectMembershipAdmin:
+		return "admin"
+	default:
+		return "none"
+	}
+}
+
+// Admitted reports whether the caller may act on the project.
+func (m ProjectMembership) Admitted() bool {
+	return m == ProjectMembershipMember || m == ProjectMembershipAdmin
+}

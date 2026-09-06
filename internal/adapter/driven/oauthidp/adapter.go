@@ -216,7 +216,7 @@ func (p *Provider) discover(ctx context.Context, idp *domain.IDP) (*oidc.Provide
 		slog.Warn("oauthidp: discovery failed for the identity provider",
 			"idp", idp.Name, "issuer", idp.IssuerURL, "error", err)
 
-		return nil, &domain.InvalidAuthnServiceError{Message: "the identity provider is not reachable"}
+		return nil, &domain.IDPUnreachableError{Message: "the identity provider is not reachable"}
 	}
 
 	actual, _ := p.providers.LoadOrStore(idp.IssuerURL, provider)

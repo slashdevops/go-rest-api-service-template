@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -199,7 +198,7 @@ func (ref *RateLimitsHandler) list(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, response); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -250,7 +249,7 @@ func (ref *RateLimitsHandler) getByID(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, payload.ToRateLimitResponse(out)); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -272,6 +271,8 @@ func (ref *RateLimitsHandler) getByID(w http.ResponseWriter, r *http.Request) {
 //	@Failure		401		{object}	payload.HTTPMessage				"Invalid or expired token"
 //	@Failure		403		{object}	payload.HTTPMessage				"Not authorized"
 //	@Failure		409		{object}	payload.HTTPMessage				"A rate limit with that name already exists"
+//	@Failure		413		{object}	payload.HTTPMessage				"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage				"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage				"Too many requests"
 //	@Failure		500		{object}	payload.HTTPMessage				"Internal server error"
 //	@Router			/rate_limits [post]
@@ -282,9 +283,9 @@ func (ref *RateLimitsHandler) create(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 
 	var req payload.CreateRateLimitRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 
 		return
 	}
@@ -294,7 +295,7 @@ func (ref *RateLimitsHandler) create(w http.ResponseWriter, r *http.Request) {
 	req.ID, err = domain.EnsureUUIDV7(req.ID)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -327,7 +328,7 @@ func (ref *RateLimitsHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Location", fmt.Sprintf("/rate_limits/%s", input.ID.String()))
+	respond.SetLocation(w, r, input.ID.String())
 	respond.WriteJSONMessage(w, r, http.StatusCreated, domain.RateLimitsRateLimitCreatedSuccessfully)
 
 	slog.Debug("handler.RateLimits.create: called", "rate_limit.id", input.ID.String())
@@ -353,6 +354,8 @@ func (ref *RateLimitsHandler) create(w http.ResponseWriter, r *http.Request) {
 //	@Failure		403				{object}	payload.HTTPMessage				"Not authorized, or the rule is system-managed"
 //	@Failure		404				{object}	payload.HTTPMessage				"Rate limit not found"
 //	@Failure		409				{object}	payload.HTTPMessage				"A rate limit with that name already exists"
+//	@Failure		413				{object}	payload.HTTPMessage				"Request body larger than http.server.max.body.bytes"
+//	@Failure		415				{object}	payload.HTTPMessage				"Body not declared as application/json"
 //	@Failure		429				{object}	payload.HTTPMessage				"Too many requests"
 //	@Failure		500				{object}	payload.HTTPMessage				"Internal server error"
 //	@Router			/rate_limits/{rate_limit_id} [put]
@@ -374,9 +377,9 @@ func (ref *RateLimitsHandler) updateByID(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req payload.UpdateRateLimitRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 
 		return
 	}
@@ -545,7 +548,7 @@ func (ref *RateLimitsHandler) effective(w http.ResponseWriter, r *http.Request) 
 
 	if err := respond.WriteJSONData(w, http.StatusOK, response); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -583,7 +586,7 @@ func (ref *RateLimitsHandler) writeQueryError(
 		return
 	}
 
-	respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+	respond.WriteInternalError(w, r, e)
 }
 
 // writeGetError handles a read of one rule, which can 404.
@@ -599,7 +602,7 @@ func (ref *RateLimitsHandler) writeGetError(
 	case isBadRequest(err):
 		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
 	default:
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 	}
 }
 
@@ -617,7 +620,7 @@ func (ref *RateLimitsHandler) writeCreateError(
 	case isBadRequest(err):
 		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
 	default:
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 	}
 }
 
@@ -639,7 +642,7 @@ func (ref *RateLimitsHandler) writeUpdateError(
 	case isBadRequest(err):
 		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
 	default:
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 	}
 }
 
@@ -661,7 +664,7 @@ func (ref *RateLimitsHandler) writeDeleteError(
 	case isBadRequest(err):
 		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
 	default:
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 	}
 }
 

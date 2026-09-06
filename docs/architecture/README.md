@@ -286,6 +286,12 @@ Read it alongside [Adding a new entity](./adding-an-entity.md).
   provider subject in `users_identities` and the takeover that matching on
   email allowed, PKCE, nonce and the verified ID token, linking from the
   profile, and what each provider is trusted for.
+- [Security](./security.md) — the common middleware chain, outermost first,
+  and the two positions that were wrong (recovery nowhere, CORS before the
+  limiter); the headers every response carries; the body bound and the
+  content-type check; a 500 that says nothing and a request id on every
+  answer; project membership after the grant; single-use links; the seeded
+  administrator; the outbound address guard; the image, Dependabot and gosec.
 - [Token lifetimes](./token-lifetimes.md) — the access and refresh lifetimes
   as one database row: the per-replica mirror and the change signal, what a
   change does to tokens already issued and to a session mid-rotation, the

@@ -55,6 +55,7 @@ func writeJSONMessage(w http.ResponseWriter, r *http.Request, statusCode int, co
 	mgs.Code = code
 	mgs.Method = r.Method
 	mgs.Path = r.URL.Path
+	mgs.RequestID = RequestIDFrom(r.Context())
 
 	// Set the status code before writing the response body
 	w.WriteHeader(statusCode)
@@ -72,6 +73,7 @@ func writeJSONMessage(w http.ResponseWriter, r *http.Request, statusCode int, co
 	mgs.Code = ""
 	mgs.Method = ""
 	mgs.Path = ""
+	mgs.RequestID = ""
 	httpMessagePool.Put(mgs)
 
 	slog.Debug(

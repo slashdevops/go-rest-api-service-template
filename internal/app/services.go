@@ -7,10 +7,13 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driven/safedial"
 
 	"github.com/slashdevops/httpx"
 	"github.com/slashdevops/mailer"
@@ -284,25 +287,58 @@ func (a *App) loadAuthKeys() (*authKeys, error) {
 
 // initHTTPClient initializes the HTTP client for API calls
 func (a *App) initHTTPClient() *http.Client {
-	slog.Info(
-		"building HTTP client",
-		"configured_timeout", a.configs.HTTPClient.Timeout.Value,
-		"max_retries", a.configs.HTTPClient.MaxRetries.Value,
-		"retry_strategy", a.configs.HTTPClient.RetryStrategy.Value,
+	cfg := a.configs.HTTPClient
+
+	slog.Info("building HTTP client",
+		"configured_timeout", cfg.Timeout.Value,
+		"max_retries", cfg.MaxRetries.Value,
+		"retry_strategy", cfg.RetryStrategy.Value,
+		"allow_private_addresses", cfg.AllowPrivateAddresses.Value,
 	)
 
-	client := httpx.NewClientBuilder().
-		WithMaxIdleConns(a.configs.HTTPClient.MaxIdleConns.Value).
-		WithMaxIdleConnsPerHost(a.configs.HTTPClient.MaxIdleConnsPerHost.Value).
-		WithIdleConnTimeout(a.configs.HTTPClient.IdleConnTimeout.Value).
-		WithTLSHandshakeTimeout(a.configs.HTTPClient.TLSHandshakeTimeout.Value).
-		WithExpectContinueTimeout(a.configs.HTTPClient.ExpectContinueTimeout.Value).
-		WithTimeout(a.configs.HTTPClient.Timeout.Value).
-		WithDisableKeepAlive(a.configs.HTTPClient.DisableKeepAlives.Value).
-		WithMaxRetries(a.configs.HTTPClient.MaxRetries.Value).
-		WithRetryStrategyAsString(a.configs.HTTPClient.RetryStrategy.Value).
-		WithLogger(slog.Default()).
-		Build()
+	// The transport is built here rather than through httpx's builder so the
+	// dialer can carry the outbound address guard: every URL this client
+	// dials was supplied by an operator (an identity provider), and the guard runs after resolution on the address actually
+	// connected to. The settings mirror the builder's.
+	policy := safedial.Policy{AllowPrivate: cfg.AllowPrivateAddresses.Value}
+	dialer := &net.Dialer{Timeout: 30 * time.Second, KeepAlive: 30 * time.Second, Control: policy.Control}
+
+	transport := &http.Transport{
+		DialContext:           dialer.DialContext,
+		MaxIdleConns:          cfg.MaxIdleConns.Value,
+		MaxIdleConnsPerHost:   cfg.MaxIdleConnsPerHost.Value,
+		IdleConnTimeout:       cfg.IdleConnTimeout.Value,
+		TLSHandshakeTimeout:   cfg.TLSHandshakeTimeout.Value,
+		ExpectContinueTimeout: cfg.ExpectContinueTimeout.Value,
+		DisableKeepAlives:     cfg.DisableKeepAlives.Value,
+		// A proxy from the environment is dialled through the same guard, so
+		// a private proxy needs the flag too.
+		Proxy: http.ProxyFromEnvironment,
+	}
+
+	var strategy httpx.RetryStrategy
+	switch cfg.RetryStrategy.Value {
+	case "fixed":
+		strategy = httpx.FixedDelay(httpx.DefaultBaseDelay)
+	case "jitter":
+		strategy = httpx.JitterBackoff(httpx.DefaultBaseDelay, httpx.DefaultMaxDelay)
+	default:
+		strategy = httpx.ExponentialBackoff(httpx.DefaultBaseDelay, httpx.DefaultMaxDelay)
+	}
+
+	client := httpx.NewHTTPRetryClient(
+		httpx.WithBaseTransport(transport),
+		httpx.WithMaxRetriesRetry(cfg.MaxRetries.Value),
+		httpx.WithRetryStrategyRetry(strategy),
+		httpx.WithLoggerRetry(slog.Default()),
+	)
+	client.Timeout = cfg.Timeout.Value
+
+	if policy.AllowPrivate {
+		slog.Warn("outbound requests may reach loopback and private addresses: http.client.allow.private.addresses is on; link-local is still refused")
+	} else {
+		slog.Info("outbound requests to loopback, private and link-local addresses are refused (http.client.allow.private.addresses=false)")
+	}
 
 	slog.Info("HTTP client built", "actual_timeout", client.Timeout)
 
@@ -319,6 +355,10 @@ func (a *App) initAuthServices(
 	cipherAdapter, err := cipheraes.New(keys.symmetricKey)
 	if err != nil {
 		return fmt.Errorf("error creating cipher adapter: %w", err)
+	}
+
+	if err := usecase.SetPasswordHashCost(a.configs.Authn.PasswordBcryptCost.Value); err != nil {
+		return fmt.Errorf("authn.password.bcrypt.cost: %w", err)
 	}
 
 	// The issuer is passed in because Verify requires iss and aud to equal it.

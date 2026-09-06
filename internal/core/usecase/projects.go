@@ -246,6 +246,34 @@ func (ref *ProjectsService) DeleteByID(ctx context.Context, input *domain.Delete
 	return nil
 }
 
+// Membership answers whether userID may act on project id. Not cached: the
+// answer changes the moment a link is removed, and one indexed read per
+// project-scoped request is the cost of a refusal that is never stale.
+func (ref *ProjectsService) Membership(ctx context.Context, id, userID uuid.UUID) (domain.ProjectMembership, error) {
+	start := time.Now()
+	ctx, span, attrs := o11y.SetupTrace(ctx, ref.ot.Traces.Tracer, ref.metricsMetadata, "Membership")
+	defer span.End()
+
+	if id == uuid.Nil() {
+		return domain.ProjectMembershipNone, o11y.RecordError(ctx, span, start, &domain.InvalidProjectIDError{}, ref.metrics, attrs)
+	}
+
+	if userID == uuid.Nil() {
+		return domain.ProjectMembershipNone, o11y.RecordError(ctx, span, start, &domain.InvalidUserIDError{Message: "userID is nil"}, ref.metrics, attrs)
+	}
+
+	membership, err := ref.repository.SelectMembership(ctx, id, userID)
+	if err != nil {
+		return domain.ProjectMembershipNone, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "membership resolved",
+		attribute.String("project.membership", membership.String()),
+	)
+
+	return membership, nil
+}
+
 // GetByIDByUserID returns the projects with the specified ID.
 func (ref *ProjectsService) GetByIDByUserID(ctx context.Context, id, userID uuid.UUID) (*domain.Project, error) {
 	start := time.Now()

@@ -765,18 +765,15 @@ func TestUserUpdate(t *testing.T) {
 				expectedError: "cannot be empty",
 			},
 			{
-				name:          "Password too short",
+				// A password is never set through this route any more: a grant
+				// on PUT /users/* used to be a takeover of any account. The
+				// field is not part of the request, so a body carrying only it
+				// is an empty update.
+				name:          "Password is not a field of this route",
 				userID:        uuid.NewV7().String(),
-				updateData:    map[string]any{"password": "short"},
+				updateData:    map[string]any{"password": "NewSecureP@ssw0rd1"},
 				expectedCode:  http.StatusBadRequest,
-				expectedError: "password must be at least",
-			},
-			{
-				name:          "Password too long",
-				userID:        uuid.NewV7().String(),
-				updateData:    map[string]any{"password": strings.Repeat("A1!a", 70)}, // Very long password
-				expectedCode:  http.StatusBadRequest,
-				expectedError: "password must be at most",
+				expectedError: "unknown field",
 			},
 			{
 				name:          "First name too long",
@@ -2280,13 +2277,11 @@ func TestUserSelectAuthz(t *testing.T) {
 		firstName, lastName, email := generateUserData(t)
 		password := generatePassword(t)
 		userPayload := map[string]any{
-			"id":          userID.String(),
-			"email":       email,
-			"first_name":  firstName,
-			"last_name":   lastName,
-			"password":    password,
-			"disabled":    false,
-			"verified_at": time.Now().UTC(),
+			"id":         userID.String(),
+			"email":      email,
+			"first_name": firstName,
+			"last_name":  lastName,
+			"password":   password,
 		}
 
 		createResponse, err := sendHTTPRequest(t, ctx, usersCreateEndpoint, userPayload, accessTokenHeader)
@@ -2418,13 +2413,11 @@ func TestUserSelectAuthz(t *testing.T) {
 		firstName, lastName, email := generateUserData(t)
 		password := generatePassword(t)
 		userPayload := map[string]any{
-			"id":          userID.String(),
-			"email":       email,
-			"first_name":  firstName,
-			"last_name":   lastName,
-			"password":    password,
-			"disabled":    false,
-			"verified_at": time.Now().UTC(),
+			"id":         userID.String(),
+			"email":      email,
+			"first_name": firstName,
+			"last_name":  lastName,
+			"password":   password,
 		}
 
 		createResponse, err := sendHTTPRequest(t, ctx, usersCreateEndpoint, userPayload, adminAccessTokenHeader)
@@ -2493,13 +2486,11 @@ func TestUserSelectAuthz(t *testing.T) {
 		firstName1, lastName1, email1 := generateUserData(t)
 		password1 := generatePassword(t)
 		user1Payload := map[string]any{
-			"id":          user1ID.String(),
-			"email":       email1,
-			"first_name":  firstName1,
-			"last_name":   lastName1,
-			"password":    password1,
-			"disabled":    false,
-			"verified_at": time.Now().UTC(),
+			"id":         user1ID.String(),
+			"email":      email1,
+			"first_name": firstName1,
+			"last_name":  lastName1,
+			"password":   password1,
 		}
 
 		createResponse1, err := sendHTTPRequest(t, ctx, usersCreateEndpoint, user1Payload, adminAccessTokenHeader)
@@ -2512,13 +2503,11 @@ func TestUserSelectAuthz(t *testing.T) {
 		firstName2, lastName2, email2 := generateUserData(t)
 		password2 := generatePassword(t)
 		user2Payload := map[string]any{
-			"id":          user2ID.String(),
-			"email":       email2,
-			"first_name":  firstName2,
-			"last_name":   lastName2,
-			"password":    password2,
-			"disabled":    false,
-			"verified_at": time.Now().UTC(),
+			"id":         user2ID.String(),
+			"email":      email2,
+			"first_name": firstName2,
+			"last_name":  lastName2,
+			"password":   password2,
 		}
 
 		createResponse2, err := sendHTTPRequest(t, ctx, usersCreateEndpoint, user2Payload, adminAccessTokenHeader)

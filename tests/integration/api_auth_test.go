@@ -1019,13 +1019,15 @@ func TestAuthVerify_EdgeCases(t *testing.T) {
 		assert.NoError(t, err)
 		defer verificationResponse2.Body.Close()
 
-		// The second verification should fail with 500 because user is already verified
-		// This is the actual behavior: the service returns 500 with message "user is already verified"
-		assert.Equal(t, http.StatusInternalServerError, verificationResponse2.StatusCode, "Expected status code 500 for reusing verification token. Got %d. Message: %s", verificationResponse2.StatusCode, readResponseBody(t, verificationResponse2))
+		// The link is single-use: the second click presents a spent token and is
+		// refused as an invalid token, before the account is even looked at.
+		// It used to answer with the account's state ("already verified"),
+		// which the token then kept doing until it expired.
+		assert.Equal(t, http.StatusUnauthorized, verificationResponse2.StatusCode, "Expected 401 for reusing a verification token. Got %d. Message: %s", verificationResponse2.StatusCode, readResponseBody(t, verificationResponse2))
 
 		apiResp, err := parserResponseBody[payload.HTTPMessage](t, verificationResponse2)
-		assert.NoError(t, err)
-		assert.Contains(t, apiResp.Message, "already verified", "Error message should indicate user is already verified")
+		assert.NoError(t, err, "Failed to parse response body")
+		assert.NotContains(t, apiResp.Message, "already verified", "a spent token must not report the account's state")
 
 		t.Cleanup(func() {
 			deleteUserByEmailFromDB(t, email)

@@ -918,12 +918,20 @@ func (ref *PoliciesRepository) handlePgError(err error, input any) error {
 				}
 			}
 		case "23503": // Foreign key violation
-			if strings.Contains(pgErr.Message, "resources_id_fkey") {
-				switch v := input.(type) {
-				case *domain.CreatePolicyInput:
-					id := v.ResourceID.String()
-					return &domain.ResourceNotFoundError{ID: id}
+			switch v := input.(type) {
+			case *domain.CreatePolicyInput:
+				if strings.Contains(pgErr.Message, "resources_id_fkey") {
+					return &domain.ResourceNotFoundError{ID: v.ResourceID.String()}
 				}
+			case *domain.LinkRolesToPolicyInput:
+				// A link names two rows; the constraint says which one is
+				// missing. This used to fall through as a raw 500 carrying
+				// the driver's "violates foreign key constraint" text.
+				if strings.Contains(pgErr.ConstraintName, "roles_id") {
+					return &domain.RoleNotFoundError{Message: "one of the given roles does not exist"}
+				}
+
+				return &domain.PolicyNotFoundError{ID: v.PolicyID}
 			}
 		case "P0001": // Raised exception
 			if strings.Contains(pgErr.Message, "updated") || strings.Contains(pgErr.Message, "deleted") {

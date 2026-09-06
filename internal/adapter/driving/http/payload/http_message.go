@@ -8,6 +8,10 @@ import "time"
 type HTTPMessage struct {
 	Timestamp time.Time `json:"timestamp" example:"2021-07-01T00:00:00Z" format:"date-time"`
 	Message   string    `json:"message" example:"success" format:"string"`
+	// RequestID is the id the X-Request-ID response header carries, repeated
+	// here so a client that only kept the body can still quote it. A 500
+	// says nothing else; this is what an operator joins to the log.
+	RequestID string `json:"request_id,omitempty" example:"01a075b7-8dda-7bdb-94e2-8000a61c171c" format:"uuid"`
 
 	// Code is a stable, machine-readable reason, present only where a client
 	// has to BRANCH on it. Message is prose and may be reworded; this is not.

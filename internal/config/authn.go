@@ -98,6 +98,19 @@ const (
 	// takes.
 	DefaultAuthnLoginThrottleEnabled = true
 
+	// DefaultAuthnSeedAdminPasswordAllowed is false: a service whose seeded
+	// administrator still has the password written in the migration comment
+	// refuses to start. The dev stack sets it to true. A warning would have
+	// been the posture that ships.
+	DefaultAuthnSeedAdminPasswordAllowed = false
+
+	// DefaultAuthnPasswordBcryptCost is 12. It was the library default, 10,
+	// chosen in 1999; each step doubles the work of an offline guess and of
+	// one login. 12 is about a quarter of a second.
+	DefaultAuthnPasswordBcryptCost  = 12
+	ValidAuthnMinPasswordBcryptCost = 10
+	ValidAuthnMaxPasswordBcryptCost = 14
+
 	// DefaultAuthnLoginThrottleMaxAttempts is how many failures in a row an
 	// account tolerates before it starts refusing. Five is enough for a person
 	// who is mistyping, and a success resets it, so a legitimate user does not
@@ -145,6 +158,8 @@ type AuthnConfig struct {
 	LoginThrottleWindow                 Field[time.Duration]
 	LoginThrottleIdleAfter              Field[time.Duration]
 	LoginThrottleEnabled                Field[bool]
+	SeedAdminPasswordAllowed            Field[bool]
+	PasswordBcryptCost                  Field[int]
 	TokenLifetimesReloadInterval        Field[time.Duration]
 	RefreshTokenRotationGrace           Field[time.Duration]
 	RefreshTokenRotationEnabled         Field[bool]
@@ -164,6 +179,8 @@ func NewAuthConfig() *AuthnConfig {
 		AdditionalPublicKeyFiles: NewField("authn.additional.public.key.files", "AUTHN_ADDITIONAL_PUBLIC_KEY_FILES", "Comma-separated PEM files whose keys may verify tokens but never sign them. This is how a signing key is rotated without downtime: a new key verifies before it signs, an old key verifies after it stops", ""),
 		SymmetricKeyFile:         NewField("authn.symmetric.key.file", "AUTHN_SYMMETRIC_KEY_FILE", "Auth Symmetric Key File used to encrypt/decrypt Application tokens and API tokens", DefaultAuthnSymmetricKeyFile),
 		Issuer:                   NewField("authn.issuer", "AUTHN_ISSUER", "Issuer of the JWT tokens", DefaultAuthnIssuer),
+		PasswordBcryptCost:       NewField("authn.password.bcrypt.cost", "AUTHN_PASSWORD_BCRYPT_COST", "bcrypt cost for new password hashes; each step doubles the work of a guess and of a login", DefaultAuthnPasswordBcryptCost),
+		SeedAdminPasswordAllowed: NewField("authn.seed.admin.password.allowed", "AUTHN_SEED_ADMIN_PASSWORD_ALLOWED", "Start even though the seeded administrator still has the seeded password. For development only", DefaultAuthnSeedAdminPasswordAllowed),
 		LoginThrottleEnabled:     NewField("authn.login.throttle.enabled", "AUTHN_LOGIN_THROTTLE_ENABLED", "Bound failed login attempts per account, independently of the per-IP rate limiter", DefaultAuthnLoginThrottleEnabled),
 		LoginThrottleMaxAttempts: NewField("authn.login.throttle.max.attempts", "AUTHN_LOGIN_THROTTLE_MAX_ATTEMPTS", "Consecutive failed logins an account tolerates before it is refused. A successful login resets it", DefaultAuthnLoginThrottleMaxAttempts),
 		LoginThrottleWindow:      NewField("authn.login.throttle.window", "AUTHN_LOGIN_THROTTLE_WINDOW", "How long a fully spent login budget takes to refill; a refused account recovers one attempt every window/max-attempts", DefaultAuthnLoginThrottleWindow),
@@ -191,6 +208,8 @@ func (ref *AuthnConfig) ParseEnvVars() {
 	ref.SymmetricKeyFile.Value = GetEnv(ref.SymmetricKeyFile.EnVarName, ref.SymmetricKeyFile.Value)
 	ref.Issuer.Value = GetEnv(ref.Issuer.EnVarName, ref.Issuer.Value)
 	ref.LoginThrottleEnabled.Value = GetEnv(ref.LoginThrottleEnabled.EnVarName, ref.LoginThrottleEnabled.Value)
+	ref.SeedAdminPasswordAllowed.Value = GetEnv(ref.SeedAdminPasswordAllowed.EnVarName, ref.SeedAdminPasswordAllowed.Value)
+	ref.PasswordBcryptCost.Value = GetEnv(ref.PasswordBcryptCost.EnVarName, ref.PasswordBcryptCost.Value)
 	ref.LoginThrottleMaxAttempts.Value = GetEnv(ref.LoginThrottleMaxAttempts.EnVarName, ref.LoginThrottleMaxAttempts.Value)
 	ref.LoginThrottleWindow.Value = GetEnv(ref.LoginThrottleWindow.EnVarName, ref.LoginThrottleWindow.Value)
 	ref.LoginThrottleIdleAfter.Value = GetEnv(ref.LoginThrottleIdleAfter.EnVarName, ref.LoginThrottleIdleAfter.Value)
@@ -207,6 +226,14 @@ func (ref *AuthnConfig) ParseEnvVars() {
 }
 
 func (ref *AuthnConfig) Validate() error {
+	if ref.PasswordBcryptCost.Value < ValidAuthnMinPasswordBcryptCost || ref.PasswordBcryptCost.Value > ValidAuthnMaxPasswordBcryptCost {
+		return &InvalidConfigurationError{
+			Field:   "authn.password.bcrypt.cost",
+			Value:   fmt.Sprintf("%d", ref.PasswordBcryptCost.Value),
+			Message: fmt.Sprintf("invalid authn.password.bcrypt.cost, must be between %d and %d", ValidAuthnMinPasswordBcryptCost, ValidAuthnMaxPasswordBcryptCost),
+		}
+	}
+
 	if len(ref.PrivateKeyFile.Value.Name()) <= domain.ValidAuthnKeyFilePathMinLength || len(ref.PrivateKeyFile.Value.Name()) > domain.ValidAuthnKeyFilePathMaxLength {
 		return &InvalidConfigurationError{
 			Field:   "authn.private.key.file",

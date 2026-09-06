@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -74,9 +75,10 @@ func normalizeFieldsQueryParam(fields string) string {
 // parseNextTokenQueryParams parses a string into a nextToken field.
 func parseNextTokenQueryParams(nextToken string) (string, error) {
 	if nextToken != "" {
-		_, _, _, err := domain.DecodeToken(nextToken, domain.TokenDirectionNext)
-		if err != nil {
-			return "", &domain.InvalidTokenError{Message: err.Error()}
+		// The decoder's text ("invalid cursor: not base64") is not forwarded:
+		// a token is opaque, and how it failed is nothing a client acts on.
+		if _, _, _, err := domain.DecodeToken(nextToken, domain.TokenDirectionNext); err != nil {
+			return "", &domain.InvalidTokenError{Message: "invalid next_token"}
 		}
 	}
 
@@ -86,9 +88,8 @@ func parseNextTokenQueryParams(nextToken string) (string, error) {
 // parsePrevTokenQueryParams parses a string into a prevToken field.
 func parsePrevTokenQueryParams(prevToken string) (string, error) {
 	if prevToken != "" {
-		_, _, _, err := domain.DecodeToken(prevToken, domain.TokenDirectionPrev)
-		if err != nil {
-			return "", &domain.InvalidTokenError{Message: err.Error()}
+		if _, _, _, err := domain.DecodeToken(prevToken, domain.TokenDirectionPrev); err != nil {
+			return "", &domain.InvalidTokenError{Message: "invalid prev_token"}
 		}
 	}
 
@@ -255,4 +256,35 @@ func getJWTExpiration(tokenString string) (time.Time, error) {
 
 	// The expiration time is valid, return it directly as time.Time.
 	return exp.Time, nil
+}
+
+// decodeJSONBody decodes one JSON value from the request body into dst.
+//
+// Unknown fields are refused. A field the API dropped -- the IdP redirect
+// URLs, the password on PUT /users -- used to be accepted and silently
+// ignored, so a client kept sending what it believed was being honoured. Now
+// it is told. Anything after the first value is refused too; the decoder
+// used to read one value and ignore the rest.
+//
+// The error is for [respond.WriteDecodeError], which turns it into one 400
+// wording (or 413 when the body was cut by the size bound).
+func decodeJSONBody(r *http.Request, dst any) error {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+
+	if err := dec.Decode(dst); err != nil {
+		if name, ok := strings.CutPrefix(err.Error(), "json: unknown field "); ok {
+			// The field name is the caller's, quoted by the decoder; the
+			// wording that goes out is ours.
+			return &domain.InvalidRequestError{Message: "unknown field " + name}
+		}
+
+		return err
+	}
+
+	if dec.More() {
+		return &domain.InvalidRequestError{Message: "unexpected data after the JSON body"}
+	}
+
+	return nil
 }

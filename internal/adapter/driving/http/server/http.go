@@ -183,14 +183,11 @@ func (ref *HTTPServer) setTLSConfig() error {
 	//
 	// PreferServerCipherSuites is deliberately absent: crypto/tls has ignored
 	// it since Go 1.18, which now trips staticcheck's SA1019. Do not re-add it.
+	// No CipherSuites: with TLS 1.3 as the minimum the suite set is fixed by
+	// the protocol and crypto/tls ignores the field. The list that used to
+	// be here was TLS 1.2 suites, two of them CBC, inert and misleading.
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS13,
-		CipherSuites: []uint16{
-			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
-			tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-		},
 	}
 	ref.httpServer.TLSConfig = tlsCfg
 	ref.httpServer.TLSNextProto = make(map[string]func(*http.Server, *tls.Conn, http.Handler), 0)

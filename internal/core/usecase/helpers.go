@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"uuid"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
@@ -25,7 +26,7 @@ func HashAndSaltPassword(password string, cost ...int) (string, error) {
 		}
 		costVal = cost[0]
 	} else {
-		costVal = bcrypt.DefaultCost
+		costVal = int(passwordHashCost.Load())
 	}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), costVal)
@@ -155,4 +156,24 @@ func WarnOnSoftLimit(params ResourceLimitCheckParams) {
 		"hard_limit", status.HardLimit,
 		"current_usage", status.CurrentUsage,
 	)
+}
+
+// passwordHashCost is the bcrypt cost for new hashes when a caller does not
+// name one. Set once at startup from authn.password.bcrypt.cost; the library
+// default (10) is the fallback if nothing ever sets it.
+var passwordHashCost = func() *atomic.Int64 {
+	var v atomic.Int64
+	v.Store(int64(bcrypt.DefaultCost))
+	return &v
+}()
+
+// SetPasswordHashCost sets the bcrypt cost new password hashes use.
+func SetPasswordHashCost(cost int) error {
+	if cost < bcrypt.MinCost || cost > bcrypt.MaxCost {
+		return fmt.Errorf("bcrypt cost must be between %d and %d", bcrypt.MinCost, bcrypt.MaxCost)
+	}
+
+	passwordHashCost.Store(int64(cost))
+
+	return nil
 }

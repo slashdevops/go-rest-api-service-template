@@ -8,23 +8,34 @@
 // ThenFunc, and Apply).
 //
 // Main responsibilities:
+//   - Request identity: RequestID
+//   - Panic recovery: Recovery
+//   - Response hygiene: SecurityHeaders, RewriteStandardErrorsAsJSON
 //   - Transport concerns: Logging, HeaderAPIVersion, OtelTextMapPropagation
-//   - Response normalization: RewriteStandardErrorsAsJSON
+//   - Request bounds: MaxBody, RequireJSONBody
+//   - Request protection: RateLimit (rule-driven, two-stage)
 //   - Cross-origin controls: Cors with CorsOpts
 //   - Authentication and authorization: CheckAccessToken,
-//     CheckRefreshToken, CheckPasswordResetToken, and CheckAuthz
-//   - Request protection: RateLimit (rule-driven, two-stage) and IPRateLimiter
-//     (the flag-driven limiter it replaces when ratelimit.rules.enabled is on)
+//     CheckRefreshToken, CheckPasswordResetToken, CheckPATokenActive, and CheckAuthz
 //   - Resource existence guard: CheckUserExists
-//   - Panic recovery: Recovery
 //
-// Typical middleware order for protected endpoints is:
-//  1. Recovery (panic handler, outermost)
-//  2. Transport middlewares (version header, logging, tracing)
-//  3. CORS and normalization wrappers
-//  4. Authentication middleware (token validation)
-//  5. Optional user existence check
-//  6. Authorization middleware
+// The order the composition root uses, outermost first:
+//  0. RequestID -- one id per request, on the response header, the log line
+//     and every error body. Above Recovery so a recovered panic has one.
+//  1. Recovery -- a panic anywhere below becomes a logged 500, not a dropped
+//     connection. It was documented here as outermost for a long time while
+//     wired nowhere; internal/app has a test that reads server.go so that
+//     cannot happen again.
+//  2. SecurityHeaders -- set before anything can write, so an early exit
+//     (a 413, a 415, a 429) carries them too.
+//  3. RewriteStandardErrorsAsJSON, Logging, HeaderAPIVersion, tracing.
+//  4. MaxBody, RequireJSONBody -- the body is bounded and typed before any
+//     handler reads it.
+//  5. The pre-auth rate limiter, wrapped in its exemptions.
+//  6. Cors -- AFTER the limiter, so a preflight is metered; before it, an
+//     OPTIONS flood was free.
+//  7. Per route: token validation, optional user existence, PA-token
+//     liveness, authorization, the post-auth limiter.
 //
 // Notes:
 //   - Token middlewares store validated claims in request context under JwtClaims.

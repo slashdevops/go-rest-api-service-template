@@ -15,6 +15,9 @@ type Projects interface {
 	UpdateByID(ctx context.Context, input *domain.UpdateProjectInput) error
 	DeleteByID(ctx context.Context, input *domain.DeleteProjectInput) error
 	SelectByIDByUserID(ctx context.Context, id, userID uuid.UUID) (*domain.Project, error)
+	// SelectMembership answers whether userID may act on project id: member,
+	// administrator, or neither. One indexed read; no row is hydrated.
+	SelectMembership(ctx context.Context, id, userID uuid.UUID) (domain.ProjectMembership, error)
 	SelectByUserID(ctx context.Context, input *domain.SelectProjectsInput) (*domain.SelectProjectsOutput, error)
 	Select(ctx context.Context, input *domain.SelectProjectsInput) (*domain.SelectProjectsOutput, error)
 

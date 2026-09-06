@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -123,14 +122,14 @@ func (ref *TokenLifetimesHandler) get(w http.ResponseWriter, r *http.Request) {
 		// No 404: the row is seeded by migration and the service refuses to
 		// start without it, so a missing row at request time is a fault.
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
 
 	if err := respond.WriteJSONData(w, http.StatusOK, payload.ToTokenLifetimesResponse(out)); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -154,6 +153,8 @@ func (ref *TokenLifetimesHandler) get(w http.ResponseWriter, r *http.Request) {
 //	@Failure		400		{object}	payload.HTTPMessage					"A duration that does not parse, a value outside its bounds, or a refresh lifetime not longer than the access lifetime"
 //	@Failure		401		{object}	payload.HTTPMessage					"Invalid or expired token"
 //	@Failure		403		{object}	payload.HTTPMessage					"Not authorized"
+//	@Failure		413		{object}	payload.HTTPMessage					"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage					"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage					"Too many requests"
 //	@Failure		500		{object}	payload.HTTPMessage					"Internal server error"
 //	@Router			/auth/token_lifetimes [put]
@@ -168,15 +169,15 @@ func (ref *TokenLifetimesHandler) update(w http.ResponseWriter, r *http.Request)
 	updatedBy, err := callerFromContext(r)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
 
 	var req payload.UpdateTokenLifetimesRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 
 		return
 	}
@@ -200,7 +201,7 @@ func (ref *TokenLifetimesHandler) update(w http.ResponseWriter, r *http.Request)
 
 	if err := respond.WriteJSONData(w, http.StatusOK, payload.ToTokenLifetimesResponse(out)); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -224,7 +225,7 @@ func (ref *TokenLifetimesHandler) writeTokenLifetimesUpdateError(
 	case isType[*domain.ValidationErrors](err), isType[*domain.InvalidInputError](err):
 		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
 	default:
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 	}
 }
 

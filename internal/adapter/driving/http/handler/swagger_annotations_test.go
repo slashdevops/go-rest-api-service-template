@@ -28,8 +28,22 @@ var statusNames = map[string]int{
 }
 
 // middlewareSupplied are answered before a handler runs, so they are declared
-// from the middleware chain and never appear in a body.
+// from the middleware chain and never appear in a body. Every authenticated
+// handler must declare all three.
 var middlewareSupplied = []int{401, 403, 429}
+
+// bodySupplied are also answered by middleware (MaxBody, RequireJSONBody),
+// but only an operation that reads a body declares them, so they are
+// exempt from "declared but never written" without being required.
+var bodySupplied = []int{413, 415}
+
+// respondErrorWriters are the respond helpers that choose the status
+// themselves: a 500 that never carries the cause, and a decode failure that
+// is 400, or 413 when the body was cut by the size bound.
+var respondErrorWriters = map[string][]int{
+	"WriteInternalError": {500},
+	"WriteDecodeError":   {400, 413},
+}
 
 var declaredStatus = regexp.MustCompile(`@(?:Success|Failure)\s+(\d{3})`)
 
@@ -110,7 +124,11 @@ func TestEverySwaggerStatusIsDeclared(t *testing.T) {
 			}
 
 			for code := range declared {
-				if !written[code] && !slices.Contains(middlewareSupplied, code) {
+				// A project-scoped route answers 404 from RequireProjectMembership
+				// when the caller is not a member; the handler body never writes it.
+				projectScoped := code == 404 && strings.Contains(doc, "/projects/{project_id}")
+
+				if !written[code] && !slices.Contains(middlewareSupplied, code) && !slices.Contains(bodySupplied, code) && !projectScoped {
 					t.Errorf(
 						"%s declares %d but cannot write it: remove the annotation, "+
 							"or every generated client gets a branch that never happens",
@@ -161,6 +179,11 @@ func writtenStatuses(body *ast.BlockStmt, bodies map[string]*ast.BlockStmt, dept
 		// respond.WriteJSONMessage(w, r, http.StatusX, ...) and friends, plus
 		// http.Redirect(w, r, url, http.StatusX).
 		case isIdent && (pkg.Name == "respond" || (pkg.Name == "http" && sel.Sel.Name == "Redirect")):
+			// The two writers that take an error rather than a status.
+			for _, code := range respondErrorWriters[sel.Sel.Name] {
+				out[code] = true
+			}
+
 			for _, arg := range call.Args {
 				if code, ok := statusFromExpr(arg); ok {
 					out[code] = true

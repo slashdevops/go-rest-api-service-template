@@ -266,6 +266,11 @@ func (ref *RecoverPasswordInput) Validate() error {
 type ResetPasswordInput struct {
 	Password string    `json:"password" format:"string" example:"ThisIs4Passw0rd" validate:"required"`
 	UserID   uuid.UUID `json:"user_id" format:"uuid" example:"01982303-f0f9-7dd3-9b51-779cddf01211" validate:"required"`
+	// TokenID and TokenExpiresAt identify the reset token being spent. A
+	// reset link is single-use: the jti is recorded in the revoked-token store
+	// the first time and refused after, until the token would have expired.
+	TokenID        uuid.UUID `json:"-"`
+	TokenExpiresAt time.Time `json:"-"`
 }
 
 func (ref *ResetPasswordInput) Validate() error {

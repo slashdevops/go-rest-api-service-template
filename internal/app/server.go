@@ -10,6 +10,7 @@ import (
 	"github.com/slashdevops/go-rest-api-service-template/docs/api"
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/jwtvalidator"
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/middleware"
+	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/respond"
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/server"
 	"github.com/slashdevops/go-rest-api-service-template/internal/version"
 )
@@ -50,18 +51,22 @@ func (a *App) initHTTPServer(ctx context.Context) error {
 	// Create a new router for API endpoints
 	apiRouter := http.NewServeMux()
 
-	// Setup common middlewares
+	// Location headers are built from this, never from a request header.
+	respond.SetPublicBaseURL(a.configs.HTTPServer.PublicURL.Value)
+
+	// Setup common middlewares. The order is the contract; middleware/doc.go
+	// explains each position and TestEveryRequestIsRecoveredBoundedAndHeadered
+	// pins it.
 	apiCommonMdws := []middleware.Middleware{
+		middleware.RequestID,
+		middleware.Recovery,
+		middleware.SecurityHeaders(a.securityHeadersOpts()),
 		middleware.RewriteStandardErrorsAsJSON,
 		middleware.Logging,
 		middleware.HeaderAPIVersion(apiVersion),
 		middleware.OtelTextMapPropagation,
-	}
-
-	// Add CORS middleware if enabled
-	if a.configs.HTTPServer.CorsEnabled.Value {
-		corsOpts := a.getCorsOptions()
-		apiCommonMdws = append(apiCommonMdws, middleware.Cors(corsOpts))
+		middleware.MaxBody(a.bodyLimits()),
+		middleware.RequireJSONBody,
 	}
 
 	// The client IP resolver is needed by the limiter AND by the exemptions --
@@ -121,6 +126,15 @@ func (a *App) initHTTPServer(ctx context.Context) error {
 		apiCommonMdws = append(apiCommonMdws, exemptions.Wrap(mdw))
 	}
 
+	// CORS goes AFTER the limiter. It answers a preflight itself, so placed
+	// before the limiter every OPTIONS was answered for free -- an unmetered
+	// request against any path. A rate-limited preflight gets a 429 without
+	// CORS headers, which the browser treats as a refusal: the right answer.
+	if a.configs.HTTPServer.CorsEnabled.Value {
+		corsOpts := a.getCorsOptions()
+		apiCommonMdws = append(apiCommonMdws, middleware.Cors(corsOpts))
+	}
+
 	// Create JWT validators
 	jwtValidators := a.createJWTValidators()
 
@@ -147,6 +161,10 @@ func (a *App) initHTTPServer(ctx context.Context) error {
 		appendRateLimit([]middleware.Middleware{
 			middleware.CheckAccessToken(jwtValidators, a.revokedAccessTokensCheckerOrNil()),
 			middleware.CheckAuthz(a.services.Authz),
+			// After the grant check: a project-scoped route also needs the
+			// caller to be a member of THAT project, which the policy cannot
+			// know. Routes without a project_id pass straight through.
+			middleware.RequireProjectMembership(a.services.Projects),
 		}, postAuthRateLimit)...,
 	)
 	// The same chain as accessTokenMiddlewares WITHOUT the revocation check.
@@ -200,8 +218,13 @@ func (a *App) initHTTPServer(ctx context.Context) error {
 		middleware.CheckVerificationToken(jwtValidators),
 	)
 
-	// Register public routes
-	a.handlers.Swagger.RegisterRoutes(apiRouter)
+	// Register public routes. The swagger UI is a development aid: it lists
+	// every operation, field and example to anyone who asks, so a deployment
+	// has to switch it on.
+	if a.configs.HTTPServer.SwaggerEnabled.Value {
+		slog.Warn("the swagger UI is served under /swagger/ to anyone; switch http.server.swagger.enabled off outside development")
+		a.handlers.Swagger.RegisterRoutes(apiRouter)
+	}
 	// Liveness and status stay public -- an orchestrator carries no token. The
 	// DETAILED view does not: it names every component, its configuration and
 	// its timings, and it sat behind nothing on a path the limiter also exempts.

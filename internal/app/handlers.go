@@ -37,8 +37,9 @@ func (a *App) initHandlers() error {
 
 	// Create users handler
 	a.handlers.Users, err = handler.NewUsersHandler(handler.UsersHandlerConf{
-		Service: a.services.Users,
-		OT:      a.telemetry,
+		Service:   a.services.Users,
+		Recoverer: a.services.Authn,
+		OT:        a.telemetry,
 	})
 	if err != nil {
 		return fmt.Errorf("could not create users handler: %w", err)

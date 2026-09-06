@@ -172,6 +172,12 @@ func (b *AppBuilder) Build() (*App, error) {
 		app.repositories = b.repositories
 	}
 
+	// With the pool up and before anything serves: a deployment that kept the
+	// seeded administrator's password does not get to serve at all.
+	if err := app.checkSeededAdmin(b.ctx); err != nil {
+		return nil, err
+	}
+
 	// The HTTP client comes before the mail service, which needs it for the API
 	// sender, and before services, which need it for the IdPs.
 	app.httpClient = app.initHTTPClient()

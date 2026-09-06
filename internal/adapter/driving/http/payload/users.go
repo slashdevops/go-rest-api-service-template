@@ -90,14 +90,13 @@ func (req *CreateUserRequest) Validate() error {
 
 // UpdateUserRequest represents the input for the UpdateUser method.
 //
-//	@Description	Request payload for updating an existing user account (all fields optional)
+//	@Description	Request payload for updating an existing user account (all fields optional). A password is never set this way: POST /users/{user_id}/password/reset emails the account holder a reset link, so taking over an account needs its mailbox, not a grant on PUT /users.
 type UpdateUserRequest struct {
-	FirstName    *string `json:"first_name,omitempty" example:"John" format:"string" validate:"optional" minLength:"2" maxLength:"50"`              // Updated first name
-	LastName     *string `json:"last_name,omitempty" example:"Doe" format:"string" validate:"optional" minLength:"2" maxLength:"50"`                // Updated last name
-	Email        *string `json:"email,omitempty" example:"john.doe@example.com" format:"email" validate:"optional"`                                 // Updated email address
-	Password     *string `json:"password,omitempty" example:"NewSecureP@ssw0rd" format:"password" validate:"optional" minLength:"8" maxLength:"72"` // New password
-	Disabled     *bool   `json:"disabled,omitempty" example:"false" validate:"optional"`                                                            // Set to true to disable the account, false to enable
-	LocalAccount *bool   `json:"local_account,omitempty" example:"true" validate:"optional"`                                                        // Set account type (local vs federated)
+	FirstName    *string `json:"first_name,omitempty" example:"John" format:"string" validate:"optional" minLength:"2" maxLength:"50"` // Updated first name
+	LastName     *string `json:"last_name,omitempty" example:"Doe" format:"string" validate:"optional" minLength:"2" maxLength:"50"`   // Updated last name
+	Email        *string `json:"email,omitempty" example:"john.doe@example.com" format:"email" validate:"optional"`                    // Updated email address
+	Disabled     *bool   `json:"disabled,omitempty" example:"false" validate:"optional"`                                               // Set to true to disable the account, false to enable
+	LocalAccount *bool   `json:"local_account,omitempty" example:"true" validate:"optional"`                                           // Set account type (local vs federated)
 }
 
 func (req *UpdateUserRequest) Validate() error {
@@ -136,12 +135,6 @@ func (req *UpdateUserRequest) Validate() error {
 			errs.Add(err)
 		} else {
 			req.Email = &normalizedEmail
-		}
-	}
-
-	if req.Password != nil {
-		if err := domain.ValidatePassword(*req.Password, domain.FieldPassword); err != nil {
-			errs.Add(err)
 		}
 	}
 

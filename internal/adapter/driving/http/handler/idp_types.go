@@ -142,7 +142,7 @@ func (ref *IDPTypesHandler) getByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -161,7 +161,7 @@ func (ref *IDPTypesHandler) getByID(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -259,7 +259,7 @@ func (ref *IDPTypesHandler) list(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 

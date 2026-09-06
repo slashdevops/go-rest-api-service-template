@@ -107,7 +107,13 @@ func Logging(next http.Handler) http.Handler {
 
 		next.ServeHTTP(wrapped, r)
 
-		slog.Info("request", "method", r.Method, "path", r.URL.Path, "address", r.RemoteAddr, "status", wrapped.status)
+		slog.Info("request",
+			"request_id", respond.RequestIDFrom(r.Context()),
+			"method", r.Method,
+			"path", r.URL.Path,
+			"address", r.RemoteAddr,
+			"status", wrapped.status,
+		)
 	})
 }
 
@@ -240,8 +246,11 @@ func Cors(opts CorsOpts) Middleware {
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 			}
 
-			// Handle CORS preflight requests (OPTIONS)
+			// Handle CORS preflight requests (OPTIONS). The answer is cacheable
+			// for ten minutes so a browser does not preflight every write; it
+			// used to carry no Max-Age, so every write cost two requests.
 			if r.Method == http.MethodOptions {
+				w.Header().Set("Access-Control-Max-Age", "600")
 				w.WriteHeader(http.StatusNoContent)
 				return
 			}
@@ -581,7 +590,7 @@ func Recovery(next http.Handler) http.Handler {
 					"path", r.URL.Path,
 					"remote_addr", r.RemoteAddr,
 				)
-				respond.WriteJSONMessage(w, r, http.StatusInternalServerError, "internal server error")
+				respond.WriteInternalError(w, r, fmt.Errorf("panic: %v", rec))
 			}
 		}()
 

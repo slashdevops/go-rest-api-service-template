@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/pprof"
+	"time"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/o11y"
 )
@@ -73,8 +74,9 @@ func (a *App) startPprofServer() {
 
 	// Create the server
 	a.pprofServer = &http.Server{
-		Addr:    pprofAddr,
-		Handler: pprofRouter,
+		Addr:              pprofAddr,
+		Handler:           pprofRouter,
+		ReadHeaderTimeout: 10 * time.Second, // the Slowloris bound; localhost-only, but a server is a server
 	}
 
 	if err := a.pprofServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {

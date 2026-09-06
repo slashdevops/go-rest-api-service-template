@@ -1,7 +1,7 @@
 package handler
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -22,14 +22,24 @@ import (
 
 // UsersHandlerConf represents the configuration for the user handler.
 type UsersHandlerConf struct {
-	Service       driving.Users
+	Service driving.Users
+	// Recoverer sends the password-reset email. It is the authn service's
+	// RecoverPassword, narrowed to the one method this handler needs.
+	Recoverer     PasswordRecoverer
 	OT            *o11y.OpenTelemetry
 	MetricsPrefix string
+}
+
+// PasswordRecoverer sends a reset link to an address, saying nothing about
+// whether the address exists.
+type PasswordRecoverer interface {
+	RecoverPassword(ctx context.Context, input *domain.RecoverPasswordInput) error
 }
 
 // UsersHandler represents the handler for the user.
 type UsersHandler struct {
 	service         driving.Users
+	recoverer       PasswordRecoverer
 	ot              *o11y.OpenTelemetry
 	metrics         *o11y.LayerMetrics
 	metricsMetadata o11y.Metadata
@@ -48,6 +58,7 @@ func NewUsersHandler(conf UsersHandlerConf) (*UsersHandler, error) {
 
 	ref := &UsersHandler{
 		service:       conf.Service,
+		recoverer:     conf.Recoverer,
 		ot:            conf.OT,
 		metricsPrefix: conf.MetricsPrefix,
 		metricsMetadata: o11y.Metadata{
@@ -96,6 +107,7 @@ func (ref *UsersHandler) RegisterRoutes(mux *http.ServeMux, middlewares ...middl
 	mux.Handle("GET /users/{user_id}", mdw.ThenFunc(ref.getByID))
 	mux.Handle("PUT /users/{user_id}", mdw.ThenFunc(ref.updateByID))
 	mux.Handle("DELETE /users/{user_id}", mdw.ThenFunc(ref.deleteByID))
+	mux.Handle("POST /users/{user_id}/password/reset", mdw.ThenFunc(ref.resetPassword))
 
 	// link/unlink roles to user
 	mux.Handle("POST /users/{user_id}/roles", mdw.ThenFunc(ref.linkRoles))
@@ -163,7 +175,7 @@ func (ref *UsersHandler) getByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -181,7 +193,7 @@ func (ref *UsersHandler) getByID(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, userResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -211,6 +223,8 @@ func (ref *UsersHandler) getByID(w http.ResponseWriter, r *http.Request) {
 //	@Failure		401		{object}	payload.HTTPMessage			"Missing or invalid authentication token"
 //	@Failure		403		{object}	payload.HTTPMessage			"Insufficient permissions"
 //	@Failure		409		{object}	payload.HTTPMessage			"User with email already exists"
+//	@Failure		413		{object}	payload.HTTPMessage			"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage			"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage			"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage			"Internal server error during user creation"
 //	@Router			/users [post]
@@ -221,9 +235,9 @@ func (ref *UsersHandler) create(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 
 	var req payload.CreateUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -231,7 +245,7 @@ func (ref *UsersHandler) create(w http.ResponseWriter, r *http.Request) {
 	req.ID, err = domain.EnsureUUIDV7(req.ID)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -281,12 +295,12 @@ func (ref *UsersHandler) create(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s/%s", r.Header.Get("Origin"), r.RequestURI, input.ID.String()))
+	respond.SetLocation(w, r, input.ID.String())
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, domain.UsersUserCreatedSuccessfully,
 		attribute.String("user.id", input.ID.String()),
@@ -311,6 +325,8 @@ func (ref *UsersHandler) create(w http.ResponseWriter, r *http.Request) {
 //	@Failure		403		{object}	payload.HTTPMessage			"Insufficient permissions"
 //	@Failure		404		{object}	payload.HTTPMessage			"User not found"
 //	@Failure		409		{object}	payload.HTTPMessage			"Email already in use by another user"
+//	@Failure		413		{object}	payload.HTTPMessage			"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage			"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage			"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage			"Internal server error during update"
 //	@Router			/users/{user_id} [put]
@@ -328,9 +344,9 @@ func (ref *UsersHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.UpdateUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -345,7 +361,6 @@ func (ref *UsersHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 		FirstName:    req.FirstName,
 		LastName:     req.LastName,
 		Email:        req.Email,
-		Password:     req.Password,
 		Disabled:     req.Disabled,
 		LocalAccount: req.LocalAccount,
 	}
@@ -374,12 +389,12 @@ func (ref *UsersHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s", r.Header.Get("Origin"), r.RequestURI))
+	respond.SetLocation(w, r)
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, domain.UsersUserUpdatedSuccessfully,
 		attribute.String("user.id", input.ID.String()))
@@ -438,7 +453,7 @@ func (ref *UsersHandler) deleteByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -534,7 +549,7 @@ func (ref *UsersHandler) list(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -639,7 +654,7 @@ func (ref *UsersHandler) listByRoleID(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -667,6 +682,7 @@ func (ref *UsersHandler) listByRoleID(w http.ResponseWriter, r *http.Request) {
 //	@Failure		401			{object}	payload.HTTPMessage			"Missing or invalid authentication token"
 //	@Failure		403			{object}	payload.HTTPMessage			"Insufficient permissions"
 //	@Failure		429			{object}	payload.HTTPMessage			"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
+//	@Failure		404			{object}	payload.HTTPMessage			"Project not found, or the caller is not a member of it"
 //	@Failure		500			{object}	payload.HTTPMessage			"Internal server error"
 //	@Router			/projects/{project_id}/users [get]
 //	@Security		AccessToken
@@ -745,7 +761,7 @@ func (ref *UsersHandler) listByProjectID(w http.ResponseWriter, r *http.Request)
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -770,6 +786,8 @@ func (ref *UsersHandler) listByProjectID(w http.ResponseWriter, r *http.Request)
 //	@Failure		403		{object}	payload.HTTPMessage				"Insufficient permissions"
 //	@Failure		404		{object}	payload.HTTPMessage				"User not found"
 //	@Failure		409		{object}	payload.HTTPMessage				"Role already linked to user"
+//	@Failure		413		{object}	payload.HTTPMessage				"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage				"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage				"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage				"Internal server error during role linking"
 //	@Router			/users/{user_id}/roles [post]
@@ -787,9 +805,9 @@ func (ref *UsersHandler) linkRoles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.LinkRolesToUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -828,14 +846,14 @@ func (ref *UsersHandler) linkRoles(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	slog.Debug("handler.Users.linkRoles", "user.id", userID.String())
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s", r.Header.Get("Origin"), r.RequestURI))
+	respond.SetLocation(w, r)
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, domain.UsersRoleLinkedToUserSuccessfully,
 		attribute.String("user.id", userID.String()))
@@ -859,6 +877,8 @@ func (ref *UsersHandler) linkRoles(w http.ResponseWriter, r *http.Request) {
 //	@Failure		403		{object}	payload.HTTPMessage					"Insufficient permissions"
 //	@Failure		404		{object}	payload.HTTPMessage					"User not found"
 //	@Failure		409		{object}	payload.HTTPMessage					"Conflict"
+//	@Failure		413		{object}	payload.HTTPMessage					"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage					"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage					"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage					"Internal server error during role unlinking"
 //	@Router			/users/{user_id}/roles [delete]
@@ -876,9 +896,9 @@ func (ref *UsersHandler) unlinkRoles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.UnlinkRolesFromUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -917,14 +937,14 @@ func (ref *UsersHandler) unlinkRoles(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	slog.Debug("handler.Users.unlinkRoles", "user.id", userID.String())
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s", r.Header.Get("Origin"), r.RequestURI))
+	respond.SetLocation(w, r)
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, domain.UsersRoleUnlinkedFromUserSuccessfully,
 		attribute.String("user.id", userID.String()))
@@ -948,6 +968,8 @@ func (ref *UsersHandler) unlinkRoles(w http.ResponseWriter, r *http.Request) {
 //	@Failure		403		{object}	payload.HTTPMessage					"Insufficient permissions"
 //	@Failure		404		{object}	payload.HTTPMessage					"User not found"
 //	@Failure		409		{object}	payload.HTTPMessage					"One or more projects already linked to user"
+//	@Failure		413		{object}	payload.HTTPMessage					"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage					"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage					"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage					"Internal server error during project linking"
 //	@Router			/users/{user_id}/projects [post]
@@ -965,9 +987,9 @@ func (ref *UsersHandler) linkProjects(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.LinkProjectsToUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -996,12 +1018,12 @@ func (ref *UsersHandler) linkProjects(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s", r.Header.Get("Origin"), r.RequestURI))
+	respond.SetLocation(w, r)
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, domain.UsersProjectsLinkedToUserSuccessfully,
 		attribute.String("user.id", userID.String()))
@@ -1024,6 +1046,8 @@ func (ref *UsersHandler) linkProjects(w http.ResponseWriter, r *http.Request) {
 //	@Failure		401		{object}	payload.HTTPMessage						"Missing or invalid authentication token"
 //	@Failure		403		{object}	payload.HTTPMessage						"Insufficient permissions"
 //	@Failure		404		{object}	payload.HTTPMessage						"User not found"
+//	@Failure		413		{object}	payload.HTTPMessage						"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage						"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage						"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage						"Internal server error during project unlinking"
 //	@Router			/users/{user_id}/projects [delete]
@@ -1041,9 +1065,9 @@ func (ref *UsersHandler) unlinkProjects(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req payload.UnlinkProjectsFromUserRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -1066,7 +1090,7 @@ func (ref *UsersHandler) unlinkProjects(w http.ResponseWriter, r *http.Request) 
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -1116,7 +1140,7 @@ func (ref *UsersHandler) selectAuthz(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -1138,7 +1162,7 @@ func (ref *UsersHandler) selectAuthz(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, body); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -1146,4 +1170,60 @@ func (ref *UsersHandler) selectAuthz(w http.ResponseWriter, r *http.Request) {
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "User authorization retrieved",
 		attribute.String("user.id", userID.String()))
+}
+
+// resetPassword Send a password reset email
+//
+//	@ID				01a07662-d5ca-7c8f-aa04-0a29d6cad3bd
+//	@Summary		Send password reset email
+//	@Description	Email the account holder a password-reset link. PUT /users/{user_id} used to accept a new password outright, so a grant on it was a takeover of any account; a reset link needs the mailbox as well. Answers 202 whether or not the address can be reached, and says nothing about why.
+//	@Tags			Users
+//	@Produce		json
+//	@Param			user_id	path		string				true	"User unique identifier"	Format(uuid)
+//	@Success		202		{object}	payload.HTTPMessage	"Reset email requested"
+//	@Failure		400		{object}	payload.HTTPMessage	"Invalid user ID format"
+//	@Failure		401		{object}	payload.HTTPMessage	"Missing or invalid authentication token"
+//	@Failure		403		{object}	payload.HTTPMessage	"Insufficient permissions"
+//	@Failure		404		{object}	payload.HTTPMessage	"User not found"
+//	@Failure		429		{object}	payload.HTTPMessage	"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
+//	@Failure		500		{object}	payload.HTTPMessage	"Internal server error"
+//	@Router			/users/{user_id}/password/reset [post]
+//	@Security		AccessToken
+func (ref *UsersHandler) resetPassword(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	ctx, span, attrs := o11y.SetupTraceHTTP(r, ref.ot.Traces.Tracer, ref.metricsMetadata, "resetPassword")
+	defer span.End()
+
+	userID, err := parseUUIDQueryParams(r.PathValue("user_id"))
+	if err != nil {
+		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		return
+	}
+
+	user, err := ref.service.GetByID(ctx, userID)
+	if err != nil {
+		if _, ok := errors.AsType[*domain.UserNotFoundError](err); ok {
+			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			respond.WriteJSONMessage(w, r, http.StatusNotFound, e.Error())
+			return
+		}
+
+		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		respond.WriteInternalError(w, r, e)
+		return
+	}
+
+	// RecoverPassword answers alike for a disabled or federated account; the
+	// reason is on its span and in its log, not in this response.
+	if err := ref.recoverer.RecoverPassword(ctx, &domain.RecoverPasswordInput{Email: user.Email}); err != nil {
+		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		respond.WriteInternalError(w, r, e)
+		return
+	}
+
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "password reset requested",
+		attribute.String("user.id", userID.String()),
+	)
+	respond.WriteJSONMessage(w, r, http.StatusAccepted, "password reset email requested")
 }

@@ -87,8 +87,24 @@ type StartupMetrics struct {
 // DetailedHealth represents comprehensive health information.
 //
 //	@Description	Comprehensive health information including component status and metrics.
+//
+// BuildInfo identifies the running binary. It is reported on the
+// authenticated detailed health and nowhere anonymous: the commit, branch and
+// Go version let a caller match the build against published advisories, which
+// is why they left GET /version.
+type BuildInfo struct {
+	Version       string `json:"version" example:"1.0.0" format:"string"`
+	BuildDate     string `json:"build_date" example:"2021-01-01T00:00:00Z" format:"string"`
+	GitCommit     string `json:"git_commit" example:"abcdef123456" format:"string"`
+	GitBranch     string `json:"git_branch" example:"main" format:"string"`
+	GoVersion     string `json:"go_version" example:"go1.27.1" format:"string"`
+	GoVersionArch string `json:"go_version_arch" example:"arm64" format:"string"`
+	GoVersionOS   string `json:"go_version_os" example:"linux" format:"string"`
+}
+
 type DetailedHealth struct {
 	Components     map[string]ComponentHealth `json:"components"`
+	Build          BuildInfo                  `json:"build"`
 	DatabasePool   *DatabasePoolStats         `json:"database_pool,omitempty"`
 	StartupMetrics *StartupMetrics            `json:"startup_metrics,omitempty"`
 	Status         string                     `json:"status" example:"healthy" format:"string"`

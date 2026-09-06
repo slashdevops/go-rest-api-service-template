@@ -65,6 +65,12 @@ spec:
         - "-http.server.cors.enabled=true"
         - "-http.server.cors.allowed.origins=http://localhost:8080,http://localhost:5173"
         - "-http.server.pprof.enabled=false"
+        # The suite signs in as the seeded administrator with the seeded
+        # password, which a real deployment must have changed.
+        - "-authn.seed.admin.password.allowed=true"
+        # The fake OIDC provider and the LLM engines the suite talks to are on
+        # loopback, which the outbound guard refuses by default.
+        - "-http.client.allow.private.addresses=true"
         # Rate limiting off: the suite fires many requests from one address, and
         # a limit would make failures depend on test ORDER rather than on the code.
         - "-ratelimit.enabled=false"

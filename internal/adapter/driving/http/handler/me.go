@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -143,7 +142,7 @@ func (ref *MeHandler) authz(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -166,32 +165,32 @@ func (ref *MeHandler) authz(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	if perm == nil {
 		e := o11y.RecordError(ctx, span, start, fmt.Errorf("permissions not found for user %s", userID), ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	if perm["permissions"] == nil {
 		e := o11y.RecordError(ctx, span, start, fmt.Errorf("permissions field is missing for user %s", userID), ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	if _, ok := perm["permissions"].(map[string]any); !ok {
 		e := o11y.RecordError(ctx, span, start, fmt.Errorf("permissions field is not a list for user %s", userID), ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	permissions, ok := perm["permissions"].(map[string]any)
 	if !ok {
 		e := o11y.RecordError(ctx, span, start, fmt.Errorf("permissions field is not a []any for user %s", userID), ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -226,7 +225,7 @@ func (ref *MeHandler) authz(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -249,6 +248,8 @@ func (ref *MeHandler) authz(w http.ResponseWriter, r *http.Request) {
 //	@Failure		403		{object}	payload.HTTPMessage		"Insufficient permissions"
 //	@Failure		404		{object}	payload.HTTPMessage		"User not found"
 //	@Failure		409		{object}	payload.HTTPMessage		"User already exists (duplicate email)"
+//	@Failure		413		{object}	payload.HTTPMessage		"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage		"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage		"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage		"Internal server error"
 //	@Router			/me [put]
@@ -266,9 +267,9 @@ func (ref *MeHandler) update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.UpdateMeRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -309,12 +310,12 @@ func (ref *MeHandler) update(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s", r.Header.Get("Origin"), r.RequestURI))
+	respond.SetLocation(w, r)
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, domain.UsersUserUpdatedSuccessfully,
 		attribute.String("user.id", input.ID.String()))
@@ -369,7 +370,7 @@ func (ref *MeHandler) getByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -387,7 +388,7 @@ func (ref *MeHandler) getByID(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
