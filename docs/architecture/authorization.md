@@ -46,10 +46,10 @@ erDiagram
 | Role | Holds | Meant for |
 | --- | --- | --- |
 | `Administrator` | `*` on `*` | the bootstrap account |
-| `AuthenticatedUser` (auto-assigned) | logout, refresh, password reset, `/me`, `/me/authz`, `/me/identities`, `/me/resources_limits`, IdP linking, `GET /users` | every account |
+| `AuthenticatedUser` (auto-assigned) | logout, refresh, password reset, `/me`, `/me/authz`, `/me/identities`, `/me/resources_limits`, IdP linking | every account |
 | `ReadOnly` | `GET` on `*` | auditors, dashboards |
 | `ProjectMember` | the projects the account belongs to, and their products | the ordinary user |
-| `ProjectManager` | `ProjectMember` plus creating projects and managing their members | a team lead |
+| `ProjectManager` | `ProjectMember` plus creating projects and managing their members (listing users to pick them) | a team lead |
 | `UserManager` | users, their roles, projects and password resets; reading roles | an account administrator |
 
 `GET /me` and `PUT /me` were seeded from the start and linked to no role, so
