@@ -601,105 +601,95 @@ func TestMeGet(t *testing.T) {
 		})
 	})
 
-	// ISSUE DETECTED: Regular users get 403 Forbidden when accessing GET /me endpoint
-	// This test reveals that regular (non-admin) users cannot access their own user information
-	// through the /me endpoint. This appears to be an authorization policy issue where
-	// the endpoint requires admin privileges instead of allowing any authenticated user
-	// to access their own information. The /me/authz endpoint works for regular users,
-	// but GET /me does not.
-	//
-	// Expected behavior: Any authenticated user should be able to GET their own /me information
-	// Actual behavior: Only admin users can access GET /me
-	//
-	// Uncomment this test once the OPA policy or endpoint authorization is fixed.
-	/*
-		t.Run("get_authenticated_user_with_regular_user", func(t *testing.T) {
-			t.Parallel()
+	// The GET /me and PUT /me policies were seeded from the start and linked to
+	// no role, so this case was commented out with "ISSUE DETECTED" instead of
+	// failing. The seed links them to AuthenticatedUser now.
+	t.Run("get_authenticated_user_with_regular_user", func(t *testing.T) {
+		t.Parallel()
 
-			ctx := t.Context()
+		ctx := t.Context()
 
-			// 1. Create an administrator user and get the token to create another user
-			adminToken := getAdminUserTokens(t)
-			assert.NotEmpty(t, adminToken, "Admin token should not be empty")
+		// 1. Create an administrator user and get the token to create another user
+		adminToken := getAdminUserTokens(t)
+		assert.NotEmpty(t, adminToken, "Admin token should not be empty")
 
-			adminAccessTokenHeader := map[string]string{
-				"Authorization": "Bearer " + adminToken.AccessToken,
-			}
+		adminAccessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + adminToken.AccessToken,
+		}
 
-			// 2. Create a regular user
-			firstName, lastName, email := generateUserData(t)
-			userID := uuid.NewV7()
+		// 2. Create a regular user
+		firstName, lastName, email := generateUserData(t)
+		userID := uuid.NewV7()
 
-			user := map[string]any{
-				"id":         userID.String(),
-				"email":      email,
-				"first_name": firstName,
-				"last_name":  lastName,
-				"password":   generatePassword(t),
-			}
+		user := map[string]any{
+			"id":         userID.String(),
+			"email":      email,
+			"first_name": firstName,
+			"last_name":  lastName,
+			"password":   generatePassword(t),
+		}
 
-			userCreateResponse, err := sendHTTPRequest(t, ctx, usersCreateEndpoint, user, adminAccessTokenHeader)
-			assert.NoError(t, err, "Failed to create user")
-			defer userCreateResponse.Body.Close()
-			assert.Equal(t, http.StatusCreated, userCreateResponse.StatusCode, "Expected status code 201. Got %d. Message: %s", userCreateResponse.StatusCode, readResponseBody(t, userCreateResponse))
+		userCreateResponse, err := sendHTTPRequest(t, ctx, usersCreateEndpoint, user, adminAccessTokenHeader)
+		assert.NoError(t, err, "Failed to create user")
+		defer userCreateResponse.Body.Close()
+		assert.Equal(t, http.StatusCreated, userCreateResponse.StatusCode, "Expected status code 201. Got %d. Message: %s", userCreateResponse.StatusCode, readResponseBody(t, userCreateResponse))
 
-			// 3. enable the user to login in db
-			enableUserByEmailFromDB(t, email)
+		// 3. enable the user to login in db
+		enableUserByEmailFromDB(t, email)
 
-			// 4. Login as the regular user to get their token
-			loginRequest := map[string]any{
-				"email":    email,
-				"password": user["password"],
-			}
+		// 4. Login as the regular user to get their token
+		loginRequest := map[string]any{
+			"email":    email,
+			"password": user["password"],
+		}
 
-			loginResponse, err := sendHTTPRequest(t, ctx, authLoginEndpoint, loginRequest)
-			assert.NoError(t, err, "Failed to login user")
-			defer loginResponse.Body.Close()
-			assert.Equal(t, http.StatusOK, loginResponse.StatusCode, "Expected status code 200. Got %d. Message: %s", loginResponse.StatusCode, readResponseBody(t, loginResponse))
+		loginResponse, err := sendHTTPRequest(t, ctx, authLoginEndpoint, loginRequest)
+		assert.NoError(t, err, "Failed to login user")
+		defer loginResponse.Body.Close()
+		assert.Equal(t, http.StatusOK, loginResponse.StatusCode, "Expected status code 200. Got %d. Message: %s", loginResponse.StatusCode, readResponseBody(t, loginResponse))
 
-			userLoginResponse, err := parserResponseBody[payload.LoginUserResponse](t, loginResponse)
-			assert.NoError(t, err, "Failed to parse login response")
+		userLoginResponse, err := parserResponseBody[payload.LoginUserResponse](t, loginResponse)
+		assert.NoError(t, err, "Failed to parse login response")
 
-			assert.NotEmpty(t, userLoginResponse.AccessToken, "Access token should not be empty")
+		assert.NotEmpty(t, userLoginResponse.AccessToken, "Access token should not be empty")
 
-			if userLoginResponse.AccessToken == "" {
-				t.Fatal("Access token should not be empty after login")
-			}
+		if userLoginResponse.AccessToken == "" {
+			t.Fatal("Access token should not be empty after login")
+		}
 
-			userAccessTokenHeader := map[string]string{
-				"Authorization": "Bearer " + userLoginResponse.AccessToken,
-			}
+		userAccessTokenHeader := map[string]string{
+			"Authorization": "Bearer " + userLoginResponse.AccessToken,
+		}
 
-			// 5. Call the /me endpoint as the regular user
-			response, err := sendHTTPRequest(t, ctx, meGetEndpoint, nil, userAccessTokenHeader)
-			assert.NoError(t, err, "Failed to send request")
-			defer response.Body.Close()
+		// 5. Call the /me endpoint as the regular user
+		response, err := sendHTTPRequest(t, ctx, meGetEndpoint, nil, userAccessTokenHeader)
+		assert.NoError(t, err, "Failed to send request")
+		defer response.Body.Close()
 
-			assert.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+		assert.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
 
-			// 6. Parse and verify the response
-			userResponse, err := parserResponseBody[payload.UserResponse](t, response)
-			assert.NoError(t, err, "Failed to parse response body")
+		// 6. Parse and verify the response
+		userResponse, err := parserResponseBody[payload.UserResponse](t, response)
+		assert.NoError(t, err, "Failed to parse response body")
 
-			// 7. Verify the user information matches the regular user
-			assert.Equal(t, userID, userResponse.ID, "User ID should match the authenticated user")
-			assert.Equal(t, email, userResponse.Email, "Email should match")
-			assert.Equal(t, firstName, userResponse.FirstName, "First name should match")
-			assert.Equal(t, lastName, userResponse.LastName, "Last name should match")
-			assert.NotZero(t, userResponse.CreatedAt, "Created at should not be zero")
-			assert.NotZero(t, userResponse.UpdatedAt, "Updated at should not be zero")
+		// 7. Verify the user information matches the regular user
+		assert.Equal(t, userID, userResponse.ID, "User ID should match the authenticated user")
+		assert.Equal(t, email, userResponse.Email, "Email should match")
+		assert.Equal(t, firstName, userResponse.FirstName, "First name should match")
+		assert.Equal(t, lastName, userResponse.LastName, "Last name should match")
+		assert.NotZero(t, userResponse.CreatedAt, "Created at should not be zero")
+		assert.NotZero(t, userResponse.UpdatedAt, "Updated at should not be zero")
 
-			// 8. Verify the user is not an admin
-			assert.NotNil(t, userResponse.Admin, "Admin field should not be nil")
-			assert.False(t, *userResponse.Admin, "Regular user should not be an admin")
+		// 8. Verify the user is not an admin
+		assert.NotNil(t, userResponse.Admin, "Admin field should not be nil")
+		assert.False(t, *userResponse.Admin, "Regular user should not be an admin")
 
-			// 9. Cleanup
-			t.Cleanup(func() {
-				deleteUserByIDFromDB(t, userID)
-				deleteUserByIDFromDB(t, adminToken.UserID)
-			})
+		// 9. Cleanup
+		t.Cleanup(func() {
+			deleteUserByIDFromDB(t, userID)
+			deleteUserByIDFromDB(t, adminToken.UserID)
 		})
-	*/
+	})
 
 	t.Run("require_authentication", func(t *testing.T) {
 		t.Parallel()

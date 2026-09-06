@@ -40,6 +40,7 @@ const (
 	FieldEngineType                          = "engine_type"
 	FieldFields                              = "fields"
 	FieldFilter                              = "filter"
+	FieldCallerID                            = "caller_id"
 	FieldFirstName                           = "first_name"
 	FieldFunctionID                          = "function_id"
 	FieldGeneral                             = "general"

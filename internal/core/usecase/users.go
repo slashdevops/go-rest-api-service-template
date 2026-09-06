@@ -18,6 +18,9 @@ import (
 )
 
 type UsersServiceConf struct {
+	// Guard refuses a grant the caller does not hold. Required: a service
+	// that can widen permissions without it is the escalation path.
+	Guard           *GrantGuard
 	Repository      repository.Users
 	CacheService    cache.Cache
 	ResourcesLimits ResourcesLimitsServiceConsumer
@@ -26,6 +29,7 @@ type UsersServiceConf struct {
 }
 
 type UsersService struct {
+	guard           *GrantGuard
 	repository      repository.Users
 	cacheService    cache.Cache
 	resourcesLimits ResourcesLimitsServiceConsumer
@@ -36,6 +40,10 @@ type UsersService struct {
 }
 
 func NewUsersService(conf UsersServiceConf) (*UsersService, error) {
+	if conf.Guard == nil {
+		return nil, &domain.InvalidInputError{Message: "Guard is nil, but it is required for UsersService"}
+	}
+
 	if conf.Repository == nil {
 		return nil, &domain.InvalidRepositoryError{Message: "Repository is nil, but it is required for UsersService"}
 	}
@@ -49,6 +57,7 @@ func NewUsersService(conf UsersServiceConf) (*UsersService, error) {
 	}
 
 	ref := &UsersService{
+		guard:           conf.Guard,
 		repository:      conf.Repository,
 		cacheService:    conf.CacheService,
 		resourcesLimits: conf.ResourcesLimits,
@@ -465,6 +474,10 @@ func (ref *UsersService) LinkRoles(ctx context.Context, input *domain.LinkRolesT
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
 
+	if err := ref.guard.CheckRoles(ctx, input.CallerID, input.RoleIDs); err != nil {
+		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
 	if err := ref.repository.LinkRoles(ctx, input); err != nil {
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
@@ -477,10 +490,7 @@ func (ref *UsersService) LinkRoles(ctx context.Context, input *domain.LinkRolesT
 				Type: "user",
 				ID:   input.UserID.String(),
 			},
-			{
-				Type: "authz",
-				ID:   input.UserID.String(),
-			},
+			authzCacheKey(input.UserID),
 		}
 
 		for _, roleID := range input.RoleIDs {
@@ -535,10 +545,7 @@ func (ref *UsersService) UnlinkRoles(ctx context.Context, input *domain.UnlinkRo
 				Type: "user",
 				ID:   input.UserID.String(),
 			},
-			{
-				Type: "authz",
-				ID:   input.UserID.String(),
-			},
+			authzCacheKey(input.UserID),
 		}
 
 		for _, roleID := range input.RoleIDs {
@@ -593,10 +600,7 @@ func (ref *UsersService) LinkProjects(ctx context.Context, input *domain.LinkPro
 				Type: "user",
 				ID:   input.UserID.String(),
 			},
-			{
-				Type: "authz",
-				ID:   input.UserID.String(),
-			},
+			authzCacheKey(input.UserID),
 		}
 
 		for _, cacheKey := range cacheKeys {
@@ -642,10 +646,7 @@ func (ref *UsersService) UnlinkProjects(ctx context.Context, input *domain.Unlin
 				Type: "user",
 				ID:   input.UserID.String(),
 			},
-			{
-				Type: "authz",
-				ID:   input.UserID.String(),
-			},
+			authzCacheKey(input.UserID),
 		}
 
 		for _, cacheKey := range cacheKeys {
@@ -772,10 +773,7 @@ func (ref *UsersService) SelectAuthz(ctx context.Context, userID uuid.UUID) (map
 		}
 	} else {
 
-		cacheKey := cache.Identifier{
-			Type: "authz",
-			ID:   userID.String(),
-		}
+		cacheKey := authzCacheKey(userID)
 
 		slog.Debug("service.Users.IsAuthorized", "cache", "enabled", "key", cacheKey)
 

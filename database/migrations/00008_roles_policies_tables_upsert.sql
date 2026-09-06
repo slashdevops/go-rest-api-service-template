@@ -8,7 +8,14 @@ INSERT INTO roles (id, name, description, system, auto_assign) VALUES
 -- Administrator
 ('019822af-b448-750c-ae0d-edaf3aaafc41', 'Administrator', 'Administrator role.',                         TRUE, FALSE),
 -- AuthenticatedUser
-('019822af-b448-7514-a670-f7acef5d6f77', 'AuthenticatedUser', 'Authenticated user role. Allow do login', TRUE, TRUE);
+('019822af-b448-7514-a670-f7acef5d6f77', 'AuthenticatedUser', 'Authenticated user role. Allow do login', TRUE, TRUE),
+-- Default roles for incoming accounts: an administrator assigns one or more.
+-- System rows, so their names are stable; copy one to tune it. The policies
+-- they compose are named "<Role>: <verb> <thing>" further down.
+('01a076c6-0f7f-7dc6-afcc-7941e2707b03', 'ReadOnly', 'Read every endpoint, change nothing', TRUE, FALSE),
+('01a076c6-0f7f-7dce-a67e-9b348134ec12', 'ProjectMember', 'Work inside the projects the account belongs to: read them and manage their products. Project membership is checked on every call', TRUE, FALSE),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', 'ProjectManager', 'Everything a ProjectMember may do, plus creating projects and managing their members', TRUE, FALSE),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', 'UserManager', 'Manage accounts: users, their roles and projects. The grant guard keeps a UserManager from assigning a role that holds more than they do', TRUE, FALSE);
 
 -----------------------------------------------------------------------------------------
 -- table resources
@@ -149,7 +156,42 @@ INSERT INTO policies (id, resources_id, name, description, allowed_action, allow
 -- signed-in user may do this: the session proves the account, the provider proves the identity.
 ('01a07576-4ce5-74fd-9e86-ad854feecf73', '01a07319-1d32-7bd2-8ba0-f7da9aaaed0a', 'Allow me Link Identity', 'Allow linking an identity provider to my own account', 'GET', '/auth/idp/*/link', TRUE),
 ('01a07576-4ce5-75b2-ac8e-0c24302f69c5', '01a07319-1d32-7ca7-834a-d8dcc6a19fa0', 'Allow me Identities', 'Allow listing the identity providers linked to my account', 'GET', '/me/identities', TRUE),
-('01a07576-4ce5-75b6-a9b0-efaaf510c9ee', '01a07319-1d32-7cac-885b-6c544f5dbe08', 'Allow me Unlink Identity', 'Allow removing an identity provider from my account', 'DELETE', '/me/identities/*', TRUE);
+('01a07576-4ce5-75b6-a9b0-efaaf510c9ee', '01a07319-1d32-7cac-885b-6c544f5dbe08', 'Allow me Unlink Identity', 'Allow removing an identity provider from my account', 'DELETE', '/me/identities/*', TRUE),
+
+-- Default roles for incoming accounts. Every policy names its role in its
+-- name; the roles are composed below. System rows: copy one to tune it.
+('01a0771b-32e7-71db-a067-5309ea23223a', '019822af-b448-7524-995a-30d68b1263e8', 'Read only', 'Read every endpoint, change nothing', 'GET', '*', TRUE),
+('01a0771b-32e7-7224-be05-08e1b32d142a', '01982303-f0f9-7dbf-9688-6ef0150502e9', 'Member: list my projects', 'List the projects the caller belongs to', 'GET', '/projects', TRUE),
+('01a0771b-32e7-7228-9003-61d145c8b7cd', '01982303-f0f9-7dfa-966c-4b9ce4133a33', 'Member: read a project', 'Read one of the caller''s projects', 'GET', '/projects/*', TRUE),
+('01a0771b-32e7-7229-b62b-c06d829e9e7d', '01987096-b4a1-7e8a-8a38-98148daa27a2', 'Member: list project users', 'See who is in the project', 'GET', '/projects/*/users', TRUE),
+('01a0771b-32e7-722d-bef5-61436f03c1fb', '01982303-f0f9-7e63-92ba-141813745b06', 'Member: list products', 'List every product the caller may see', 'GET', '/products', TRUE),
+('01a0771b-32e7-7235-b9e5-664a8ec9cc75', '01982303-f0f9-7e63-92ba-141813745b05', 'Member: list project products', 'List the products of a project', 'GET', '/projects/*/products', TRUE),
+('01a0771b-32e7-7236-9e01-d6b9eca070c1', '01982303-f0f9-7e63-92ba-141813745b02', 'Member: read product', 'Read a product', 'GET', '/projects/*/products/*', TRUE),
+('01a0771b-32e7-7239-a919-4518bf8db8e8', '01982303-f0f9-7e63-92ba-141813745b01', 'Member: create product', 'Create a product in a project', 'POST', '/projects/*/products', TRUE),
+('01a0771b-32e7-723a-874b-1672b0eec28b', '01982303-f0f9-7e63-92ba-141813745b03', 'Member: update product', 'Update a product', 'PUT', '/projects/*/products/*', TRUE),
+('01a0771b-32e7-723d-befd-0c9de0d922b3', '01982303-f0f9-7e63-92ba-141813745b04', 'Member: delete product', 'Delete a product', 'DELETE', '/projects/*/products/*', TRUE),
+('01a0771b-32e7-723e-8e11-0d58ec78690b', '01a01117-dba9-763d-8f4e-968072dbdb52', 'Member: read project limits', 'Read the project''s resource limits', 'GET', '/projects/*/resources_limits', TRUE),
+('01a0771b-32e7-7241-b825-d4cce21db36c', '01982303-f0f9-7e63-92ba-141813745a7d', 'Manager: create project', 'Create a project', 'POST', '/projects', TRUE),
+('01a0771b-32e7-7245-8305-f6d7bdabc15a', '01982303-f0f9-7db3-991f-2b7943b5328c', 'Manager: update project', 'Update a project the caller belongs to', 'PUT', '/projects/*', TRUE),
+('01a0771b-32e7-7251-8ad1-f36516b4f050', '01982303-f0f9-7e9f-9bb9-81d42a9eb30a', 'Manager: delete project', 'Delete a project the caller belongs to', 'DELETE', '/projects/*', TRUE),
+('01a0771b-32e7-7252-984f-91c48bae3947', '01986f44-3a65-7a21-9c2b-392f2b0eacf7', 'Manager: add project users', 'Add users to a project', 'POST', '/projects/*/users', TRUE),
+('01a0771b-32e7-7256-8a5b-8e53c6a03246', '01986f44-3a65-7a19-a92d-e6100dd80807', 'Manager: remove project users', 'Remove users from a project', 'DELETE', '/projects/*/users', TRUE),
+('01a0771b-32e7-725a-be85-9af6ab709eca', '01982303-f0f9-7daf-809b-4f7880ca9e40', 'User manager: list users', 'List users', 'GET', '/users', TRUE),
+('01a0771b-32e7-725b-bf37-d2ed45141d78', '01982303-f0f9-7e78-bddf-389144c4beaf', 'User manager: create user', 'Create a user', 'POST', '/users', TRUE),
+('01a0771b-32e7-7266-b73c-fad8c06a08ed', '01982303-f0f9-7e25-85f4-4d9d47622702', 'User manager: read user', 'Read a user', 'GET', '/users/*', TRUE),
+('01a0771b-32e7-726a-88d7-a269fbaf7204', '01982303-f0f9-7e3c-a186-f186a3418768', 'User manager: update user', 'Update a user', 'PUT', '/users/*', TRUE),
+('01a0771b-32e7-726e-88a7-fd717ee89b88', '01982303-f0f9-7dda-84da-cedd68bca775', 'User manager: delete user', 'Delete a user', 'DELETE', '/users/*', TRUE),
+('01a0771b-32e7-7272-ad57-e1d0442d6a7b', '01982303-f0f9-7e6b-9d17-9b9076785bd6', 'User manager: read user roles', 'Read a user''s roles', 'GET', '/users/*/roles', TRUE),
+('01a0771b-32e7-7276-bc40-163add71adb2', '01982303-f0fa-700f-a042-0a487ed3c9fb', 'User manager: assign roles', 'Assign roles to a user', 'POST', '/users/*/roles', TRUE),
+('01a0771b-32e7-727e-8eeb-a95b9887c599', '01982303-f0f9-7f23-b203-7079222718d0', 'User manager: remove roles', 'Remove roles from a user', 'DELETE', '/users/*/roles', TRUE),
+('01a0771b-32e7-727f-a1e1-937374120504', '019870ff-37f6-737e-8efb-e39730ef6952', 'User manager: read user projects', 'Read a user''s projects', 'GET', '/users/*/projects', TRUE),
+('01a0771b-32e7-7283-9b2d-42357f674c6d', '01986f44-3a65-7a2d-8c68-8c579be0aae7', 'User manager: add user to projects', 'Add a user to projects', 'POST', '/users/*/projects', TRUE),
+('01a0771b-32e7-728b-b581-c9715ac473d9', '01986f44-3a65-7a25-afe8-fdd6ae4572c4', 'User manager: remove user from projects', 'Remove a user from projects', 'DELETE', '/users/*/projects', TRUE),
+('01a0771b-32e7-7293-8d18-6a8eb2efb0f8', '01982303-f0fa-7089-9875-cd42f8e1a3d6', 'User manager: read effective permissions', 'Read a user''s effective permissions', 'GET', '/users/*/authz', TRUE),
+('01a0771b-32e7-7294-8716-29a54234c6de', '01a07662-d5ca-7c8f-aa04-0a29d6cad3bd', 'User manager: send password reset', 'Email a user a password-reset link', 'POST', '/users/*/password/reset', TRUE),
+('01a0771b-32e7-7297-9984-c7cfb75000ec', '01982303-f0fa-703a-92fa-be272044b2e3', 'User manager: list roles', 'List roles', 'GET', '/roles', TRUE),
+('01a0771b-32e7-729f-849b-d022524c7576', '01982303-f0f9-7dde-ab91-1ab138a8b6c5', 'User manager: read role', 'Read a role', 'GET', '/roles/*', TRUE),
+('01a0771b-32e7-72a0-8acf-0c41330c2437', '01982303-f0fa-7027-9b77-197b693d0e5a', 'User manager: read role users', 'Read a role''s users', 'GET', '/roles/*/users', TRUE);
 
 -----------------------------------------------------------------------------------------
 -- table roles_policies
@@ -166,7 +208,55 @@ INSERT INTO roles_policies (roles_id, policies_id) VALUES
 ('019822af-b448-7514-a670-f7acef5d6f77', '01a01119-62f4-7a96-9d4a-41c2f56e4086'),
 ('019822af-b448-7514-a670-f7acef5d6f77', '01a07576-4ce5-74fd-9e86-ad854feecf73'),
 ('019822af-b448-7514-a670-f7acef5d6f77', '01a07576-4ce5-75b2-ac8e-0c24302f69c5'),
-('019822af-b448-7514-a670-f7acef5d6f77', '01a07576-4ce5-75b6-a9b0-efaaf510c9ee');
+-- Reading and editing one's own profile. Both policies were seeded from the
+-- start and linked to no role, so every non-administrator got 403 on /me.
+('019822af-b448-7514-a670-f7acef5d6f77', '0199489b-f2f0-717a-8ee4-5814d4fa1c61'),
+('019822af-b448-7514-a670-f7acef5d6f77', '0199489b-f2f0-718e-a94d-b05a296eb818'),
+('019822af-b448-7514-a670-f7acef5d6f77', '01a07576-4ce5-75b6-a9b0-efaaf510c9ee'),
+
+-- Default roles
+('01a076c6-0f7f-7dc6-afcc-7941e2707b03', '01a0771b-32e7-71db-a067-5309ea23223a'),
+('01a076c6-0f7f-7dce-a67e-9b348134ec12', '01a0771b-32e7-7224-be05-08e1b32d142a'),
+('01a076c6-0f7f-7dce-a67e-9b348134ec12', '01a0771b-32e7-7228-9003-61d145c8b7cd'),
+('01a076c6-0f7f-7dce-a67e-9b348134ec12', '01a0771b-32e7-7229-b62b-c06d829e9e7d'),
+('01a076c6-0f7f-7dce-a67e-9b348134ec12', '01a0771b-32e7-722d-bef5-61436f03c1fb'),
+('01a076c6-0f7f-7dce-a67e-9b348134ec12', '01a0771b-32e7-7235-b9e5-664a8ec9cc75'),
+('01a076c6-0f7f-7dce-a67e-9b348134ec12', '01a0771b-32e7-7236-9e01-d6b9eca070c1'),
+('01a076c6-0f7f-7dce-a67e-9b348134ec12', '01a0771b-32e7-7239-a919-4518bf8db8e8'),
+('01a076c6-0f7f-7dce-a67e-9b348134ec12', '01a0771b-32e7-723a-874b-1672b0eec28b'),
+('01a076c6-0f7f-7dce-a67e-9b348134ec12', '01a0771b-32e7-723d-befd-0c9de0d922b3'),
+('01a076c6-0f7f-7dce-a67e-9b348134ec12', '01a0771b-32e7-723e-8e11-0d58ec78690b'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-7224-be05-08e1b32d142a'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-7228-9003-61d145c8b7cd'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-7229-b62b-c06d829e9e7d'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-722d-bef5-61436f03c1fb'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-7235-b9e5-664a8ec9cc75'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-7236-9e01-d6b9eca070c1'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-7239-a919-4518bf8db8e8'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-723a-874b-1672b0eec28b'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-723d-befd-0c9de0d922b3'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-723e-8e11-0d58ec78690b'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-7241-b825-d4cce21db36c'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-7245-8305-f6d7bdabc15a'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-7251-8ad1-f36516b4f050'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-7252-984f-91c48bae3947'),
+('01a076c6-0f7f-7ddb-9a2a-9369928793e7', '01a0771b-32e7-7256-8a5b-8e53c6a03246'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-725a-be85-9af6ab709eca'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-725b-bf37-d2ed45141d78'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-7266-b73c-fad8c06a08ed'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-726a-88d7-a269fbaf7204'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-726e-88a7-fd717ee89b88'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-7272-ad57-e1d0442d6a7b'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-7276-bc40-163add71adb2'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-727e-8eeb-a95b9887c599'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-727f-a1e1-937374120504'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-7283-9b2d-42357f674c6d'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-728b-b581-c9715ac473d9'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-7293-8d18-6a8eb2efb0f8'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-7294-8716-29a54234c6de'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-7297-9984-c7cfb75000ec'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-729f-849b-d022524c7576'),
+('01a076c6-0f7f-7de7-8def-28d862d21ba2', '01a0771b-32e7-72a0-8acf-0c41330c2437');
 
 -----------------------------------------------------------------------------------------
 -- table users_roles
@@ -185,6 +275,10 @@ INSERT INTO users_roles (users_id, roles_id) VALUES
 -- fn_restrict_delete_update_on_system rejects DELETE as well as
 -- UPDATE — so the flag cannot be cleared first and the triggers have to be disabled.
 --
+-- The bootstrap links are protected by a trigger (00007); a Down must remove
+-- the seed rows, so it is switched off for the deletes and back on after.
+ALTER TABLE roles_policies DISABLE TRIGGER tr_protect_bootstrap_roles_policies;
+ALTER TABLE users_roles DISABLE TRIGGER tr_protect_bootstrap_users_roles;
 DELETE FROM users_roles;
 DELETE FROM roles_policies;
 
@@ -199,5 +293,8 @@ ALTER TABLE resources ENABLE TRIGGER tr_restrict_delete_update_on_system_resourc
 ALTER TABLE roles DISABLE TRIGGER tr_restrict_delete_update_on_system_roles;
 DELETE FROM roles;
 ALTER TABLE roles ENABLE TRIGGER tr_restrict_delete_update_on_system_roles;
+
+ALTER TABLE roles_policies ENABLE TRIGGER tr_protect_bootstrap_roles_policies;
+ALTER TABLE users_roles ENABLE TRIGGER tr_protect_bootstrap_users_roles;
 
 -- +goose StatementEnd

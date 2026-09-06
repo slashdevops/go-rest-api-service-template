@@ -22,6 +22,9 @@ type ResourcesServiceMethods interface {
 }
 
 type PoliciesServiceConf struct {
+	// Guard refuses a grant the caller does not hold. Required: a service
+	// that can widen permissions without it is the escalation path.
+	Guard            *GrantGuard
 	Repository       repository.Policies
 	ResourcesService ResourcesServiceMethods
 	CacheService     cache.Cache
@@ -30,6 +33,7 @@ type PoliciesServiceConf struct {
 }
 
 type PoliciesService struct {
+	guard            *GrantGuard
 	repository       repository.Policies
 	resourcesService ResourcesServiceMethods
 	cacheService     cache.Cache
@@ -41,6 +45,10 @@ type PoliciesService struct {
 
 // NewPoliciesService creates a new PoliciesService.
 func NewPoliciesService(conf PoliciesServiceConf) (*PoliciesService, error) {
+	if conf.Guard == nil {
+		return nil, &domain.InvalidInputError{Message: "Guard is nil, but it is required for PoliciesService"}
+	}
+
 	if conf.Repository == nil {
 		return nil, &domain.InvalidRepositoryError{Message: "Repository is nil, but it is required for PoliciesService"}
 	}
@@ -54,6 +62,7 @@ func NewPoliciesService(conf PoliciesServiceConf) (*PoliciesService, error) {
 	}
 
 	ref := &PoliciesService{
+		guard:            conf.Guard,
 		repository:       conf.Repository,
 		resourcesService: conf.ResourcesService,
 		cacheService:     conf.CacheService,
@@ -147,6 +156,11 @@ func (ref *PoliciesService) Create(ctx context.Context, input *domain.CreatePoli
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
 
+	// The caller must already hold what this policy would grant.
+	if err := ref.guard.CheckGrants(ctx, input.CallerID, []domain.Grant{{Action: input.AllowedAction, Resource: input.AllowedResource}}); err != nil {
+		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
 	if err := ref.repository.Insert(ctx, input); err != nil {
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
@@ -203,11 +217,47 @@ func (ref *PoliciesService) UpdateByID(ctx context.Context, input *domain.Update
 		return o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
 	}
 
-	// TODO: the allowed action and resource must be validated by
+	// The allowed action and resource are cross-checked below, as in Create.
 	// comparing this with the resources table items
 
 	if err := input.Validate(); err != nil {
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	// The grant after the edit: what the row says, overridden by what the
+	// input changes. When the grant changes, the caller must hold the
+	// resulting one, and it must name a real endpoint -- the cross-check
+	// Create does and this method skipped. A rename or a new description
+	// widens nothing, so it is not guarded: otherwise a user who may edit
+	// policies could not touch the description of one they do not hold,
+	// which is exactly the case the seeded UserManager role exists for.
+	existing, err := ref.repository.SelectByID(ctx, input.ID)
+	if err != nil {
+		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	action, resource := existing.AllowedAction, existing.AllowedResource
+	if input.AllowedAction != nil {
+		action = *input.AllowedAction
+	}
+
+	if input.AllowedResource != nil {
+		resource = *input.AllowedResource
+	}
+
+	if action != existing.AllowedAction || resource != existing.AllowedResource {
+		if err := ref.guard.CheckGrants(ctx, input.CallerID, []domain.Grant{{Action: action, Resource: resource}}); err != nil {
+			return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		}
+
+		matches, err := ref.resourcesService.ListMatches(ctx, action, resource, &domain.ListResourcesInput{Paginator: domain.Paginator{Limit: domain.PaginatorMaxLimit}})
+		if err != nil {
+			return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		}
+
+		if matches == nil || len(matches.Items) == 0 {
+			return o11y.RecordError(ctx, span, start, &domain.ResourceNotFoundError{Message: "no endpoint matches " + action + " " + resource}, ref.metrics, attrs)
+		}
 	}
 
 	if err := ref.repository.UpdateByID(ctx, input); err != nil {
@@ -318,6 +368,11 @@ func (ref *PoliciesService) LinkRoles(ctx context.Context, input *domain.LinkRol
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
 
+	// Linking a policy to roles grants it to every holder of those roles.
+	if err := ref.guard.CheckPolicies(ctx, input.CallerID, []uuid.UUID{input.PolicyID}); err != nil {
+		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
 	if err := ref.repository.LinkRoles(ctx, input); err != nil {
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
@@ -381,6 +436,16 @@ func (ref *PoliciesService) UnlinkRoles(ctx context.Context, input *domain.Unlin
 
 		if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
 			slog.Warn("service.Policies.UnlinkRoles", "what", "failed to invalidate cache", "policy_id", input.PolicyID.String(), "error", err)
+		}
+
+		// The same keys LinkRoles invalidates. Unlink used to drop only the
+		// policy's, leaving the roles' -- and every authz entry that hangs off
+		// them -- to the dependency cascade, which nothing tested: a revoked
+		// grant could be served until the 12 h TTL.
+		for _, roleID := range input.RoleIDs {
+			if err := ref.cacheService.Invalidate(ctx, cache.Identifier{Type: "role", ID: roleID.String()}); err != nil {
+				slog.Warn("service.Policies.UnlinkRoles", "what", "failed to invalidate cache", "role_id", roleID.String(), "error", err)
+			}
 		}
 	}
 

@@ -118,8 +118,10 @@ resource limit, and an integration test. Copy it; see
   responses** so the endpoints do not disclose which accounts exist.
 - A **login throttle** per identity, separate from the rate limiter.
 - **OAuth / OIDC identity providers**, with client secrets encrypted at rest.
-- **RBAC through Open Policy Agent**: roles, policies and a resource catalogue
-  generated from the OpenAPI spec, evaluated by an embedded Rego bundle.
+- [**RBAC through Open Policy Agent**](./docs/architecture/authorization.md):
+  roles, policies and a resource catalogue generated from the OpenAPI spec,
+  evaluated by a Rego bundle compiled once with the caller's grants as input;
+  six seeded roles; a caller may grant only what they hold.
 
 **🚦 Limits.**
 
@@ -213,6 +215,7 @@ make docs-api-resources # regenerate the authz resource rows for migration 00008
 | 📦 [Adding an entity](./docs/architecture/adding-an-entity.md) | the end-to-end recipe for a new resource |
 | 🔌 [Adding an adapter](./docs/architecture/adding-an-adapter.md) | when you need a new external system |
 | 🔐 [Authentication](./docs/architecture/authentication.md) | tokens, rotation, revocation, throttling |
+| 🧑‍⚖️ [Authorization](./docs/architecture/authorization.md) | roles, policies, the seeded roles, the OPA decision, who may grant what |
 | 🛡️ [Security](./docs/architecture/security.md) | the middleware chain and its order, response headers, body and content-type bounds, error hygiene, project membership, single-use links, the outbound address guard, supply chain |
 | 🪪 [Identity providers](./docs/architecture/identity-providers.md) | OIDC and GitHub sign-in: a provider proves a subject, never an email; linking, provisioning, the callback contract |
 | ⏳ [Token lifetimes](./docs/architecture/token-lifetimes.md) | the access/refresh lifetimes as a database row edited through the API |

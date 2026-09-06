@@ -817,9 +817,17 @@ func (ref *UsersHandler) linkRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	callerID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		respond.WriteJSONMessage(w, r, http.StatusUnauthorized, e.Error())
+		return
+	}
+
 	input := &domain.LinkRolesToUserInput{
-		UserID:  userID,
-		RoleIDs: req.RoleIDs,
+		CallerID: callerID,
+		UserID:   userID,
+		RoleIDs:  req.RoleIDs,
 	}
 
 	if err := ref.service.LinkRoles(ctx, input); err != nil {
@@ -832,6 +840,13 @@ func (ref *UsersHandler) linkRoles(w http.ResponseWriter, r *http.Request) {
 		if _, ok := errors.AsType[*domain.UserNotFoundError](err); ok {
 			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 			respond.WriteJSONMessage(w, r, http.StatusNotFound, e.Error())
+			return
+		}
+
+		// The caller does not hold what they tried to hand out.
+		if _, ok := errors.AsType[*domain.GrantNotHeldError](err); ok {
+			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			respond.WriteJSONMessage(w, r, http.StatusForbidden, e.Error())
 			return
 		}
 

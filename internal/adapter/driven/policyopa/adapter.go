@@ -1,8 +1,13 @@
-// Package policyopa is the driven adapter that satisfies the
-// policy.Engine port using Open Policy Agent's Rego evaluator. The
-// adapter holds the prepared query string and policy module once at
-// construction; each IsAllowed call builds a per-decision in-memory
-// store and runs Eval.
+// Package policyopa is the driven adapter that satisfies the policy.Engine
+// port with Open Policy Agent's Rego evaluator.
+//
+// The query is compiled once, in [New]: parsing and compiling a module is
+// the expensive part of an evaluation, and it used to happen on every
+// authenticated request. Each [Engine.IsAllowed] then evaluates the prepared
+// query with the decision as input. The caller's permission set travels in
+// input rather than in OPA's data document because it is request-scoped --
+// data is for what is true for every evaluation -- and that is also what
+// lets the query be prepared once with no store to rebuild.
 package policyopa
 
 import (
@@ -10,7 +15,6 @@ import (
 	"fmt"
 
 	"github.com/open-policy-agent/opa/v1/rego"
-	"github.com/open-policy-agent/opa/v1/storage/inmem"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/policy"
@@ -18,57 +22,63 @@ import (
 
 // Engine implements policy.Engine.
 type Engine struct {
-	query  string
-	module string
+	prepared rego.PreparedEvalQuery
 }
 
-// New constructs an Engine bound to the given Rego query expression
-// and policy module. Both must be non-empty.
+// New compiles the query against the module once. A module that does not
+// compile is a start-up failure, not a per-request 500.
 func New(query, module string) (*Engine, error) {
 	if query == "" {
 		return nil, &domain.InvalidRegoQueryError{Message: "rego query cannot be empty"}
 	}
+
 	if module == "" {
 		return nil, &domain.InvalidRegoPolicyError{Message: "rego policy cannot be empty"}
 	}
-	return &Engine{query: query, module: module}, nil
+
+	prepared, err := rego.New(
+		rego.Query(query),
+		rego.Module("policy.rego", module),
+	).PrepareForEval(context.Background())
+	if err != nil {
+		return nil, &domain.InvalidRegoPolicyError{Message: fmt.Sprintf("compiling the authorization policy: %v", err)}
+	}
+
+	return &Engine{prepared: prepared}, nil
 }
 
 // IsAllowed implements policy.Engine.
+//
+// Every failure to reach a boolean is an error, and the port says an error
+// means denied: an unevaluable policy must not admit anyone.
 func (e *Engine) IsAllowed(ctx context.Context, decision policy.Decision) (bool, error) {
+	// The use case hands over the map exactly as the repository builds it,
+	// with its top-level "permissions" key -- the shape the old data-root
+	// evaluation expected. The policy reads input.permissions.users, so
+	// that wrapper is stripped here, once, rather than at every producer.
 	perms := decision.Permissions
+	if inner, ok := perms["permissions"].(map[string]any); ok {
+		perms = inner
+	}
+
 	if perms == nil {
 		perms = map[string]any{}
 	}
 
 	input := map[string]any{
-		"user_id":  decision.UserID,
-		"action":   decision.Action,
-		"resource": decision.Resource,
+		"user_id":     decision.UserID,
+		"action":      decision.Action,
+		"resource":    decision.Resource,
+		"permissions": perms,
 	}
 
-	store := inmem.NewFromObject(perms)
-
-	query, err := rego.New(
-		rego.Query(e.query),
-		rego.Module("policy.rego", e.module),
-		rego.Input(input),
-		rego.Store(store),
-		rego.EnablePrintStatements(true),
-	).PrepareForEval(ctx)
+	results, err := e.prepared.Eval(ctx, rego.EvalInput(input))
 	if err != nil {
 		return false, &domain.UnauthorizedError{Message: err.Error()}
 	}
 
-	results, err := query.Eval(ctx)
-	if err != nil {
-		return false, &domain.UnauthorizedError{Message: err.Error()}
-	}
-	if len(results) == 0 {
-		return false, &domain.UnauthorizedError{Message: "unauthorized: no results found"}
-	}
-	if len(results[0].Expressions) == 0 {
-		return false, &domain.UnauthorizedError{Message: "unauthorized: no expressions found"}
+	if len(results) == 0 || len(results[0].Expressions) == 0 {
+		return false, &domain.UnauthorizedError{Message: "unauthorized: the policy produced no result"}
 	}
 
 	allowed, ok := results[0].Expressions[0].Value.(bool)
@@ -77,5 +87,6 @@ func (e *Engine) IsAllowed(ctx context.Context, decision policy.Decision) (bool,
 			Message: fmt.Sprintf("unauthorized: expression value is not a bool: %T", results[0].Expressions[0].Value),
 		}
 	}
+
 	return allowed, nil
 }

@@ -125,6 +125,43 @@ CREATE TABLE IF NOT EXISTS users_roles (
 CREATE INDEX "idx_users_roles_roles_id" ON users_roles (roles_id);
 
 -- +goose StatementEnd
+
+-- The two links that make the bootstrap administrator an administrator:
+-- Administrator -> Full Access, and the seeded admin -> Administrator. The
+-- rows on either side are system rows, but the LINK never was, so one
+-- DELETE /roles/<Administrator>/policies severed every administrator from
+-- its only grant, irrecoverably through the API. A link between the seeded
+-- ids cannot be deleted; anything else can.
+-- +goose StatementBegin
+CREATE OR REPLACE FUNCTION fn_protect_bootstrap_links()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Nested, not one AND: PL/pgSQL evaluates the whole condition, and
+    -- OLD.users_id on a roles_policies row is an error, not false.
+    IF TG_TABLE_NAME = 'roles_policies' THEN
+        IF OLD.roles_id = '019822af-b448-750c-ae0d-edaf3aaafc41'
+           AND OLD.policies_id = '019822c9-9775-7678-b6ea-5c4701531a00' THEN
+            RAISE EXCEPTION 'The Administrator role cannot be unlinked from the Full Access policy.';
+        END IF;
+    ELSIF TG_TABLE_NAME = 'users_roles' THEN
+        IF OLD.users_id = '019822af-b448-73fb-89a1-447e8f8d1cde'
+           AND OLD.roles_id = '019822af-b448-750c-ae0d-edaf3aaafc41' THEN
+            RAISE EXCEPTION 'The bootstrap administrator cannot be removed from the Administrator role.';
+        END IF;
+    END IF;
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql;
+-- +goose StatementEnd
+
+CREATE TRIGGER tr_protect_bootstrap_roles_policies
+BEFORE DELETE ON roles_policies
+FOR EACH ROW EXECUTE FUNCTION fn_protect_bootstrap_links();
+
+CREATE TRIGGER tr_protect_bootstrap_users_roles
+BEFORE DELETE ON users_roles
+FOR EACH ROW EXECUTE FUNCTION fn_protect_bootstrap_links();
+
 --
 
 -- +goose Down
@@ -135,6 +172,7 @@ CREATE INDEX "idx_users_roles_roles_id" ON users_roles (roles_id);
 -- The trigger FUNCTIONS are schema-level objects and survive the table, so they are named.
 
 DROP TABLE IF EXISTS users_roles, roles_policies, policies, resources, roles CASCADE;
+DROP FUNCTION IF EXISTS fn_protect_bootstrap_links();
 
 
 -- +goose StatementEnd

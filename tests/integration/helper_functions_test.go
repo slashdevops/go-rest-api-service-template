@@ -1386,6 +1386,13 @@ func checkNestedFields(t *testing.T, data any) {
 	case map[string]any:
 		// Check all keys in the map
 		for key, value := range v {
+			// A permission map is keyed by resource pattern ("/users", "*",
+			// "/projects/*/models"): data, not a field name. Only the values
+			// beneath it are checked.
+			if strings.HasPrefix(key, "/") || key == "*" {
+				checkNestedFields(t, value)
+				continue
+			}
 			// Verify the key itself is in snake_case (or a known exception)
 			if !isValidSnakeCase(key) && !isKnownException(key) {
 				t.Errorf("Field '%s' is not in snake_case format", key)

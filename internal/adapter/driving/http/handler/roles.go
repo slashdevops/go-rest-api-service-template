@@ -587,15 +587,30 @@ func (ref *RolesHandler) linkUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	callerID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		respond.WriteJSONMessage(w, r, http.StatusUnauthorized, e.Error())
+		return
+	}
+
 	input := &domain.LinkUsersToRoleInput{
-		RoleID:  roleID,
-		UserIDs: req.UserIDs,
+		CallerID: callerID,
+		RoleID:   roleID,
+		UserIDs:  req.UserIDs,
 	}
 
 	if err := ref.service.LinkUsers(ctx, input); err != nil {
 		if _, ok := errors.AsType[*domain.RoleNotFoundError](err); ok {
 			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 			respond.WriteJSONMessage(w, r, http.StatusNotFound, e.Error())
+			return
+		}
+
+		// The caller does not hold what they tried to hand out.
+		if _, ok := errors.AsType[*domain.GrantNotHeldError](err); ok {
+			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			respond.WriteJSONMessage(w, r, http.StatusForbidden, e.Error())
 			return
 		}
 
@@ -747,7 +762,15 @@ func (ref *RolesHandler) linkPolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	callerID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		respond.WriteJSONMessage(w, r, http.StatusUnauthorized, e.Error())
+		return
+	}
+
 	input := &domain.LinkPoliciesToRoleInput{
+		CallerID:  callerID,
 		RoleID:    roleID,
 		PolicyIDs: req.PolicyIDs,
 	}
@@ -756,6 +779,13 @@ func (ref *RolesHandler) linkPolicies(w http.ResponseWriter, r *http.Request) {
 		if _, ok := errors.AsType[*domain.RoleNotFoundError](err); ok {
 			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 			respond.WriteJSONMessage(w, r, http.StatusNotFound, e.Error())
+			return
+		}
+
+		// The caller does not hold what they tried to hand out.
+		if _, ok := errors.AsType[*domain.GrantNotHeldError](err); ok {
+			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			respond.WriteJSONMessage(w, r, http.StatusForbidden, e.Error())
 			return
 		}
 
