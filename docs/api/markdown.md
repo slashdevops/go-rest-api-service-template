@@ -161,9 +161,6 @@ The ordinary credential: `Bearer <access_token>`, from `POST /auth/login` or `PO
 | POST | /auth/refresh | [019822af b448 756a 92b2 791a0e748162](#019822af-b448-756a-92b2-791a0e748162) | Refresh access token |
 | POST | /auth/register | [019822af b448 7572 a268 4c7b20a70229](#019822af-b448-7572-a268-4c7b20a70229) | Register new user |
 | POST | /auth/verify | [019822af b448 7576 8a41 41b83b3239f0](#019822af-b448-7576-8a41-41b83b3239f0) | Resend verification email |
-| GET | /auth/idp/{idp_id}/login | [01988e60 89e5 72ab adb4 3eef95d1afd3](#01988e60-89e5-72ab-adb4-3eef95d1afd3) | Initiate IDP login |
-| GET | /auth/idp/{idp_id}/callback | [01988e60 89e5 72ee 9db4 db5cd7535717](#01988e60-89e5-72ee-9db4-db5cd7535717) | Handle IDP OAuth callback |
-| GET | /auth/idp/{idp_id}/register | [019894ba 6014 79cf bff4 6668484cc7e3](#019894ba-6014-79cf-bff4-6668484cc7e3) | Initiate IDP registration |
 | GET | /auth/idps | [0198e7ea 3755 7a29 90ed 13245b54f074](#0198e7ea-3755-7a29-90ed-13245b54f074) | List IDPs |
 | DELETE | /auth/idps/{idp_id} | [0198e7ea 3755 7a2d 9ab0 83ccef188e37](#0198e7ea-3755-7a2d-9ab0-83ccef188e37) | Delete IDP |
 | PUT | /auth/idps/{idp_id} | [0198e7ea 3755 7a35 9e30 6a9392e8e7a1](#0198e7ea-3755-7a35-9e30-6a9392e8e7a1) | Update IDP |
@@ -171,7 +168,6 @@ The ordinary credential: `Bearer <access_token>`, from `POST /auth/login` or `PO
 | GET | /auth/idps/{idp_id} | [0198e7ea 3755 7a3d 8baa 36126e5d1c48](#0198e7ea-3755-7a3d-8baa-36126e5d1c48) | Get IDP |
 | GET | /auth/idp_types | [0198f1e2 14ff 7678 afbe 9a627b0eaabd](#0198f1e2-14ff-7678-afbe-9a627b0eaabd) | List IDP types |
 | GET | /auth/idp_types/{idp_type_id} | [0198f1e2 14ff 767c 971c 3904e0f2c484](#0198f1e2-14ff-767c-971c-3904e0f2c484) | Get IDP type |
-| GET | /auth/idp/available | [0198fb33 7333 76f9 bcb4 1af086de3e10](#0198fb33-7333-76f9-bcb4-1af086de3e10) | List identity providers |
 | POST | /auth/password/recover | [01991917 2720 7589 971b cce23bf8a74b](#01991917-2720-7589-971b-cce23bf8a74b) | Initiate password recovery |
 | POST | /auth/password/reset | [01991917 2720 758d 8104 94a0368acecb](#01991917-2720-758d-8104-94a0368acecb) | Reset password |
 | POST | /auth/verify/confirm | [01a02dbb bc41 7287 9cfd 7ac08bf882ae](#01a02dbb-bc41-7287-9cfd-7ac08bf882ae) | Confirm email verification |
@@ -184,6 +180,18 @@ The ordinary credential: `Bearer <access_token>`, from `POST /auth/login` or `PO
 |---------|---------|--------|---------|
 | GET | /auth/token_lifetimes | [01a072df d81d 78c8 a72b 6ea167cd50b2](#01a072df-d81d-78c8-a72b-6ea167cd50b2) | Get token lifetimes |
 | PUT | /auth/token_lifetimes | [01a072df d81d 7995 ad3e 92a0a4d0a4cf](#01a072df-d81d-7995-ad3e-92a0a4d0a4cf) | Update token lifetimes |
+  
+
+
+###  authn_id_ps
+
+| Method  | URI     | Name   | Summary |
+|---------|---------|--------|---------|
+| GET | /auth/idp/{idp_id}/login | [01988e60 89e5 72ab adb4 3eef95d1afd3](#01988e60-89e5-72ab-adb4-3eef95d1afd3) | Initiate IDP login |
+| GET | /auth/idp/{idp_id}/callback | [01988e60 89e5 72ee 9db4 db5cd7535717](#01988e60-89e5-72ee-9db4-db5cd7535717) | Handle IDP OAuth callback |
+| GET | /auth/idp/{idp_id}/register | [019894ba 6014 79cf bff4 6668484cc7e3](#019894ba-6014-79cf-bff4-6668484cc7e3) | Initiate IDP registration |
+| GET | /auth/idp/available | [0198fb33 7333 76f9 bcb4 1af086de3e10](#0198fb33-7333-76f9-bcb4-1af086de3e10) | List identity providers |
+| GET | /auth/idp/{idp_id}/link | [01a07319 1d32 7bd2 8ba0 f7da9aaaed0a](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a) | Initiate IDP link |
   
 
 
@@ -204,6 +212,8 @@ The ordinary credential: `Bearer <access_token>`, from `POST /auth/login` or `PO
 | GET | /me | [0199489b f2f0 718a a0cb de8752ea864f](#0199489b-f2f0-718a-a0cb-de8752ea864f) | Get authenticated user |
 | PUT | /me | [0199489b f2f0 718e a94d b05a296eb818](#0199489b-f2f0-718e-a94d-b05a296eb818) | Update authenticated user |
 | GET | /me/authz | [0199489b f2f0 719e b860 3b7ea6a86a1a](#0199489b-f2f0-719e-b860-3b7ea6a86a1a) | Get authorization info |
+| GET | /me/identities | [01a07319 1d32 7ca7 834a d8dcc6a19fa0](#01a07319-1d32-7ca7-834a-d8dcc6a19fa0) | List my linked identities |
+| DELETE | /me/identities/{idp_id} | [01a07319 1d32 7cac 885b 6c544f5dbe08](#01a07319-1d32-7cac-885b-6c544f5dbe08) | Unlink my identity |
   
 
 
@@ -5767,10 +5777,7 @@ Status: Internal Server Error
 GET /auth/idp/{idp_id}/login
 ```
 
-Initiate authentication with specified Identity Provider and returns redirect URL for OAuth flow.
-
-#### Consumes
-  * application/json
+Build the authorization URL for a sign-in. The caller sends the browser there; the provider returns it to the frontend callback route with a state and a code
 
 #### Produces
   * application/json
@@ -5779,19 +5786,22 @@ Initiate authentication with specified Identity Provider and returns redirect UR
 
 | Name | Source | Type | Go type | Separator | Required | Default | Description |
 |------|--------|------|---------|-----------| :------: |---------|-------------|
-| idp_id | `path` | uuid (formatted string) | `strfmt.UUID` |  | ✓ |  | Identity Provider unique identifier |
+| idp_id | `path` | uuid (formatted string) | `strfmt.UUID` |  | ✓ |  | Identity provider id |
 
 #### All responses
 | Code | Status | Description | Has headers | Schema |
 |------|--------|-------------|:-----------:|--------|
-| [200](#01988e60-89e5-72ab-adb4-3eef95d1afd3-200) | OK | Login URL generated successfully. RedirectURL and RedirectCode are fields of the JSON body — this endpoint returns 200, it does not itself redirect. |  | [schema](#01988e60-89e5-72ab-adb4-3eef95d1afd3-200-schema) |
-| [400](#01988e60-89e5-72ab-adb4-3eef95d1afd3-400) | Bad Request | Invalid IDP ID format or malformed request |  | [schema](#01988e60-89e5-72ab-adb4-3eef95d1afd3-400-schema) |
-| [500](#01988e60-89e5-72ab-adb4-3eef95d1afd3-500) | Internal Server Error | Internal server error during URL generation. NOTE: an unknown Identity Provider currently surfaces here rather than as a 404 — the handler has no not-found branch. Tracked as a behaviour defect; this annotation documents what the endpoint does today, not what it should do. |  | [schema](#01988e60-89e5-72ab-adb4-3eef95d1afd3-500-schema) |
+| [200](#01988e60-89e5-72ab-adb4-3eef95d1afd3-200) | OK | The URL to send the browser to |  | [schema](#01988e60-89e5-72ab-adb4-3eef95d1afd3-200-schema) |
+| [400](#01988e60-89e5-72ab-adb4-3eef95d1afd3-400) | Bad Request | Invalid identity provider id |  | [schema](#01988e60-89e5-72ab-adb4-3eef95d1afd3-400-schema) |
+| [404](#01988e60-89e5-72ab-adb4-3eef95d1afd3-404) | Not Found | Unknown or disabled identity provider |  | [schema](#01988e60-89e5-72ab-adb4-3eef95d1afd3-404-schema) |
+| [429](#01988e60-89e5-72ab-adb4-3eef95d1afd3-429) | Too Many Requests | Too many requests |  | [schema](#01988e60-89e5-72ab-adb4-3eef95d1afd3-429-schema) |
+| [500](#01988e60-89e5-72ab-adb4-3eef95d1afd3-500) | Internal Server Error | Internal server error |  | [schema](#01988e60-89e5-72ab-adb4-3eef95d1afd3-500-schema) |
+| [503](#01988e60-89e5-72ab-adb4-3eef95d1afd3-503) | Service Unavailable | The identity provider is not reachable |  | [schema](#01988e60-89e5-72ab-adb4-3eef95d1afd3-503-schema) |
 
 #### Responses
 
 
-##### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-200"></span> 200 - Login URL generated successfully. RedirectURL and RedirectCode are fields of the JSON body — this endpoint returns 200, it does not itself redirect.
+##### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-200"></span> 200 - The URL to send the browser to
 Status: OK
 
 ###### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-200-schema"></span> Schema
@@ -5800,7 +5810,7 @@ Status: OK
 
 [PayloadIDPLoginResponse](#payload-id-p-login-response)
 
-##### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-400"></span> 400 - Invalid IDP ID format or malformed request
+##### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-400"></span> 400 - Invalid identity provider id
 Status: Bad Request
 
 ###### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-400-schema"></span> Schema
@@ -5809,10 +5819,37 @@ Status: Bad Request
 
 [PayloadHTTPMessage](#payload-http-message)
 
-##### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-500"></span> 500 - Internal server error during URL generation. NOTE: an unknown Identity Provider currently surfaces here rather than as a 404 — the handler has no not-found branch. Tracked as a behaviour defect; this annotation documents what the endpoint does today, not what it should do.
+##### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-404"></span> 404 - Unknown or disabled identity provider
+Status: Not Found
+
+###### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-404-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-429"></span> 429 - Too many requests
+Status: Too Many Requests
+
+###### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-429-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-500"></span> 500 - Internal server error
 Status: Internal Server Error
 
 ###### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-500-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-503"></span> 503 - The identity provider is not reachable
+Status: Service Unavailable
+
+###### <span id="01988e60-89e5-72ab-adb4-3eef95d1afd3-503-schema"></span> Schema
    
   
 
@@ -5824,10 +5861,7 @@ Status: Internal Server Error
 GET /auth/idp/{idp_id}/callback
 ```
 
-Process OAuth callback from Identity Provider, validates state and authorization code.
-
-#### Consumes
-  * application/json
+Called by the frontend callback route with the state and code from the provider, never by the browser: JSON answer, no cookie, no redirect. Spends the state, exchanges the code with PKCE, resolves the identity by subject
 
 #### Produces
   * application/json
@@ -5836,38 +5870,36 @@ Process OAuth callback from Identity Provider, validates state and authorization
 
 | Name | Source | Type | Go type | Separator | Required | Default | Description |
 |------|--------|------|---------|-----------| :------: |---------|-------------|
-| idp_id | `path` | uuid (formatted string) | `strfmt.UUID` |  | ✓ |  | Identity Provider unique identifier |
-| code | `query` | string | `string` |  | ✓ |  | OAuth authorization code from IDP |
-| state | `query` | string | `string` |  | ✓ |  | OAuth state parameter for CSRF protection |
+| idp_id | `path` | uuid (formatted string) | `strfmt.UUID` |  | ✓ |  | Identity provider id |
+| code | `query` | string | `string` |  |  |  | The authorization code, absent when the provider reports an error |
+| error | `query` | string | `string` |  |  |  | The provider's error code, for example access_denied |
+| state | `query` | string | `string` |  | ✓ |  | The state the provider echoed back |
 
 #### All responses
 | Code | Status | Description | Has headers | Schema |
 |------|--------|-------------|:-----------:|--------|
-| [302](#01988e60-89e5-72ee-9db4-db5cd7535717-302) | Found | Callback processed successfully. Authentication cookies are set and the caller is redirected to the IDP's configured login or register redirect URL. This endpoint never returns a JSON body on success — it always issues a redirect. | ✓ | [schema](#01988e60-89e5-72ee-9db4-db5cd7535717-302-schema) |
-| [400](#01988e60-89e5-72ee-9db4-db5cd7535717-400) | Bad Request | Invalid parameters, missing state/code, or invalid IDP ID format |  | [schema](#01988e60-89e5-72ee-9db4-db5cd7535717-400-schema) |
-| [404](#01988e60-89e5-72ee-9db4-db5cd7535717-404) | Not Found | Identity Provider not found |  | [schema](#01988e60-89e5-72ee-9db4-db5cd7535717-404-schema) |
-| [409](#01988e60-89e5-72ee-9db4-db5cd7535717-409) | Conflict | User already exists during registration |  | [schema](#01988e60-89e5-72ee-9db4-db5cd7535717-409-schema) |
-| [500](#01988e60-89e5-72ee-9db4-db5cd7535717-500) | Internal Server Error | Internal server error during callback processing |  | [schema](#01988e60-89e5-72ee-9db4-db5cd7535717-500-schema) |
+| [200](#01988e60-89e5-72ee-9db4-db5cd7535717-200) | OK | The outcome |  | [schema](#01988e60-89e5-72ee-9db4-db5cd7535717-200-schema) |
+| [400](#01988e60-89e5-72ee-9db4-db5cd7535717-400) | Bad Request | A state that is missing, spent, expired or minted for another provider, or a missing code |  | [schema](#01988e60-89e5-72ee-9db4-db5cd7535717-400-schema) |
+| [401](#01988e60-89e5-72ee-9db4-db5cd7535717-401) | Unauthorized | The provider refused the sign-in, or the identity is not linked to an account here |  | [schema](#01988e60-89e5-72ee-9db4-db5cd7535717-401-schema) |
+| [404](#01988e60-89e5-72ee-9db4-db5cd7535717-404) | Not Found | Unknown or disabled identity provider |  | [schema](#01988e60-89e5-72ee-9db4-db5cd7535717-404-schema) |
+| [409](#01988e60-89e5-72ee-9db4-db5cd7535717-409) | Conflict | The identity is already linked to an account |  | [schema](#01988e60-89e5-72ee-9db4-db5cd7535717-409-schema) |
+| [429](#01988e60-89e5-72ee-9db4-db5cd7535717-429) | Too Many Requests | Too many requests |  | [schema](#01988e60-89e5-72ee-9db4-db5cd7535717-429-schema) |
+| [500](#01988e60-89e5-72ee-9db4-db5cd7535717-500) | Internal Server Error | Internal server error |  | [schema](#01988e60-89e5-72ee-9db4-db5cd7535717-500-schema) |
+| [503](#01988e60-89e5-72ee-9db4-db5cd7535717-503) | Service Unavailable | The identity provider is not reachable |  | [schema](#01988e60-89e5-72ee-9db4-db5cd7535717-503-schema) |
 
 #### Responses
 
 
-##### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-302"></span> 302 - Callback processed successfully. Authentication cookies are set and the caller is redirected to the IDP's configured login or register redirect URL. This endpoint never returns a JSON body on success — it always issues a redirect.
-Status: Found
+##### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-200"></span> 200 - The outcome
+Status: OK
 
-###### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-302-schema"></span> Schema
+###### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-200-schema"></span> Schema
    
   
 
+[PayloadIDPCallbackResponse](#payload-id-p-callback-response)
 
-
-###### Response headers
-
-| Name | Type | Go type | Separator | Default | Description |
-|------|------|---------|-----------|---------|-------------|
-| Location | string | `string` |  |  | The IDP's configured LoginRedirectURL or RegisterRedirectURL |
-
-##### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-400"></span> 400 - Invalid parameters, missing state/code, or invalid IDP ID format
+##### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-400"></span> 400 - A state that is missing, spent, expired or minted for another provider, or a missing code
 Status: Bad Request
 
 ###### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-400-schema"></span> Schema
@@ -5876,7 +5908,16 @@ Status: Bad Request
 
 [PayloadHTTPMessage](#payload-http-message)
 
-##### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-404"></span> 404 - Identity Provider not found
+##### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-401"></span> 401 - The provider refused the sign-in, or the identity is not linked to an account here
+Status: Unauthorized
+
+###### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-401-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-404"></span> 404 - Unknown or disabled identity provider
 Status: Not Found
 
 ###### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-404-schema"></span> Schema
@@ -5885,7 +5926,7 @@ Status: Not Found
 
 [PayloadHTTPMessage](#payload-http-message)
 
-##### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-409"></span> 409 - User already exists during registration
+##### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-409"></span> 409 - The identity is already linked to an account
 Status: Conflict
 
 ###### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-409-schema"></span> Schema
@@ -5894,10 +5935,28 @@ Status: Conflict
 
 [PayloadHTTPMessage](#payload-http-message)
 
-##### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-500"></span> 500 - Internal server error during callback processing
+##### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-429"></span> 429 - Too many requests
+Status: Too Many Requests
+
+###### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-429-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-500"></span> 500 - Internal server error
 Status: Internal Server Error
 
 ###### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-500-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-503"></span> 503 - The identity provider is not reachable
+Status: Service Unavailable
+
+###### <span id="01988e60-89e5-72ee-9db4-db5cd7535717-503-schema"></span> Schema
    
   
 
@@ -5909,10 +5968,7 @@ Status: Internal Server Error
 GET /auth/idp/{idp_id}/register
 ```
 
-Initiate user registration with specified Identity Provider and returns redirect URL for OAuth registration flow.
-
-#### Consumes
-  * application/json
+Build the authorization URL for a registration. Same flow as a login; the callback creates the account when the provider vouches for the email and allows auto-provisioning
 
 #### Produces
   * application/json
@@ -5921,19 +5977,22 @@ Initiate user registration with specified Identity Provider and returns redirect
 
 | Name | Source | Type | Go type | Separator | Required | Default | Description |
 |------|--------|------|---------|-----------| :------: |---------|-------------|
-| idp_id | `path` | uuid (formatted string) | `strfmt.UUID` |  | ✓ |  | Identity Provider unique identifier |
+| idp_id | `path` | uuid (formatted string) | `strfmt.UUID` |  | ✓ |  | Identity provider id |
 
 #### All responses
 | Code | Status | Description | Has headers | Schema |
 |------|--------|-------------|:-----------:|--------|
-| [200](#019894ba-6014-79cf-bff4-6668484cc7e3-200) | OK | Registration URL generated successfully. RedirectURL and RedirectCode are fields of the JSON body — this endpoint returns 200, it does not itself redirect. |  | [schema](#019894ba-6014-79cf-bff4-6668484cc7e3-200-schema) |
-| [400](#019894ba-6014-79cf-bff4-6668484cc7e3-400) | Bad Request | Invalid IDP ID format or malformed request |  | [schema](#019894ba-6014-79cf-bff4-6668484cc7e3-400-schema) |
-| [500](#019894ba-6014-79cf-bff4-6668484cc7e3-500) | Internal Server Error | Internal server error during URL generation. NOTE: an unknown Identity Provider currently surfaces here rather than as a 404 — the handler has no not-found branch. Tracked as a behaviour defect; this annotation documents what the endpoint does today, not what it should do. |  | [schema](#019894ba-6014-79cf-bff4-6668484cc7e3-500-schema) |
+| [200](#019894ba-6014-79cf-bff4-6668484cc7e3-200) | OK | The URL to send the browser to |  | [schema](#019894ba-6014-79cf-bff4-6668484cc7e3-200-schema) |
+| [400](#019894ba-6014-79cf-bff4-6668484cc7e3-400) | Bad Request | Invalid identity provider id |  | [schema](#019894ba-6014-79cf-bff4-6668484cc7e3-400-schema) |
+| [404](#019894ba-6014-79cf-bff4-6668484cc7e3-404) | Not Found | Unknown or disabled identity provider |  | [schema](#019894ba-6014-79cf-bff4-6668484cc7e3-404-schema) |
+| [429](#019894ba-6014-79cf-bff4-6668484cc7e3-429) | Too Many Requests | Too many requests |  | [schema](#019894ba-6014-79cf-bff4-6668484cc7e3-429-schema) |
+| [500](#019894ba-6014-79cf-bff4-6668484cc7e3-500) | Internal Server Error | Internal server error |  | [schema](#019894ba-6014-79cf-bff4-6668484cc7e3-500-schema) |
+| [503](#019894ba-6014-79cf-bff4-6668484cc7e3-503) | Service Unavailable | The identity provider is not reachable |  | [schema](#019894ba-6014-79cf-bff4-6668484cc7e3-503-schema) |
 
 #### Responses
 
 
-##### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-200"></span> 200 - Registration URL generated successfully. RedirectURL and RedirectCode are fields of the JSON body — this endpoint returns 200, it does not itself redirect.
+##### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-200"></span> 200 - The URL to send the browser to
 Status: OK
 
 ###### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-200-schema"></span> Schema
@@ -5942,7 +6001,7 @@ Status: OK
 
 [PayloadIDPRegisterResponse](#payload-id-p-register-response)
 
-##### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-400"></span> 400 - Invalid IDP ID format or malformed request
+##### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-400"></span> 400 - Invalid identity provider id
 Status: Bad Request
 
 ###### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-400-schema"></span> Schema
@@ -5951,10 +6010,37 @@ Status: Bad Request
 
 [PayloadHTTPMessage](#payload-http-message)
 
-##### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-500"></span> 500 - Internal server error during URL generation. NOTE: an unknown Identity Provider currently surfaces here rather than as a 404 — the handler has no not-found branch. Tracked as a behaviour defect; this annotation documents what the endpoint does today, not what it should do.
+##### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-404"></span> 404 - Unknown or disabled identity provider
+Status: Not Found
+
+###### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-404-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-429"></span> 429 - Too many requests
+Status: Too Many Requests
+
+###### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-429-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-500"></span> 500 - Internal server error
 Status: Internal Server Error
 
 ###### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-500-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-503"></span> 503 - The identity provider is not reachable
+Status: Service Unavailable
+
+###### <span id="019894ba-6014-79cf-bff4-6668484cc7e3-503-schema"></span> Schema
    
   
 
@@ -6667,10 +6753,7 @@ Status: Internal Server Error
 GET /auth/idp/available
 ```
 
-Retrieve all identity providers configured and available for user authentication and registration.
-
-#### Consumes
-  * application/json
+Retrieve every ENABLED identity provider, for the login page. Disabled providers stay configured and are not offered
 
 #### Produces
   * application/json
@@ -6678,14 +6761,14 @@ Retrieve all identity providers configured and available for user authentication
 #### All responses
 | Code | Status | Description | Has headers | Schema |
 |------|--------|-------------|:-----------:|--------|
-| [200](#0198fb33-7333-76f9-bcb4-1af086de3e10-200) | OK | List of available Identity Providers retrieved successfully |  | [schema](#0198fb33-7333-76f9-bcb4-1af086de3e10-200-schema) |
-| [400](#0198fb33-7333-76f9-bcb4-1af086de3e10-400) | Bad Request | Malformed request |  | [schema](#0198fb33-7333-76f9-bcb4-1af086de3e10-400-schema) |
-| [500](#0198fb33-7333-76f9-bcb4-1af086de3e10-500) | Internal Server Error | Internal server error retrieving IDPs |  | [schema](#0198fb33-7333-76f9-bcb4-1af086de3e10-500-schema) |
+| [200](#0198fb33-7333-76f9-bcb4-1af086de3e10-200) | OK | The providers |  | [schema](#0198fb33-7333-76f9-bcb4-1af086de3e10-200-schema) |
+| [429](#0198fb33-7333-76f9-bcb4-1af086de3e10-429) | Too Many Requests | Too many requests |  | [schema](#0198fb33-7333-76f9-bcb4-1af086de3e10-429-schema) |
+| [500](#0198fb33-7333-76f9-bcb4-1af086de3e10-500) | Internal Server Error | Internal server error |  | [schema](#0198fb33-7333-76f9-bcb4-1af086de3e10-500-schema) |
 
 #### Responses
 
 
-##### <span id="0198fb33-7333-76f9-bcb4-1af086de3e10-200"></span> 200 - List of available Identity Providers retrieved successfully
+##### <span id="0198fb33-7333-76f9-bcb4-1af086de3e10-200"></span> 200 - The providers
 Status: OK
 
 ###### <span id="0198fb33-7333-76f9-bcb4-1af086de3e10-200-schema"></span> Schema
@@ -6694,16 +6777,16 @@ Status: OK
 
 [PayloadListIDPAvailableResponse](#payload-list-id-p-available-response)
 
-##### <span id="0198fb33-7333-76f9-bcb4-1af086de3e10-400"></span> 400 - Malformed request
-Status: Bad Request
+##### <span id="0198fb33-7333-76f9-bcb4-1af086de3e10-429"></span> 429 - Too many requests
+Status: Too Many Requests
 
-###### <span id="0198fb33-7333-76f9-bcb4-1af086de3e10-400-schema"></span> Schema
+###### <span id="0198fb33-7333-76f9-bcb4-1af086de3e10-429-schema"></span> Schema
    
   
 
 [PayloadHTTPMessage](#payload-http-message)
 
-##### <span id="0198fb33-7333-76f9-bcb4-1af086de3e10-500"></span> 500 - Internal server error retrieving IDPs
+##### <span id="0198fb33-7333-76f9-bcb4-1af086de3e10-500"></span> 500 - Internal server error
 Status: Internal Server Error
 
 ###### <span id="0198fb33-7333-76f9-bcb4-1af086de3e10-500-schema"></span> Schema
@@ -8289,6 +8372,291 @@ Status: Internal Server Error
 
 [PayloadHTTPMessage](#payload-http-message)
 
+### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a"></span> Initiate IDP link (*01a07319-1d32-7bd2-8ba0-f7da9aaaed0a*)
+
+```
+GET /auth/idp/{idp_id}/link
+```
+
+Build the authorization URL for linking a provider identity to the signed-in account. The only way an existing account gains one: the session proves the account, the provider proves the identity
+
+#### Produces
+  * application/json
+
+#### Security Requirements
+  * AccessToken
+
+#### Parameters
+
+| Name | Source | Type | Go type | Separator | Required | Default | Description |
+|------|--------|------|---------|-----------| :------: |---------|-------------|
+| idp_id | `path` | uuid (formatted string) | `strfmt.UUID` |  | ✓ |  | Identity provider id |
+
+#### All responses
+| Code | Status | Description | Has headers | Schema |
+|------|--------|-------------|:-----------:|--------|
+| [200](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-200) | OK | The URL to send the browser to |  | [schema](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-200-schema) |
+| [400](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-400) | Bad Request | Invalid identity provider id |  | [schema](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-400-schema) |
+| [401](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-401) | Unauthorized | Invalid or expired token |  | [schema](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-401-schema) |
+| [403](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-403) | Forbidden | Not authorized |  | [schema](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-403-schema) |
+| [404](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-404) | Not Found | Unknown or disabled identity provider |  | [schema](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-404-schema) |
+| [429](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-429) | Too Many Requests | Too many requests |  | [schema](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-429-schema) |
+| [500](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-500) | Internal Server Error | Internal server error |  | [schema](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-500-schema) |
+| [503](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-503) | Service Unavailable | The identity provider is not reachable |  | [schema](#01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-503-schema) |
+
+#### Responses
+
+
+##### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-200"></span> 200 - The URL to send the browser to
+Status: OK
+
+###### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-200-schema"></span> Schema
+   
+  
+
+[PayloadIDPLoginResponse](#payload-id-p-login-response)
+
+##### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-400"></span> 400 - Invalid identity provider id
+Status: Bad Request
+
+###### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-400-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-401"></span> 401 - Invalid or expired token
+Status: Unauthorized
+
+###### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-401-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-403"></span> 403 - Not authorized
+Status: Forbidden
+
+###### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-403-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-404"></span> 404 - Unknown or disabled identity provider
+Status: Not Found
+
+###### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-404-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-429"></span> 429 - Too many requests
+Status: Too Many Requests
+
+###### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-429-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-500"></span> 500 - Internal server error
+Status: Internal Server Error
+
+###### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-500-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-503"></span> 503 - The identity provider is not reachable
+Status: Service Unavailable
+
+###### <span id="01a07319-1d32-7bd2-8ba0-f7da9aaaed0a-503-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+### <span id="01a07319-1d32-7ca7-834a-d8dcc6a19fa0"></span> List my linked identities (*01a07319-1d32-7ca7-834a-d8dcc6a19fa0*)
+
+```
+GET /me/identities
+```
+
+The identity providers the signed-in account can sign in through
+
+#### Produces
+  * application/json
+
+#### Security Requirements
+  * AccessToken
+
+#### All responses
+| Code | Status | Description | Has headers | Schema |
+|------|--------|-------------|:-----------:|--------|
+| [200](#01a07319-1d32-7ca7-834a-d8dcc6a19fa0-200) | OK | The linked identities |  | [schema](#01a07319-1d32-7ca7-834a-d8dcc6a19fa0-200-schema) |
+| [401](#01a07319-1d32-7ca7-834a-d8dcc6a19fa0-401) | Unauthorized | Invalid or expired token |  | [schema](#01a07319-1d32-7ca7-834a-d8dcc6a19fa0-401-schema) |
+| [403](#01a07319-1d32-7ca7-834a-d8dcc6a19fa0-403) | Forbidden | Not authorized |  | [schema](#01a07319-1d32-7ca7-834a-d8dcc6a19fa0-403-schema) |
+| [429](#01a07319-1d32-7ca7-834a-d8dcc6a19fa0-429) | Too Many Requests | Too many requests |  | [schema](#01a07319-1d32-7ca7-834a-d8dcc6a19fa0-429-schema) |
+| [500](#01a07319-1d32-7ca7-834a-d8dcc6a19fa0-500) | Internal Server Error | Internal server error |  | [schema](#01a07319-1d32-7ca7-834a-d8dcc6a19fa0-500-schema) |
+
+#### Responses
+
+
+##### <span id="01a07319-1d32-7ca7-834a-d8dcc6a19fa0-200"></span> 200 - The linked identities
+Status: OK
+
+###### <span id="01a07319-1d32-7ca7-834a-d8dcc6a19fa0-200-schema"></span> Schema
+   
+  
+
+[PayloadListUserIdentitiesResponse](#payload-list-user-identities-response)
+
+##### <span id="01a07319-1d32-7ca7-834a-d8dcc6a19fa0-401"></span> 401 - Invalid or expired token
+Status: Unauthorized
+
+###### <span id="01a07319-1d32-7ca7-834a-d8dcc6a19fa0-401-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7ca7-834a-d8dcc6a19fa0-403"></span> 403 - Not authorized
+Status: Forbidden
+
+###### <span id="01a07319-1d32-7ca7-834a-d8dcc6a19fa0-403-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7ca7-834a-d8dcc6a19fa0-429"></span> 429 - Too many requests
+Status: Too Many Requests
+
+###### <span id="01a07319-1d32-7ca7-834a-d8dcc6a19fa0-429-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7ca7-834a-d8dcc6a19fa0-500"></span> 500 - Internal server error
+Status: Internal Server Error
+
+###### <span id="01a07319-1d32-7ca7-834a-d8dcc6a19fa0-500-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08"></span> Unlink my identity (*01a07319-1d32-7cac-885b-6c544f5dbe08*)
+
+```
+DELETE /me/identities/{idp_id}
+```
+
+Remove the identity at one provider from the signed-in account. Refused when it is the only way into an account that has no password
+
+#### Produces
+  * application/json
+
+#### Security Requirements
+  * AccessToken
+
+#### Parameters
+
+| Name | Source | Type | Go type | Separator | Required | Default | Description |
+|------|--------|------|---------|-----------| :------: |---------|-------------|
+| idp_id | `path` | uuid (formatted string) | `strfmt.UUID` |  | ✓ |  | Identity provider id |
+
+#### All responses
+| Code | Status | Description | Has headers | Schema |
+|------|--------|-------------|:-----------:|--------|
+| [200](#01a07319-1d32-7cac-885b-6c544f5dbe08-200) | OK | Identity unlinked |  | [schema](#01a07319-1d32-7cac-885b-6c544f5dbe08-200-schema) |
+| [400](#01a07319-1d32-7cac-885b-6c544f5dbe08-400) | Bad Request | Invalid identity provider id |  | [schema](#01a07319-1d32-7cac-885b-6c544f5dbe08-400-schema) |
+| [401](#01a07319-1d32-7cac-885b-6c544f5dbe08-401) | Unauthorized | Invalid or expired token |  | [schema](#01a07319-1d32-7cac-885b-6c544f5dbe08-401-schema) |
+| [403](#01a07319-1d32-7cac-885b-6c544f5dbe08-403) | Forbidden | Not authorized |  | [schema](#01a07319-1d32-7cac-885b-6c544f5dbe08-403-schema) |
+| [404](#01a07319-1d32-7cac-885b-6c544f5dbe08-404) | Not Found | No identity at that provider |  | [schema](#01a07319-1d32-7cac-885b-6c544f5dbe08-404-schema) |
+| [409](#01a07319-1d32-7cac-885b-6c544f5dbe08-409) | Conflict | It is the only way into the account |  | [schema](#01a07319-1d32-7cac-885b-6c544f5dbe08-409-schema) |
+| [429](#01a07319-1d32-7cac-885b-6c544f5dbe08-429) | Too Many Requests | Too many requests |  | [schema](#01a07319-1d32-7cac-885b-6c544f5dbe08-429-schema) |
+| [500](#01a07319-1d32-7cac-885b-6c544f5dbe08-500) | Internal Server Error | Internal server error |  | [schema](#01a07319-1d32-7cac-885b-6c544f5dbe08-500-schema) |
+
+#### Responses
+
+
+##### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-200"></span> 200 - Identity unlinked
+Status: OK
+
+###### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-200-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-400"></span> 400 - Invalid identity provider id
+Status: Bad Request
+
+###### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-400-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-401"></span> 401 - Invalid or expired token
+Status: Unauthorized
+
+###### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-401-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-403"></span> 403 - Not authorized
+Status: Forbidden
+
+###### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-403-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-404"></span> 404 - No identity at that provider
+Status: Not Found
+
+###### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-404-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-409"></span> 409 - It is the only way into the account
+Status: Conflict
+
+###### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-409-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-429"></span> 429 - Too many requests
+Status: Too Many Requests
+
+###### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-429-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-500"></span> 500 - Internal server error
+Status: Internal Server Error
+
+###### <span id="01a07319-1d32-7cac-885b-6c544f5dbe08-500-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
 ## Models
 
 ### <span id="domain-check"></span> domain.Check
@@ -8480,16 +8848,17 @@ Status: Internal Server Error
 
 | Name | Type | Go type | Required | Default | Description | Example |
 |------|------|---------|:--------:| ------- |-------------|---------|
+| auto_provision | boolean| `bool` |  | | Defaults to true | `true` |
 | callback_url | uri (formatted string)| `strfmt.URI` | ✓ | | OAuth callback URL | `http://localhost:8080/api/v1/auth/idp/019b4b0d-a682-7e19-a524-866cfffef121/callback` |
 | client_id | string (formatted string)| `string` | ✓ | | OAuth client ID | `367082405970-example` |
 | client_secret | string (formatted string)| `string` | ✓ | | OAuth client secret | `GOCSPX-example_secret_key` |
 | description | string (formatted string)| `string` | ✓ | | Description | `Google OAuth2 Identity Provider` |
+| enabled | boolean| `bool` |  | | Defaults to true | `true` |
 | id | uuid (formatted string)| `strfmt.UUID` |  | | Optional custom ID | `019b4b0d-a682-7e19-a524-866cfffef121` |
 | idp_type_id | uuid (formatted string)| `strfmt.UUID` | ✓ | | Identity provider type ID | `019b4b0d-a682-7e1d-bd83-3864c7d5aa43` |
-| login_redirect_url | uri (formatted string)| `strfmt.URI` | ✓ | | Login redirect URL | `https://example.com/login` |
+| issuer_url | uri (formatted string)| `strfmt.URI` |  | | Required for an oidc kind; the value the ID token's iss must equal | `https://accounts.google.com` |
 | logo | uri (formatted string)| `strfmt.URI` |  | | Logo URL | `https://example.com/logo.png` |
 | name | string (formatted string)| `string` | ✓ | | Display name | `Google` |
-| register_redirect_url | uri (formatted string)| `strfmt.URI` | ✓ | | Registration redirect URL | `https://example.com/register` |
 
 
 
@@ -8768,11 +9137,32 @@ Status: Internal Server Error
 
 | Name | Type | Go type | Required | Default | Description | Example |
 |------|------|---------|:--------:| ------- |-------------|---------|
+| auto_provision | boolean (formatted boolean)| `bool` |  | | Whether a sign-in from an identity nobody has linked yet creates an</br>account. The login page offers "register with" only when this is true. | `true` |
 | description | string (formatted string)| `string` |  | | Detailed description | `Google Identity Provider` |
 | id | uuid (formatted string)| `strfmt.UUID` |  | | Unique identifier | `019b4b0d-a682-7d88-9ce1-12d63815e879` |
 | idp_type | [PayloadIDPAvailableResponse](#payload-id-p-available-response)| `PayloadIDPAvailableResponse` |  | | Type information for this identity provider |  |
 | logo | uri (formatted string)| `strfmt.URI` |  | | URL to the identity provider's logo image | `https://example.com/logo.png` |
 | name | string (formatted string)| `string` |  | | Display name of the identity provider | `Google` |
+
+
+
+### <span id="payload-id-p-callback-response"></span> payload.IDPCallbackResponse
+
+
+> The outcome of a provider callback: a session for login and register, the linked account for link
+  
+
+
+
+
+
+**Properties**
+
+| Name | Type | Go type | Required | Default | Description | Example |
+|------|------|---------|:--------:| ------- |-------------|---------|
+| event | string (formatted string)| `string` |  | | Which event the state was minted for | `login` |
+| linked_to | uuid (formatted string)| `strfmt.UUID` |  | | The account, for link | `019b4b0d-a682-7e34-a20c-c71a7147d7e7` |
+| login | [PayloadIDPCallbackResponse](#payload-id-p-callback-response)| `PayloadIDPCallbackResponse` |  | | The session, for login and register |  |
 
 
 
@@ -8830,16 +9220,17 @@ Status: Internal Server Error
 
 | Name | Type | Go type | Required | Default | Description | Example |
 |------|------|---------|:--------:| ------- |-------------|---------|
-| callback_url | uri (formatted string)| `strfmt.URI` |  | | OAuth callback URL | `https://example.com/callback` |
+| auto_provision | boolean| `bool` |  | | A first sign-in with a provider-verified email may create an account | `true` |
+| callback_url | uri (formatted string)| `strfmt.URI` |  | | The redirect_uri registered with the provider: the frontend's callback route URL | `https://app.example.com/auth/idp/019b4b0d-a682-7e19-a524-866cfffef121/callback` |
 | client_id | string (formatted string)| `string` |  | | OAuth client ID | `367082405970-example` |
 | created_at | date-time (formatted string)| `strfmt.DateTime` |  | | Timestamp when the identity provider was created | `2021-01-01T00:00:00Z` |
 | description | string (formatted string)| `string` |  | | Description | `Google Identity Provider` |
+| enabled | boolean| `bool` |  | | Offered on the login page and accepted at the callback | `true` |
 | id | uuid (formatted string)| `strfmt.UUID` |  | | Unique identifier | `019b4b0d-a682-7e11-90b0-c94f29b8483a` |
 | idp_type | [PayloadIDPResponse](#payload-id-p-response)| `PayloadIDPResponse` |  | | Type |  |
-| login_redirect_url | uri (formatted string)| `strfmt.URI` |  | | Login redirect URL | `https://example.com/login` |
+| issuer_url | uri (formatted string)| `strfmt.URI` |  | | OpenID Connect issuer; empty for the github kind | `https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0` |
 | logo | uri (formatted string)| `strfmt.URI` |  | | Logo URL | `https://example.com/logo.png` |
 | name | string (formatted string)| `string` |  | | Display name | `Google` |
-| register_redirect_url | uri (formatted string)| `strfmt.URI` |  | | Registration redirect URL | `https://example.com/register` |
 | updated_at | date-time (formatted string)| `strfmt.DateTime` |  | | Timestamp when the identity provider was last updated | `2021-01-01T00:00:00Z` |
 
 
@@ -8881,12 +9272,14 @@ Status: Internal Server Error
 | created_at | date-time (formatted string)| `strfmt.DateTime` |  | | Timestamp when the identity provider type was created | `2021-01-01T00:00:00Z` |
 | description | string (formatted string)| `string` |  | | Detailed description of the identity provider type and its capabilities | `Google OAuth2.0 Identity Provider` |
 | id | uuid (formatted string)| `strfmt.UUID` |  | | Unique identifier for the identity provider type | `019b4b0d-a682-7e30-8b33-650caa6446c7` |
+| issuer_hint | uri (formatted string)| `strfmt.URI` |  | | What to put in an instance's issuer_url; empty for the github kind | `https://login.microsoftonline.com/\u003ctenant-id\u003e/v2.0` |
+| kind | string (formatted string)| `string` |  | | How the provider is spoken to: oidc (discovery, PKCE, ID token) or github (plain OAuth2) | `oidc` |
 | name | string (formatted string)| `string` |  | | Display name of the identity provider type (e.g., Google, Github, Microsoft) | `Google` |
 | scopes | []csv (formatted string)| `[]string` |  | | OAuth scopes required for this identity provider type | `["openid","email","profile"]` |
 | serial_id | integer| `int64` |  | | Sequential identifier for ordering | `1` |
 | system | boolean| `bool` |  | | Indicates if this is a system-managed identity provider type (cannot be deleted) | `true` |
 | updated_at | date-time (formatted string)| `strfmt.DateTime` |  | | Timestamp when the identity provider type was last updated | `2021-01-01T00:00:00Z` |
-| user_info_api_url | uri (formatted string)| `strfmt.URI` |  | | API endpoint URL to retrieve user information after authentication | `https://www.googleapis.com/oauth2/v3/userinfo` |
+| user_info_api_url | uri (formatted string)| `strfmt.URI` |  | | User-info endpoint, stated only for the github kind; an oidc kind discovers it | `https://api.github.com/user` |
 
 
 
@@ -9185,6 +9578,24 @@ Status: Internal Server Error
 |------|------|---------|:--------:| ------- |-------------|---------|
 | items | [][PayloadRoleResponse](#payload-role-response)| `[]*PayloadRoleResponse` |  | | Array of role configurations |  |
 | paginator | [PayloadListRolesResponse](#payload-list-roles-response)| `PayloadListRolesResponse` |  | | Pagination information including total count and page details |  |
+
+
+
+### <span id="payload-list-user-identities-response"></span> payload.ListUserIdentitiesResponse
+
+
+> The provider identities linked to the account
+  
+
+
+
+
+
+**Properties**
+
+| Name | Type | Go type | Required | Default | Description | Example |
+|------|------|---------|:--------:| ------- |-------------|---------|
+| items | [][PayloadUserIdentityResponse](#payload-user-identity-response)| `[]*PayloadUserIdentityResponse` |  | |  |  |
 
 
 
@@ -9843,15 +10254,16 @@ Status: Internal Server Error
 
 | Name | Type | Go type | Required | Default | Description | Example |
 |------|------|---------|:--------:| ------- |-------------|---------|
+| auto_provision | boolean| `bool` |  | | Updated auto-provision flag | `false` |
 | callback_url | uri (formatted string)| `strfmt.URI` |  | | Updated callback URL | `https://example.com/callback` |
 | client_id | string (formatted string)| `string` |  | | Updated OAuth client ID | `367082405970-new` |
 | client_secret | string (formatted string)| `string` |  | | Updated OAuth client secret | `GOCSPX-new_secret` |
 | description | string (formatted string)| `string` |  | | Updated description | `Updated Google Identity Provider` |
+| enabled | boolean| `bool` |  | | Updated enabled flag | `false` |
 | idp_type_id | uuid (formatted string)| `strfmt.UUID` |  | | Updated IDP type ID | `019b4b0d-a682-7e21-9f5c-725b8be59cd5` |
-| login_redirect_url | uri (formatted string)| `strfmt.URI` |  | | Updated login redirect URL | `https://example.com/login` |
+| issuer_url | uri (formatted string)| `strfmt.URI` |  | | Updated issuer; an empty string clears it | `https://accounts.google.com` |
 | logo | uri (formatted string)| `strfmt.URI` |  | | Updated logo URL | `https://example.com/logo-new.png` |
 | name | string (formatted string)| `string` |  | | Updated display name | `Google Updated` |
-| register_redirect_url | uri (formatted string)| `strfmt.URI` |  | | Updated registration redirect URL | `https://example.com/register` |
 
 
 
@@ -10038,6 +10450,28 @@ Status: Internal Server Error
 | Name | Type | Go type | Required | Default | Description | Example |
 |------|------|---------|:--------:| ------- |-------------|---------|
 | permissions | [PayloadUserAuthzResponse](#payload-user-authz-response)| `PayloadUserAuthzResponse` |  | | Effective permissions, keyed by category |  |
+
+
+
+### <span id="payload-user-identity-response"></span> payload.UserIdentityResponse
+
+
+> A provider identity linked to the account
+  
+
+
+
+
+
+**Properties**
+
+| Name | Type | Go type | Required | Default | Description | Example |
+|------|------|---------|:--------:| ------- |-------------|---------|
+| email | email (formatted string)| `strfmt.Email` |  | | The email the provider reported when the link was made | `jane@example.com` |
+| idp_id | uuid (formatted string)| `strfmt.UUID` |  | | The provider row | `019b4b0d-a682-7e19-a524-866cfffef121` |
+| idp_name | string (formatted string)| `string` |  | | The provider row's name | `Company Entra ID` |
+| idp_type_name | string (formatted string)| `string` |  | | The provider's type | `EntraID` |
+| linked_at | date-time (formatted string)| `strfmt.DateTime` |  | | When the link was made | `2026-09-05T10:12:00Z` |
 
 
 

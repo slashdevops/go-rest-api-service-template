@@ -29,6 +29,7 @@ type Repositories struct {
 	ResourcesLimits *repositorypg.ResourcesLimitsRepository
 	RateLimits      *repositorypg.RateLimitsRepository
 	TokenLifetimes  *repositorypg.TokenLifetimesRepository
+	UsersIdentities *repositorypg.UsersIdentitiesRepository
 }
 
 // Services holds all service instances for business logic layer.

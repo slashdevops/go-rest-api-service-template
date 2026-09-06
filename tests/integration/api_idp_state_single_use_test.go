@@ -28,16 +28,16 @@ func createIDP(t *testing.T, accessToken string) string {
 	idpID := mustUUIDString(t)
 
 	response, err := sendHTTPRequest(t, t.Context(), idpsCreateEndpoint, map[string]any{
-		"id":                    idpID,
-		"idp_type_id":           getIDPTypeFromDBByName(t, "Google").ID,
-		"name":                  generateRandomName(t, "StateIDP"),
-		"description":           "created by the state replay test",
-		"callback_url":          "http://localhost:8080/api/v1/auth/idp/callback",
-		"login_redirect_url":    "http://localhost:8080/login",
-		"register_redirect_url": "http://localhost:8080/register",
-		"logo":                  "https://example.com/logo.png",
-		"client_id":             "test-client-id",
-		"client_secret":         "test-client-secret",
+		"id": idpID,
+		// The Github kind: an oidc provider would fetch its discovery document
+		// when the flow starts, and this test is about the state, not the network.
+		"idp_type_id":   getIDPTypeFromDBByName(t, "Github").ID,
+		"name":          generateRandomName(t, "StateIDP"),
+		"description":   "created by the state replay test",
+		"callback_url":  "http://localhost:8080/api/v1/auth/idp/callback",
+		"logo":          "https://example.com/logo.png",
+		"client_id":     "test-client-id",
+		"client_secret": "test-client-secret",
 	}, header)
 	require.NoError(t, err, "Error creating the IDP")
 	require.Equal(t, http.StatusCreated, response.StatusCode,

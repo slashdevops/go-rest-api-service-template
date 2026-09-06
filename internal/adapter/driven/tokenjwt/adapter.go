@@ -224,6 +224,7 @@ func (s *Signer) VerifyKeyIDs() []string {
 type tokenCustomClaims struct {
 	IDP       string           `json:"idp,omitempty"`
 	Email     string           `json:"email,omitempty"`
+	Data      string           `json:"data,omitempty"`
 	TokenType domain.TokenType `json:"token_type"`
 	jwt.RegisteredClaims
 }
@@ -255,6 +256,7 @@ func (s *Signer) Sign(_ context.Context, claims domain.JWTClaims) (string, error
 	tokenClaims := tokenCustomClaims{
 		IDP:       claims.IDP,
 		Email:     claims.Email,
+		Data:      claims.Data,
 		TokenType: claims.TokenType,
 		ID:        jwtID.String(),
 		Issuer:    claims.Issuer,

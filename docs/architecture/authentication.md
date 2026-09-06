@@ -9,6 +9,11 @@ at identity.
 
 ## Token classes
 
+> Sign-in through Google, GitHub, Entra ID or Okta — what a provider is
+> trusted for, identity by subject rather than email, the frontend callback
+> and the PKCE/nonce/ID-token flow — is its own document:
+> [Identity providers](./identity-providers.md).
+
 > How long the access and refresh tokens live, where that number is stored,
 > and what a change does to tokens already issued is its own document:
 > [Token lifetimes](./token-lifetimes.md).

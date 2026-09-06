@@ -218,7 +218,7 @@ func (a *App) initHTTPServer(ctx context.Context) error {
 	a.handlers.Authn.RegisterRoutes(apiRouter, accessTokenMiddlewares, logoutMiddlewares, refreshTokenMiddlewares, passwordResetTokenMiddlewares, verificationTokenMiddlewares)
 	a.handlers.IDPTypes.RegisterRoutes(apiRouter, accessTokenMiddlewares)
 	a.handlers.IDPs.RegisterRoutes(apiRouter, accessTokenMiddlewares)
-	a.handlers.AuthnIDPs.RegisterRoutes(apiRouter)
+	a.handlers.AuthnIDPs.RegisterRoutes(apiRouter, accessTokenMiddlewares)
 	a.handlers.ResourcesLimits.RegisterRoutes(apiRouter, accessTokenMiddlewares)
 	a.handlers.RateLimits.RegisterRoutes(apiRouter, accessTokenMiddlewares)
 	a.handlers.TokenLifetimes.RegisterRoutes(apiRouter, accessTokenMiddlewares)

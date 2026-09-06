@@ -163,6 +163,7 @@ definitions:
     - Bearer
     - idp_signin
     - idp_register
+    - idp_link
     type: string
     x-enum-varnames:
     - TokenTypeAccess
@@ -173,6 +174,7 @@ definitions:
     - TokenTypeBearer
     - TokenTypeIDPSignin
     - TokenTypeIDPRegister
+    - TokenTypeIDPLink
   payload.AuthzPaths:
     additionalProperties:
       description: HTTP methods granted on a path. "*" means every method
@@ -195,6 +197,10 @@ definitions:
   payload.CreateIDPRequest:
     description: Request payload for creating a new identity provider configuration
     properties:
+      auto_provision:
+        description: Defaults to true
+        example: true
+        type: boolean
       callback_url:
         description: OAuth callback URL
         example: http://localhost:8080/api/v1/auth/idp/019b4b0d-a682-7e19-a524-866cfffef121/callback
@@ -221,6 +227,10 @@ definitions:
         maxLength: 500
         minLength: 10
         type: string
+      enabled:
+        description: Defaults to true
+        example: true
+        type: boolean
       id:
         description: Optional custom ID
         example: 019b4b0d-a682-7e19-a524-866cfffef121
@@ -231,9 +241,10 @@ definitions:
         example: 019b4b0d-a682-7e1d-bd83-3864c7d5aa43
         format: uuid
         type: string
-      login_redirect_url:
-        description: Login redirect URL
-        example: https://example.com/login
+      issuer_url:
+        description: Required for an oidc kind; the value the ID token's iss must
+          equal
+        example: https://accounts.google.com
         format: uri
         type: string
       logo:
@@ -250,20 +261,13 @@ definitions:
         maxLength: 100
         minLength: 2
         type: string
-      register_redirect_url:
-        description: Registration redirect URL
-        example: https://example.com/register
-        format: uri
-        type: string
     required:
     - callback_url
     - client_id
     - client_secret
     - description
     - idp_type_id
-    - login_redirect_url
     - name
-    - register_redirect_url
     type: object
   payload.CreatePolicyRequest:
     description: Request payload for creating a new authorization policy
@@ -663,6 +667,13 @@ definitions:
     description: Available identity provider information including type and branding
       details
     properties:
+      auto_provision:
+        description: |-
+          Whether a sign-in from an identity nobody has linked yet creates an
+          account. The login page offers "register with" only when this is true.
+        example: true
+        format: boolean
+        type: boolean
       description:
         description: Detailed description
         example: Google Identity Provider
@@ -687,6 +698,25 @@ definitions:
         example: Google
         format: string
         type: string
+    type: object
+  payload.IDPCallbackResponse:
+    description: 'The outcome of a provider callback: a session for login and register,
+      the linked account for link'
+    properties:
+      event:
+        description: Which event the state was minted for
+        example: login
+        format: string
+        type: string
+      linked_to:
+        description: The account, for link
+        example: 019b4b0d-a682-7e34-a20c-c71a7147d7e7
+        format: uuid
+        type: string
+      login:
+        allOf:
+        - $ref: '#/definitions/payload.LoginUserResponse'
+        description: The session, for login and register
     type: object
   payload.IDPLoginResponse:
     description: Response containing OAuth redirect information for initiating login
@@ -722,9 +752,15 @@ definitions:
     description: Complete identity provider configuration including OAuth credentials
       and redirect URLs
     properties:
+      auto_provision:
+        description: A first sign-in with a provider-verified email may create an
+          account
+        example: true
+        type: boolean
       callback_url:
-        description: OAuth callback URL
-        example: https://example.com/callback
+        description: 'The redirect_uri registered with the provider: the frontend''s
+          callback route URL'
+        example: https://app.example.com/auth/idp/019b4b0d-a682-7e19-a524-866cfffef121/callback
         format: uri
         type: string
       client_id:
@@ -742,6 +778,10 @@ definitions:
         example: Google Identity Provider
         format: string
         type: string
+      enabled:
+        description: Offered on the login page and accepted at the callback
+        example: true
+        type: boolean
       id:
         description: Unique identifier
         example: 019b4b0d-a682-7e11-90b0-c94f29b8483a
@@ -751,9 +791,9 @@ definitions:
         allOf:
         - $ref: '#/definitions/payload.IDPTypesResponse'
         description: Type
-      login_redirect_url:
-        description: Login redirect URL
-        example: https://example.com/login
+      issuer_url:
+        description: OpenID Connect issuer; empty for the github kind
+        example: https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0
         format: uri
         type: string
       logo:
@@ -765,11 +805,6 @@ definitions:
         description: Display name
         example: Google
         format: string
-        type: string
-      register_redirect_url:
-        description: Registration redirect URL
-        example: https://example.com/register
-        format: uri
         type: string
       updated_at:
         description: Timestamp when the identity provider was last updated
@@ -815,6 +850,18 @@ definitions:
         example: 019b4b0d-a682-7e30-8b33-650caa6446c7
         format: uuid
         type: string
+      issuer_hint:
+        description: What to put in an instance's issuer_url; empty for the github
+          kind
+        example: https://login.microsoftonline.com/<tenant-id>/v2.0
+        format: uri
+        type: string
+      kind:
+        description: 'How the provider is spoken to: oidc (discovery, PKCE, ID token)
+          or github (plain OAuth2)'
+        example: oidc
+        format: string
+        type: string
       name:
         description: Display name of the identity provider type (e.g., Google, Github,
           Microsoft)
@@ -846,8 +893,9 @@ definitions:
         format: date-time
         type: string
       user_info_api_url:
-        description: API endpoint URL to retrieve user information after authentication
-        example: https://www.googleapis.com/oauth2/v3/userinfo
+        description: User-info endpoint, stated only for the github kind; an oidc
+          kind discovers it
+        example: https://api.github.com/user
         format: uri
         type: string
     type: object
@@ -1074,6 +1122,14 @@ definitions:
         allOf:
         - $ref: '#/definitions/domain.Paginator'
         description: Pagination information including total count and page details
+    type: object
+  payload.ListUserIdentitiesResponse:
+    description: The provider identities linked to the account
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/payload.UserIdentityResponse'
+        type: array
     type: object
   payload.ListUsersResponse:
     description: Paginated list of user accounts in the system
@@ -1872,6 +1928,10 @@ definitions:
     description: Request payload for updating an existing identity provider configuration
       (all fields optional)
     properties:
+      auto_provision:
+        description: Updated auto-provision flag
+        example: false
+        type: boolean
       callback_url:
         description: Updated callback URL
         example: https://example.com/callback
@@ -1898,14 +1958,18 @@ definitions:
         maxLength: 500
         minLength: 10
         type: string
+      enabled:
+        description: Updated enabled flag
+        example: false
+        type: boolean
       idp_type_id:
         description: Updated IDP type ID
         example: 019b4b0d-a682-7e21-9f5c-725b8be59cd5
         format: uuid
         type: string
-      login_redirect_url:
-        description: Updated login redirect URL
-        example: https://example.com/login
+      issuer_url:
+        description: Updated issuer; an empty string clears it
+        example: https://accounts.google.com
         format: uri
         type: string
       logo:
@@ -1921,11 +1985,6 @@ definitions:
         format: string
         maxLength: 100
         minLength: 2
-        type: string
-      register_redirect_url:
-        description: Updated registration redirect URL
-        example: https://example.com/register
-        format: uri
         type: string
     type: object
   payload.UpdateMeRequest:
@@ -2162,6 +2221,35 @@ definitions:
         - $ref: '#/definitions/payload.AuthzPermissions'
         description: Effective permissions, keyed by category
     type: object
+  payload.UserIdentityResponse:
+    description: A provider identity linked to the account
+    properties:
+      email:
+        description: The email the provider reported when the link was made
+        example: jane@example.com
+        format: email
+        type: string
+      idp_id:
+        description: The provider row
+        example: 019b4b0d-a682-7e19-a524-866cfffef121
+        format: uuid
+        type: string
+      idp_name:
+        description: The provider row's name
+        example: Company Entra ID
+        format: string
+        type: string
+      idp_type_name:
+        description: The provider's type
+        example: EntraID
+        format: string
+        type: string
+      linked_at:
+        description: When the link was made
+        example: "2026-09-05T10:12:00Z"
+        format: date-time
+        type: string
+    type: object
   payload.UserResponse:
     description: UserResponse represents a user entity.
     properties:
@@ -2288,70 +2376,78 @@ info:
 paths:
   /auth/idp/{idp_id}/callback:
     get:
-      consumes:
-      - application/json
-      description: Process OAuth callback from Identity Provider, validates state
-        and authorization code.
+      description: 'Called by the frontend callback route with the state and code
+        from the provider, never by the browser: JSON answer, no cookie, no redirect.
+        Spends the state, exchanges the code with PKCE, resolves the identity by subject'
       operationId: 01988e60-89e5-72ee-9db4-db5cd7535717
       parameters:
-      - description: Identity Provider unique identifier
+      - description: Identity provider id
         format: uuid
         in: path
         name: idp_id
         required: true
         type: string
-      - description: OAuth state parameter for CSRF protection
+      - description: The state the provider echoed back
         in: query
         name: state
         required: true
         type: string
-      - description: OAuth authorization code from IDP
+      - description: The authorization code, absent when the provider reports an error
         in: query
         name: code
-        required: true
+        type: string
+      - description: The provider's error code, for example access_denied
+        in: query
+        name: error
         type: string
       produces:
       - application/json
       responses:
-        "302":
-          description: Callback processed successfully. Authentication cookies are
-            set and the caller is redirected to the IDP's configured login or register
-            redirect URL. This endpoint never returns a JSON body on success — it
-            always issues a redirect.
-          headers:
-            Location:
-              description: The IDP's configured LoginRedirectURL or RegisterRedirectURL
-              type: string
+        "200":
+          description: The outcome
           schema:
-            type: string
+            $ref: '#/definitions/payload.IDPCallbackResponse'
         "400":
-          description: Invalid parameters, missing state/code, or invalid IDP ID format
+          description: A state that is missing, spent, expired or minted for another
+            provider, or a missing code
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "401":
+          description: The provider refused the sign-in, or the identity is not linked
+            to an account here
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "404":
-          description: Identity Provider not found
+          description: Unknown or disabled identity provider
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "409":
-          description: User already exists during registration
+          description: The identity is already linked to an account
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "429":
+          description: Too many requests
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "500":
-          description: Internal server error during callback processing
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "503":
+          description: The identity provider is not reachable
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
       summary: Handle IDP OAuth callback
       tags:
-      - Authentication
-  /auth/idp/{idp_id}/login:
+      - AuthnIDPs
+  /auth/idp/{idp_id}/link:
     get:
-      consumes:
-      - application/json
-      description: Initiate authentication with specified Identity Provider and returns
-        redirect URL for OAuth flow.
-      operationId: 01988e60-89e5-72ab-adb4-3eef95d1afd3
+      description: 'Build the authorization URL for linking a provider identity to
+        the signed-in account. The only way an existing account gains one: the session
+        proves the account, the provider proves the identity'
+      operationId: 01a07319-1d32-7bd2-8ba0-f7da9aaaed0a
       parameters:
-      - description: Identity Provider unique identifier
+      - description: Identity provider id
         format: uuid
         in: path
         name: idp_id
@@ -2361,34 +2457,93 @@ paths:
       - application/json
       responses:
         "200":
-          description: Login URL generated successfully. RedirectURL and RedirectCode
-            are fields of the JSON body — this endpoint returns 200, it does not itself
-            redirect.
+          description: The URL to send the browser to
           schema:
             $ref: '#/definitions/payload.IDPLoginResponse'
         "400":
-          description: Invalid IDP ID format or malformed request
+          description: Invalid identity provider id
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "401":
+          description: Invalid or expired token
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "403":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "404":
+          description: Unknown or disabled identity provider
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "429":
+          description: Too many requests
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "500":
-          description: 'Internal server error during URL generation. NOTE: an unknown
-            Identity Provider currently surfaces here rather than as a 404 — the handler
-            has no not-found branch. Tracked as a behaviour defect; this annotation
-            documents what the endpoint does today, not what it should do.'
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "503":
+          description: The identity provider is not reachable
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+      security:
+      - AccessToken: []
+      summary: Initiate IDP link
+      tags:
+      - AuthnIDPs
+  /auth/idp/{idp_id}/login:
+    get:
+      description: Build the authorization URL for a sign-in. The caller sends the
+        browser there; the provider returns it to the frontend callback route with
+        a state and a code
+      operationId: 01988e60-89e5-72ab-adb4-3eef95d1afd3
+      parameters:
+      - description: Identity provider id
+        format: uuid
+        in: path
+        name: idp_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: The URL to send the browser to
+          schema:
+            $ref: '#/definitions/payload.IDPLoginResponse'
+        "400":
+          description: Invalid identity provider id
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "404":
+          description: Unknown or disabled identity provider
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "429":
+          description: Too many requests
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "503":
+          description: The identity provider is not reachable
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
       summary: Initiate IDP login
       tags:
-      - Authentication
+      - AuthnIDPs
   /auth/idp/{idp_id}/register:
     get:
-      consumes:
-      - application/json
-      description: Initiate user registration with specified Identity Provider and
-        returns redirect URL for OAuth registration flow.
+      description: Build the authorization URL for a registration. Same flow as a
+        login; the callback creates the account when the provider vouches for the
+        email and allows auto-provisioning
       operationId: 019894ba-6014-79cf-bff4-6668484cc7e3
       parameters:
-      - description: Identity Provider unique identifier
+      - description: Identity provider id
         format: uuid
         in: path
         name: idp_id
@@ -2398,50 +2553,55 @@ paths:
       - application/json
       responses:
         "200":
-          description: Registration URL generated successfully. RedirectURL and RedirectCode
-            are fields of the JSON body — this endpoint returns 200, it does not itself
-            redirect.
+          description: The URL to send the browser to
           schema:
             $ref: '#/definitions/payload.IDPRegisterResponse'
         "400":
-          description: Invalid IDP ID format or malformed request
+          description: Invalid identity provider id
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "404":
+          description: Unknown or disabled identity provider
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "429":
+          description: Too many requests
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "500":
-          description: 'Internal server error during URL generation. NOTE: an unknown
-            Identity Provider currently surfaces here rather than as a 404 — the handler
-            has no not-found branch. Tracked as a behaviour defect; this annotation
-            documents what the endpoint does today, not what it should do.'
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "503":
+          description: The identity provider is not reachable
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
       summary: Initiate IDP registration
       tags:
-      - Authentication
+      - AuthnIDPs
   /auth/idp/available:
     get:
-      consumes:
-      - application/json
-      description: Retrieve all identity providers configured and available for user
-        authentication and registration.
+      description: Retrieve every ENABLED identity provider, for the login page. Disabled
+        providers stay configured and are not offered
       operationId: 0198fb33-7333-76f9-bcb4-1af086de3e10
       produces:
       - application/json
       responses:
         "200":
-          description: List of available Identity Providers retrieved successfully
+          description: The providers
           schema:
             $ref: '#/definitions/payload.ListIDPAvailableResponse'
-        "400":
-          description: Malformed request
+        "429":
+          description: Too many requests
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "500":
-          description: Internal server error retrieving IDPs
+          description: Internal server error
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
       summary: List identity providers
       tags:
-      - Authentication
+      - AuthnIDPs
   /auth/idp_types:
     get:
       description: Retrieve a paginated list of all Identity Provider Types available
@@ -3503,6 +3663,90 @@ paths:
       tags:
       - Me
       - Authorization
+  /me/identities:
+    get:
+      description: The identity providers the signed-in account can sign in through
+      operationId: 01a07319-1d32-7ca7-834a-d8dcc6a19fa0
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: The linked identities
+          schema:
+            $ref: '#/definitions/payload.ListUserIdentitiesResponse'
+        "401":
+          description: Invalid or expired token
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "403":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "429":
+          description: Too many requests
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+      security:
+      - AccessToken: []
+      summary: List my linked identities
+      tags:
+      - Me
+  /me/identities/{idp_id}:
+    delete:
+      description: Remove the identity at one provider from the signed-in account.
+        Refused when it is the only way into an account that has no password
+      operationId: 01a07319-1d32-7cac-885b-6c544f5dbe08
+      parameters:
+      - description: Identity provider id
+        format: uuid
+        in: path
+        name: idp_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Identity unlinked
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "400":
+          description: Invalid identity provider id
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "401":
+          description: Invalid or expired token
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "403":
+          description: Not authorized
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "404":
+          description: No identity at that provider
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "409":
+          description: It is the only way into the account
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "429":
+          description: Too many requests
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+      security:
+      - AccessToken: []
+      summary: Unlink my identity
+      tags:
+      - Me
   /me/resources_limits:
     get:
       description: 'Retrieve the limits that apply to the calling user and how much

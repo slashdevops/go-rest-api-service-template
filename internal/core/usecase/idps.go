@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"strings"
 	"time"
+
 	"uuid"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -19,7 +20,12 @@ import (
 )
 
 type IDPsServiceConf struct {
-	Repository      repository.IDPs
+	Repository repository.IDPs
+
+	// IDPTypes answers which KIND a provider is, which decides whether an
+	// issuer is required. Without it an oidc row with no issuer is accepted and
+	// fails at the first sign-in, when the operator is no longer looking.
+	IDPTypes        repository.IDPTypes
 	CacheService    cache.Cache
 	Cipher          cipher.Cipher
 	ResourcesLimits ResourcesLimitsServiceConsumer
@@ -29,6 +35,7 @@ type IDPsServiceConf struct {
 
 type IDPsService struct {
 	repository      repository.IDPs
+	idpTypes        repository.IDPTypes
 	cacheService    cache.Cache
 	cipher          cipher.Cipher
 	resourcesLimits ResourcesLimitsServiceConsumer
@@ -41,6 +48,10 @@ type IDPsService struct {
 func NewIDPsService(conf IDPsServiceConf) (*IDPsService, error) {
 	if conf.Repository == nil {
 		return nil, &domain.InvalidRepositoryError{Message: "Repository is nil, but it is required for IDPsService"}
+	}
+
+	if conf.IDPTypes == nil {
+		return nil, &domain.InvalidRepositoryError{Message: "IDPTypes is nil, but it is required for IDPsService"}
 	}
 
 	if conf.Cipher == nil {
@@ -57,6 +68,7 @@ func NewIDPsService(conf IDPsServiceConf) (*IDPsService, error) {
 
 	ref := &IDPsService{
 		repository:      conf.Repository,
+		idpTypes:        conf.IDPTypes,
 		cacheService:    conf.CacheService,
 		cipher:          conf.Cipher,
 		resourcesLimits: conf.ResourcesLimits,
@@ -264,6 +276,10 @@ func (ref *IDPsService) Create(ctx context.Context, input *domain.CreateIDPInput
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
 
+	if err := ref.requireIssuerForKind(ctx, input.IDPTypeID, input.IssuerURL); err != nil {
+		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
 	// Check resource limits
 	rlScope := domain.ResourcesLimitsScope{
 		Type: domain.ResourcesLimitsScopeTypeSystem,
@@ -328,6 +344,30 @@ func (ref *IDPsService) UpdateByID(ctx context.Context, input *domain.UpdateIDPI
 
 	if err := input.Validate(); err != nil {
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	// The kind and the issuer after this update, whichever of the two moved:
+	// a row changing to the oidc kind needs an issuer, and an oidc row may not
+	// clear its issuer.
+	if input.IDPTypeID != nil || input.IssuerURL != nil {
+		current, err := ref.repository.SelectByID(ctx, input.ID)
+		if err != nil {
+			return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		}
+
+		typeID, issuer := current.IDPType.ID, current.IssuerURL
+
+		if input.IDPTypeID != nil {
+			typeID = *input.IDPTypeID
+		}
+
+		if input.IssuerURL != nil {
+			issuer = *input.IssuerURL
+		}
+
+		if err := ref.requireIssuerForKind(ctx, typeID, issuer); err != nil {
+			return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		}
 	}
 
 	if input.ClientSecret != nil && *input.ClientSecret != "" {
@@ -440,12 +480,11 @@ func (ref *IDPsService) List(ctx context.Context, input *domain.ListIDPsInput) (
 		return nil, err
 	}
 
+	// The secret is never part of a listing, so it is not decrypted here: the
+	// only reader of the clear text is the adapter, through GetByID. It used to
+	// decrypt every row and the handler then dropped the field.
 	for i := range out.Items {
-		bytesClientSecret, err := ref.cipher.DecryptString(out.Items[i].ClientSecret)
-		if err != nil {
-			return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		}
-		out.Items[i].ClientSecret = string(bytesClientSecret)
+		out.Items[i].ClientSecret = ""
 	}
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "IDPs listed successfully",
@@ -523,11 +562,18 @@ func (ref *IDPsService) GetAvailableIDPs(ctx context.Context) (*domain.SelectIDP
 	}
 
 	for _, idp := range out.Items {
+		// A disabled provider stays configured and listed to admins; it is not
+		// offered on the login page.
+		if !idp.Enabled {
+			continue
+		}
+
 		idps.Items = append(idps.Items, domain.IDPAvailable{
-			ID:          idp.ID,
-			Name:        idp.Name,
-			Description: idp.Description,
-			Logo:        idp.Logo,
+			AutoProvision: idp.AutoProvision,
+			ID:            idp.ID,
+			Name:          idp.Name,
+			Description:   idp.Description,
+			Logo:          idp.Logo,
 			IDPType: domain.IDPTypes{
 				ID:          idp.IDPType.ID,
 				Name:        idp.IDPType.Name,
@@ -537,4 +583,35 @@ func (ref *IDPsService) GetAvailableIDPs(ctx context.Context) (*domain.SelectIDP
 	}
 
 	return idps, nil
+}
+
+// requireIssuerForKind enforces the one rule that needs the type row: an oidc
+// provider must name its issuer, because discovery, the token endpoint and the
+// ID token's iss check all come from it. A github row carries none.
+func (ref *IDPsService) requireIssuerForKind(ctx context.Context, typeID uuid.UUID, issuer string) error {
+	idpType, err := ref.idpTypes.SelectByID(ctx, typeID)
+	if err != nil {
+		return err
+	}
+
+	var errs domain.ValidationErrors
+
+	switch idpType.Kind {
+	case domain.IDPTypeKindOIDC:
+		if issuer == "" {
+			errs.AddError(domain.FieldIssuerURL, "an "+string(idpType.Kind)+" provider needs its issuer URL; "+idpType.Name+" expects "+idpType.IssuerHint, "REQUIRED")
+		}
+	case domain.IDPTypeKindGithub:
+		if issuer != "" {
+			errs.AddError(domain.FieldIssuerURL, "a "+string(idpType.Kind)+" provider has no issuer; leave it empty", "NOT_APPLICABLE")
+		}
+	default:
+		errs.AddError(domain.FieldIDPTypeID, "the provider type has an unknown kind "+string(idpType.Kind), "INVALID")
+	}
+
+	if errs.HasErrors() {
+		return &errs
+	}
+
+	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
 	"uuid"
 
 	"github.com/stretchr/testify/assert"
@@ -46,15 +47,14 @@ func TestIDPCreate(t *testing.T) {
 		// 3. Create a new IDP
 		idpName := generateRandomName(t, "TestIDP")
 		idp := map[string]any{
-			"idp_type_id":           idpTypeID,
-			"name":                  idpName,
-			"description":           "Test Google Identity Provider",
-			"callback_url":          "http://localhost:8080/api/v1/auth/idp/callback",
-			"login_redirect_url":    "http://localhost:8080/login",
-			"register_redirect_url": "http://localhost:8080/register",
-			"logo":                  "https://example.com/google-logo.png",
-			"client_id":             "test-google-client-id",
-			"client_secret":         "test-google-client-secret",
+			"idp_type_id":   idpTypeID,
+			"name":          idpName,
+			"description":   "Test Google Identity Provider",
+			"callback_url":  "http://localhost:8080/api/v1/auth/idp/callback",
+			"logo":          "https://example.com/google-logo.png",
+			"client_id":     "test-google-client-id",
+			"client_secret": "test-google-client-secret",
+			"issuer_url":    "https://accounts.google.com",
 		}
 
 		response, err := sendHTTPRequest(t, ctx, idpsCreateEndpoint, idp, accessTokenHeader)
@@ -102,112 +102,107 @@ func TestIDPCreate(t *testing.T) {
 			{
 				name: "Empty IDP type ID",
 				invalidIDP: map[string]any{
-					"idp_type_id":           uuid.Nil(),
-					"name":                  "TestIDP",
-					"description":           "Test Description",
-					"callback_url":          "http://localhost:8080/callback",
-					"login_redirect_url":    "http://localhost:8080/login",
-					"register_redirect_url": "http://localhost:8080/register",
-					"client_id":             "test-client",
-					"client_secret":         "test-secret",
+					"idp_type_id":   uuid.Nil(),
+					"name":          "TestIDP",
+					"description":   "Test Description",
+					"callback_url":  "http://localhost:8080/callback",
+					"client_id":     "test-client",
+					"client_secret": "test-secret",
+					"issuer_url":    "https://accounts.google.com",
 				},
 				expectedError: "UUID cannot be nil or empty",
 			},
 			{
 				name: "Empty name",
 				invalidIDP: map[string]any{
-					"idp_type_id":           idpTypeID,
-					"name":                  "",
-					"description":           "Test Description",
-					"callback_url":          "http://localhost:8080/callback",
-					"login_redirect_url":    "http://localhost:8080/login",
-					"register_redirect_url": "http://localhost:8080/register",
-					"client_id":             "test-client",
-					"client_secret":         "test-secret",
+					"idp_type_id":   idpTypeID,
+					"name":          "",
+					"description":   "Test Description",
+					"callback_url":  "http://localhost:8080/callback",
+					"client_id":     "test-client",
+					"client_secret": "test-secret",
+					"issuer_url":    "https://accounts.google.com",
 				},
 				expectedError: "name is required",
 			},
 			{
 				name: "Empty description",
 				invalidIDP: map[string]any{
-					"idp_type_id":           idpTypeID,
-					"name":                  "TestIDP",
-					"description":           "",
-					"callback_url":          "http://localhost:8080/callback",
-					"login_redirect_url":    "http://localhost:8080/login",
-					"register_redirect_url": "http://localhost:8080/register",
-					"client_id":             "test-client",
-					"client_secret":         "test-secret",
+					"idp_type_id":   idpTypeID,
+					"name":          "TestIDP",
+					"description":   "",
+					"callback_url":  "http://localhost:8080/callback",
+					"client_id":     "test-client",
+					"client_secret": "test-secret",
+					"issuer_url":    "https://accounts.google.com",
 				},
 				expectedError: "description is required",
 			},
 			{
 				name: "Empty callback URL",
 				invalidIDP: map[string]any{
-					"idp_type_id":           idpTypeID,
-					"name":                  "TestIDP",
-					"description":           "Test Description",
-					"callback_url":          "",
-					"login_redirect_url":    "http://localhost:8080/login",
-					"register_redirect_url": "http://localhost:8080/register",
-					"client_id":             "test-client",
-					"client_secret":         "test-secret",
+					"idp_type_id":   idpTypeID,
+					"name":          "TestIDP",
+					"description":   "Test Description",
+					"callback_url":  "",
+					"client_id":     "test-client",
+					"client_secret": "test-secret",
+					"issuer_url":    "https://accounts.google.com",
 				},
 				expectedError: "callback_url is required",
 			},
 			{
-				name: "Empty login redirect URL",
+				// An oidc kind discovers everything from its issuer; without one
+				// the row could be created and never sign anybody in.
+				name: "OIDC kind without an issuer",
 				invalidIDP: map[string]any{
-					"idp_type_id":           idpTypeID,
-					"name":                  "TestIDP",
-					"description":           "Test Description",
-					"callback_url":          "http://localhost:8080/callback",
-					"login_redirect_url":    "",
-					"register_redirect_url": "http://localhost:8080/register",
-					"client_id":             "test-client",
-					"client_secret":         "test-secret",
+					"idp_type_id":   idpTypeID,
+					"name":          "TestIDP",
+					"description":   "Test Description",
+					"callback_url":  "http://localhost:8080/callback",
+					"client_id":     "test-client",
+					"client_secret": "test-secret",
 				},
-				expectedError: "login_redirect_url is required",
+				expectedError: "issuer_url",
 			},
 			{
-				name: "Empty register redirect URL",
+				// The callback is where the provider sends the browser; a
+				// relative path is a sign-in that never completes.
+				name: "Callback that is not an absolute URL",
 				invalidIDP: map[string]any{
-					"idp_type_id":           idpTypeID,
-					"name":                  "TestIDP",
-					"description":           "Test Description",
-					"callback_url":          "http://localhost:8080/callback",
-					"login_redirect_url":    "http://localhost:8080/login",
-					"register_redirect_url": "",
-					"client_id":             "test-client",
-					"client_secret":         "test-secret",
+					"idp_type_id":   idpTypeID,
+					"name":          "TestIDP",
+					"description":   "Test Description",
+					"callback_url":  "/auth/idp/callback",
+					"client_id":     "test-client",
+					"client_secret": "test-secret",
+					"issuer_url":    "https://accounts.google.com",
 				},
-				expectedError: "register_redirect_url is required",
+				expectedError: "must be an absolute http(s) URL",
 			},
 			{
 				name: "Empty client ID",
 				invalidIDP: map[string]any{
-					"idp_type_id":           idpTypeID,
-					"name":                  "TestIDP",
-					"description":           "Test Description",
-					"callback_url":          "http://localhost:8080/callback",
-					"login_redirect_url":    "http://localhost:8080/login",
-					"register_redirect_url": "http://localhost:8080/register",
-					"client_id":             "",
-					"client_secret":         "test-secret",
+					"idp_type_id":   idpTypeID,
+					"name":          "TestIDP",
+					"description":   "Test Description",
+					"callback_url":  "http://localhost:8080/callback",
+					"client_id":     "",
+					"client_secret": "test-secret",
+					"issuer_url":    "https://accounts.google.com",
 				},
 				expectedError: "client_id is required",
 			},
 			{
 				name: "Empty client secret",
 				invalidIDP: map[string]any{
-					"idp_type_id":           idpTypeID,
-					"name":                  "TestIDP",
-					"description":           "Test Description",
-					"callback_url":          "http://localhost:8080/callback",
-					"login_redirect_url":    "http://localhost:8080/login",
-					"register_redirect_url": "http://localhost:8080/register",
-					"client_id":             "test-client",
-					"client_secret":         "",
+					"idp_type_id":   idpTypeID,
+					"name":          "TestIDP",
+					"description":   "Test Description",
+					"callback_url":  "http://localhost:8080/callback",
+					"client_id":     "test-client",
+					"client_secret": "",
+					"issuer_url":    "https://accounts.google.com",
 				},
 				expectedError: "client_secret is required",
 			},
@@ -255,14 +250,13 @@ func TestIDPCreate(t *testing.T) {
 		// 3. First create a valid IDP that will be our reference IDP
 		firstIDPName := generateRandomName(t, "FirstTestIDP")
 		firstIDP := map[string]any{
-			"idp_type_id":           idpTypeID,
-			"name":                  firstIDPName,
-			"description":           "First Test IDP",
-			"callback_url":          "http://localhost:8080/api/v1/auth/idp/callback",
-			"login_redirect_url":    "http://localhost:8080/login",
-			"register_redirect_url": "http://localhost:8080/register",
-			"client_id":             "test-client-1",
-			"client_secret":         "test-secret-1",
+			"idp_type_id":   idpTypeID,
+			"name":          firstIDPName,
+			"description":   "First Test IDP",
+			"callback_url":  "http://localhost:8080/api/v1/auth/idp/callback",
+			"client_id":     "test-client-1",
+			"client_secret": "test-secret-1",
+			"issuer_url":    "https://accounts.google.com",
 		}
 
 		// Create the first IDP
@@ -274,14 +268,13 @@ func TestIDPCreate(t *testing.T) {
 
 		// 4. Try to create another IDP with the same name
 		duplicateIDP := map[string]any{
-			"idp_type_id":           idpTypeID,
-			"name":                  firstIDPName, // Same name as first IDP
-			"description":           "Second Test IDP",
-			"callback_url":          "http://localhost:8080/api/v1/auth/idp/callback2",
-			"login_redirect_url":    "http://localhost:8080/login2",
-			"register_redirect_url": "http://localhost:8080/register2",
-			"client_id":             "test-client-2",
-			"client_secret":         "test-secret-2",
+			"idp_type_id":   idpTypeID,
+			"name":          firstIDPName, // Same name as first IDP
+			"description":   "Second Test IDP",
+			"callback_url":  "http://localhost:8080/api/v1/auth/idp/callback2",
+			"client_id":     "test-client-2",
+			"client_secret": "test-secret-2",
+			"issuer_url":    "https://accounts.google.com",
 		}
 
 		// 5. Send request to create duplicate IDP
@@ -326,15 +319,14 @@ func TestIDPGet(t *testing.T) {
 		idpTypeID := getIDPTypeFromDBByName(t, "Google").ID
 		idpName := generateRandomName(t, "GetTestIDP")
 		idp := map[string]any{
-			"idp_type_id":           idpTypeID,
-			"name":                  idpName,
-			"description":           "Test IDP for get operation",
-			"callback_url":          "http://localhost:8080/api/v1/auth/idp/callback",
-			"login_redirect_url":    "http://localhost:8080/login",
-			"register_redirect_url": "http://localhost:8080/register",
-			"logo":                  "https://example.com/logo.png",
-			"client_id":             "test-client-id",
-			"client_secret":         "test-client-secret",
+			"idp_type_id":   idpTypeID,
+			"name":          idpName,
+			"description":   "Test IDP for get operation",
+			"callback_url":  "http://localhost:8080/api/v1/auth/idp/callback",
+			"logo":          "https://example.com/logo.png",
+			"client_id":     "test-client-id",
+			"client_secret": "test-client-secret",
+			"issuer_url":    "https://accounts.google.com",
 		}
 
 		createResponse, err := sendHTTPRequest(t, ctx, idpsCreateEndpoint, idp, accessTokenHeader)
@@ -607,15 +599,14 @@ func TestIDPUpdate(t *testing.T) {
 		idpTypeID := getIDPTypeFromDBByName(t, "Google").ID
 		idpName := generateRandomName(t, "UpdateTestIDP")
 		idp := map[string]any{
-			"idp_type_id":           idpTypeID,
-			"name":                  idpName,
-			"description":           "Test IDP for update operation",
-			"callback_url":          "http://localhost:8080/api/v1/auth/idp/callback",
-			"login_redirect_url":    "http://localhost:8080/login",
-			"register_redirect_url": "http://localhost:8080/register",
-			"logo":                  "https://example.com/logo.png",
-			"client_id":             "test-client-id",
-			"client_secret":         "test-client-secret",
+			"idp_type_id":   idpTypeID,
+			"name":          idpName,
+			"description":   "Test IDP for update operation",
+			"callback_url":  "http://localhost:8080/api/v1/auth/idp/callback",
+			"logo":          "https://example.com/logo.png",
+			"client_id":     "test-client-id",
+			"client_secret": "test-client-secret",
+			"issuer_url":    "https://accounts.google.com",
 		}
 
 		createResponse, err := sendHTTPRequest(t, ctx, idpsCreateEndpoint, idp, accessTokenHeader)
@@ -855,15 +846,14 @@ func TestIDPList(t *testing.T) {
 			idpNames = append(idpNames, idpName)
 
 			createData := map[string]any{
-				"idp_type_id":           idpTypeID.String(),
-				"name":                  idpName,
-				"description":           fmt.Sprintf("Test IDP %d for list operation", i),
-				"callback_url":          fmt.Sprintf("https://example.com/callback%d", i),
-				"login_redirect_url":    fmt.Sprintf("https://example.com/login%d", i),
-				"register_redirect_url": fmt.Sprintf("https://example.com/register%d", i),
-				"logo":                  fmt.Sprintf("https://example.com/logo%d.png", i),
-				"client_id":             fmt.Sprintf("test_client_id_%d", i),
-				"client_secret":         fmt.Sprintf("test_client_secret_%d", i),
+				"idp_type_id":   idpTypeID.String(),
+				"name":          idpName,
+				"description":   fmt.Sprintf("Test IDP %d for list operation", i),
+				"callback_url":  fmt.Sprintf("https://example.com/callback%d", i),
+				"logo":          fmt.Sprintf("https://example.com/logo%d.png", i),
+				"client_id":     fmt.Sprintf("test_client_id_%d", i),
+				"client_secret": fmt.Sprintf("test_client_secret_%d", i),
+				"issuer_url":    "https://accounts.google.com",
 			}
 
 			response, err := sendHTTPRequest(t, ctx, idpsCreateEndpoint, createData, accessTokenHeader)
@@ -934,15 +924,14 @@ func TestIDPList(t *testing.T) {
 			idpNames = append(idpNames, idpName)
 
 			createData := map[string]any{
-				"idp_type_id":           idpTypeID.String(),
-				"name":                  idpName,
-				"description":           fmt.Sprintf("Test IDP %d for pagination", i),
-				"callback_url":          fmt.Sprintf("https://example.com/callback%d", i),
-				"login_redirect_url":    fmt.Sprintf("https://example.com/login%d", i),
-				"register_redirect_url": fmt.Sprintf("https://example.com/register%d", i),
-				"logo":                  fmt.Sprintf("https://example.com/logo%d.png", i),
-				"client_id":             fmt.Sprintf("test_client_id_%d", i),
-				"client_secret":         fmt.Sprintf("test_client_secret_%d", i),
+				"idp_type_id":   idpTypeID.String(),
+				"name":          idpName,
+				"description":   fmt.Sprintf("Test IDP %d for pagination", i),
+				"callback_url":  fmt.Sprintf("https://example.com/callback%d", i),
+				"logo":          fmt.Sprintf("https://example.com/logo%d.png", i),
+				"client_id":     fmt.Sprintf("test_client_id_%d", i),
+				"client_secret": fmt.Sprintf("test_client_secret_%d", i),
+				"issuer_url":    "https://accounts.google.com",
 			}
 
 			response, err := sendHTTPRequest(t, ctx, idpsCreateEndpoint, createData, accessTokenHeader)
@@ -1088,15 +1077,14 @@ func TestIDPList_SortNameDesc(t *testing.T) {
 
 		for i, idpName := range testIDPNames {
 			createData := map[string]any{
-				"idp_type_id":           idpTypeID.String(),
-				"name":                  idpName,
-				"description":           fmt.Sprintf("Test IDP for sorting: %s", idpName),
-				"callback_url":          fmt.Sprintf("https://example.com/callback%d", i),
-				"login_redirect_url":    fmt.Sprintf("https://example.com/login%d", i),
-				"register_redirect_url": fmt.Sprintf("https://example.com/register%d", i),
-				"logo":                  fmt.Sprintf("https://example.com/logo%d.png", i),
-				"client_id":             fmt.Sprintf("test_client_id_%d", i),
-				"client_secret":         fmt.Sprintf("test_client_secret_%d", i),
+				"idp_type_id":   idpTypeID.String(),
+				"name":          idpName,
+				"description":   fmt.Sprintf("Test IDP for sorting: %s", idpName),
+				"callback_url":  fmt.Sprintf("https://example.com/callback%d", i),
+				"logo":          fmt.Sprintf("https://example.com/logo%d.png", i),
+				"client_id":     fmt.Sprintf("test_client_id_%d", i),
+				"client_secret": fmt.Sprintf("test_client_secret_%d", i),
+				"issuer_url":    "https://accounts.google.com",
 			}
 
 			response, err := sendHTTPRequest(t, ctx, idpsCreateEndpoint, createData, accessTokenHeader)
@@ -1188,15 +1176,14 @@ func TestIDPList_SortNameDesc_FilterNameLikePrefix(t *testing.T) {
 
 		for i, idpName := range testIDPNames {
 			createData := map[string]any{
-				"idp_type_id":           idpTypeID.String(),
-				"name":                  idpName,
-				"description":           fmt.Sprintf("Test IDP for filter/sort: %s", idpName),
-				"callback_url":          fmt.Sprintf("https://example.com/callback%d", i),
-				"login_redirect_url":    fmt.Sprintf("https://example.com/login%d", i),
-				"register_redirect_url": fmt.Sprintf("https://example.com/register%d", i),
-				"logo":                  fmt.Sprintf("https://example.com/logo%d.png", i),
-				"client_id":             fmt.Sprintf("test_client_id_%d", i),
-				"client_secret":         fmt.Sprintf("test_client_secret_%d", i),
+				"idp_type_id":   idpTypeID.String(),
+				"name":          idpName,
+				"description":   fmt.Sprintf("Test IDP for filter/sort: %s", idpName),
+				"callback_url":  fmt.Sprintf("https://example.com/callback%d", i),
+				"logo":          fmt.Sprintf("https://example.com/logo%d.png", i),
+				"client_id":     fmt.Sprintf("test_client_id_%d", i),
+				"client_secret": fmt.Sprintf("test_client_secret_%d", i),
+				"issuer_url":    "https://accounts.google.com",
 			}
 
 			response, err := sendHTTPRequest(t, ctx, idpsCreateEndpoint, createData, accessTokenHeader)

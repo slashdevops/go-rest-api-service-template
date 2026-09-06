@@ -280,6 +280,12 @@ Read it alongside [Adding a new entity](./adding-an-entity.md).
   token is single-use and what a replayed one costs, the single verification
   routine and the claims it checks, how a signing key is rotated without
   downtime, and why no credential travels in a URL.
+- [Identity providers](./identity-providers.md) — sign-in through Google,
+  GitHub, Entra ID and Okta: the kind on the type and the issuer on the
+  instance, the frontend callback and why the API sets no cookie, identity by
+  provider subject in `users_identities` and the takeover that matching on
+  email allowed, PKCE, nonce and the verified ID token, linking from the
+  profile, and what each provider is trusted for.
 - [Token lifetimes](./token-lifetimes.md) — the access and refresh lifetimes
   as one database row: the per-replica mirror and the change signal, what a
   change does to tokens already issued and to a session mid-rotation, the

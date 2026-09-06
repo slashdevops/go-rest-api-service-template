@@ -260,83 +260,118 @@ func (ref *AuthnService) LoginUser(ctx context.Context, input *domain.LoginUserI
 		ref.loginThrottle.Succeed(loginKey)
 	}
 
+	result, err := ref.issueSession(ctx, user)
+	if err != nil {
+		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "login successful",
+		attribute.String("user.id", user.ID.String()),
+		attribute.String("login.method", input.LoginMethod.String()),
+	)
+
+	return result, nil
+}
+
+// LoginUserByID starts a session for an account that something else has
+// already authenticated: an identity-provider callback whose (idp, subject)
+// resolved to this account.
+//
+// It is the ONLY way an IdP sign-in reaches a session, and it takes an id, not
+// an email, on purpose. LoginUser used to be called with the provider's email
+// and no password, which looked the account up by that email and -- if it was
+// a local one -- switched its password off. Nothing proved the email belonged
+// to the account; the provider's word was enough. The resolution by subject
+// happens in the IdP use case, before this is called.
+func (ref *AuthnService) LoginUserByID(ctx context.Context, userID uuid.UUID, method domain.LoginMethod) (*domain.LoginUserOutput, error) {
+	start := time.Now()
+	ctx, span, attrs := o11y.SetupTrace(ctx, ref.ot.Traces.Tracer, ref.metricsMetadata, "LoginUserByID")
+	defer span.End()
+
+	if method == domain.LoginMethodPassword {
+		// A password login goes through LoginUser, which is where the password
+		// is compared. Arriving here with that method is a caller bug.
+		return nil, o11y.RecordError(ctx, span, start, &domain.InvalidInputError{Message: "LoginUserByID does not verify passwords"}, ref.metrics, attrs)
+	}
+
+	user, err := ref.userService.GetByID(ctx, userID)
+	if err != nil {
+		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	if user.Disabled != nil && *user.Disabled {
+		return nil, ref.rejectLogin(ctx, span, start, attrs, "account is disabled")
+	}
+
+	result, err := ref.issueSession(ctx, user)
+	if err != nil {
+		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "login successful",
+		attribute.String("user.id", user.ID.String()),
+		attribute.String("login.method", method.String()),
+	)
+
+	return result, nil
+}
+
+// issueSession signs the access and refresh tokens for an authenticated user
+// and gathers their permissions. Every login path ends here, and none of them
+// changes the account on the way through: the local_account flip that an
+// IdP login used to make -- silently disabling the password -- is gone, and
+// a password stays until the user removes it.
+func (ref *AuthnService) issueSession(ctx context.Context, user *domain.User) (*domain.LoginUserOutput, error) {
 	// One read for both tokens, so a change landing between the two cannot
 	// issue a pair from different settings.
 	lifetimes := ref.tokenLifetimes.Current()
 
-	accessTokenJWTClaims := domain.JWTClaims{
+	accessToken, err := ref.tokenSigner.Sign(ctx, domain.JWTClaims{
 		Email:         user.Email,
 		Subject:       user.ID.String(),
 		Issuer:        ref.issuer,
 		TokenType:     domain.TokenTypeAccess,
 		TokenDuration: lifetimes.AccessTokenDuration,
-	}
-
-	accessToken, err := ref.tokenSigner.Sign(ctx, accessTokenJWTClaims)
+	})
 	if err != nil {
-		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		return nil, err
 	}
 
-	refreshTokenJWTClaims := domain.JWTClaims{
+	refreshToken, err := ref.tokenSigner.Sign(ctx, domain.JWTClaims{
 		Email:         user.Email,
 		Subject:       user.ID.String(),
 		Issuer:        ref.issuer,
 		TokenType:     domain.TokenTypeRefresh,
 		TokenDuration: lifetimes.RefreshTokenDuration,
-	}
-
-	refreshToken, err := ref.tokenSigner.Sign(ctx, refreshTokenJWTClaims)
+	})
 	if err != nil {
-		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		return nil, err
 	}
 
-	// get the user permissions
 	permissions, err := ref.userService.SelectAuthz(ctx, user.ID)
 	if err != nil {
-		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		return nil, err
 	}
 
 	if permissions == nil || permissions["permissions"] == nil {
-		slog.Warn("service.Authn.LoginUser: user does not have any permissions")
-		permissions = map[string]any{
-			"permissions": map[string]any{},
-		}
+		slog.Warn("service.Authn.issueSession: user does not have any permissions", "user.id", user.ID.String())
+
+		permissions = map[string]any{"permissions": map[string]any{}}
 	}
 
 	// remove the first level of the permissions map which is the key "permissions"
 	permissionsL1, ok := permissions["permissions"].(map[string]any)
 	if !ok {
-		err := fmt.Errorf("failed to cast permissions to []string")
-		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		return nil, fmt.Errorf("failed to cast permissions to map")
 	}
 
-	// if user.LocalAccount is true, and input.LoginMethod is not password, set user.LocalAccount to false
-	// because the user has logged in with an identity provider
-	if input.LoginMethod != domain.LoginMethodPassword && (user.LocalAccount != nil && *user.LocalAccount) {
-		uuInput := &domain.UpdateUserInput{
-			ID:           user.ID,
-			LocalAccount: new(false),
-		}
-
-		if err := ref.userService.UpdateByID(ctx, uuInput); err != nil {
-			return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		}
-	}
-
-	result := &domain.LoginUserOutput{
+	return &domain.LoginUserOutput{
 		UserID:       user.ID,
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		TokenType:    domain.TokenTypeBearer,
 		Resources:    permissionsL1,
-	}
-
-	o11y.RecordSuccess(
-		ctx, span, start, ref.metrics, attrs, "login successful",
-		attribute.String("user.id", user.ID.String()),
-	)
-
-	return result, nil
+	}, nil
 }
 
 // RegisterUser creates a new user.

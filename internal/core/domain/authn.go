@@ -43,8 +43,15 @@ const (
 
 // JWTClaims represents the claims in a JWT token.
 type JWTClaims struct {
-	IDP           string        `json:"idp,omitempty"`
-	Email         string        `json:"email,omitempty"`
+	IDP   string `json:"idp,omitempty"`
+	Email string `json:"email,omitempty"`
+
+	// Data is an opaque payload the issuer of the token needs back verbatim
+	// and nobody else may read: the IdP state token carries its PKCE
+	// verifier, nonce and linking account here, AES-encrypted by the caller.
+	// The signer neither inspects nor validates it.
+	Data string `json:"data,omitempty"`
+
 	Subject       string        `json:"sub"`
 	TokenType     TokenType     `json:"token_type"`
 	Issuer        string        `json:"iss"`

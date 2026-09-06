@@ -794,6 +794,43 @@ covered without being told about it.
 When a caller genuinely needs to tell "expired, refresh" from "revoked, sign in",
 design a deliberate signal — do not reach back for a library string.
 
+### An identity provider proves a subject, never an email
+
+Sign-in through Google, GitHub, Entra ID and Okta lives behind
+`oauth.Provider`, implemented by `oauthidp` with `coreos/go-oidc`. Six rules,
+each the fix for something that shipped:
+
+- **The kind decides the protocol, never the name.** `idp_types.kind` is
+  `oidc` (discovery, PKCE, nonce, verified ID token) or `github` (fixed
+  endpoints, `/user` + `/user/emails`). The adapter used to switch on the type
+  *name*, so a row not literally called `Google` or `Github` could never sign
+  anybody in. The name still selects claim quirks (Entra ID's
+  `preferred_username`).
+- **The issuer lives on the instance, one tenant per row.** `idps.issuer_url`
+  is what discovery reads and what the ID token's `iss` must equal. An
+  `oidc` row without one is refused at write time.
+- **Identity is `(idp, subject)` in `users_identities`.** A callback resolves
+  that first. An unknown identity whose email matches an existing account is
+  **refused** with the same wording as every other refusal; the holder links
+  the provider from their profile (`GET /auth/idp/{id}/link`,
+  `/me/identities`). Matching on email is how a provider-asserted address used
+  to sign in as any account and flip `local_account` off on the way through.
+  `LoginUser` verifies passwords; IdP sign-ins use `LoginUserByID`.
+- **Provisioning needs three things**: `auto_provision` on the row, an email
+  the provider vouches for (`email_verified`, or Entra ID's single-tenant
+  directory attribute, or GitHub's verified primary), and no account with that
+  address.
+- **The API sets no cookie and issues no redirect.** The provider's
+  `callback_url` is the FRONTEND's route, which calls
+  `GET /auth/idp/{id}/callback` server-to-server and stores the JSON session
+  itself. The old API-side cookies only worked while both shared `localhost`.
+- **The state carries the PKCE verifier and nonce sealed** (AES, in the JWT's
+  `data` claim), is single-use, and is spent before the code is exchanged.
+
+Adding a provider that speaks OIDC is a seed row in `025`; the adapter needs
+nothing unless its claims are odd. The full design is in
+[`docs/architecture/identity-providers.md`](../docs/architecture/identity-providers.md).
+
 ### Brute force is bounded twice, and both are needed
 
 Password guessing is limited per **source** by the IP rate limiter and per
@@ -1443,6 +1480,7 @@ Two things about these workflows are load-bearing and should not be removed:
 - [`docs/architecture/rate-limiting.md`](../docs/architecture/rate-limiting.md) — the rule model, the two limiters, and the breaker
 - [`docs/architecture/resource-limits.md`](../docs/architecture/resource-limits.md) — scopes, three-priority resolution, the counter signature
 - [`docs/architecture/authentication.md`](../docs/architecture/authentication.md) — tokens, rotation, revocation, throttling
+- [`docs/architecture/identity-providers.md`](../docs/architecture/identity-providers.md) — sign-in through Google, GitHub, Entra ID and Okta: kind on the type, issuer per instance, identity by subject, the frontend callback, PKCE and the verified ID token
 - [`docs/architecture/database-migrations.md`](../docs/architecture/database-migrations.md) — the file set and the rules that keep it applyable
 - [`docs/architecture/health-probes.md`](../docs/architecture/health-probes.md) — which endpoint answers which question
 - [`docs/operations/running-the-service.md`](../docs/operations/running-the-service.md) — the pre-flight checklist

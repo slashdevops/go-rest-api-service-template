@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS revoked_tokens (
 
     CONSTRAINT chk_revoked_tokens_token_type CHECK (
         token_type IN ('access', 'refresh', 'email_verification', 'password_reset',
-                       'personal_access', 'idp_signin', 'idp_register')
+                       'personal_access', 'idp_signin', 'idp_register', 'idp_link')
     )
 );
 
