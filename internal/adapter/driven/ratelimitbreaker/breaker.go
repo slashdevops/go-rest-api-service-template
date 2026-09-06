@@ -53,6 +53,9 @@ type Config struct {
 	// Limiter is the store to protect. Required.
 	Limiter ratelimit.Limiter
 
+	// OnStateChange is called on each transition, for a gauge or a log. Optional.
+	OnStateChange func(open bool)
+
 	// Threshold is how many CONSECUTIVE failures open the breaker. Zero or less
 	// disables it, which means accepting a failed round trip on every request
 	// during an outage.
@@ -61,9 +64,6 @@ type Config struct {
 	// Cooldown is how long the breaker stays open before letting one request
 	// through to test the store.
 	Cooldown time.Duration
-
-	// OnStateChange is called on each transition, for a gauge or a log. Optional.
-	OnStateChange func(open bool)
 }
 
 // Breaker is a [ratelimit.Limiter] that stops calling a failing store.
@@ -75,18 +75,19 @@ type Config struct {
 // back at a store that is still down, which is how a recovering datastore is
 // knocked over again by the traffic that was waiting for it.
 type Breaker struct {
+	openUntil time.Time
+
 	limiter   ratelimit.Limiter
 	onChange  func(open bool)
 	threshold int
 	cooldown  time.Duration
 
+	consecutiveFailures int
+
 	// mu guards the whole state machine. A mutex rather than atomics because
 	// the transitions are multi-field and must agree with each other; the cost
 	// is nanoseconds against a network call it is often avoiding entirely.
 	mu sync.Mutex
-
-	consecutiveFailures int
-	openUntil           time.Time
 
 	// probing is true while a half-open request is in flight, so a burst does
 	// not send a thousand probes at a store that is still down.

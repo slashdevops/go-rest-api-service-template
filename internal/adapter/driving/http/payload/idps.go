@@ -45,6 +45,8 @@ type IDPResponse struct {
 //
 //	@Description	Request payload for creating a new identity provider configuration
 type CreateIDPRequest struct {
+	Enabled       *bool     `json:"enabled,omitempty" example:"true" validate:"optional"`                                                                                        // Defaults to true
+	AutoProvision *bool     `json:"auto_provision,omitempty" example:"true" validate:"optional"`                                                                                 // Defaults to true
 	Name          string    `json:"name" example:"Google" format:"string" validate:"required" minLength:"2" maxLength:"100"`                                                     // Display name
 	Description   string    `json:"description" example:"Google OAuth2 Identity Provider" format:"string" validate:"required" minLength:"10" maxLength:"500"`                    // Description
 	CallbackURL   string    `json:"callback_url" example:"http://localhost:8080/api/v1/auth/idp/019b4b0d-a682-7e19-a524-866cfffef121/callback" format:"uri" validate:"required"` // OAuth callback URL
@@ -52,8 +54,6 @@ type CreateIDPRequest struct {
 	ClientID      string    `json:"client_id" example:"367082405970-example" format:"string" validate:"required" minLength:"2" maxLength:"255"`                                  // OAuth client ID
 	ClientSecret  string    `json:"client_secret" example:"GOCSPX-example_secret_key" format:"string" validate:"required" minLength:"2" maxLength:"255"`                         // OAuth client secret
 	IssuerURL     string    `json:"issuer_url,omitempty" example:"https://accounts.google.com" format:"uri" validate:"optional"`                                                 // Required for an oidc kind; the value the ID token's iss must equal
-	Enabled       *bool     `json:"enabled,omitempty" example:"true" validate:"optional"`                                                                                        // Defaults to true
-	AutoProvision *bool     `json:"auto_provision,omitempty" example:"true" validate:"optional"`                                                                                 // Defaults to true
 	ID            uuid.UUID `json:"id,omitempty" example:"019b4b0d-a682-7e19-a524-866cfffef121" format:"uuid" validate:"optional"`                                               // Optional custom ID
 	IDPTypeID     uuid.UUID `json:"idp_type_id" example:"019b4b0d-a682-7e1d-bd83-3864c7d5aa43" format:"uuid" validate:"required"`                                                // Identity provider type ID
 }
@@ -191,8 +191,8 @@ type IDPRegisterResponse struct {
 //	@Description	The outcome of a provider callback: a session for login and register, the linked account for link
 type IDPCallbackResponse struct {
 	Login    *LoginUserResponse `json:"login,omitempty"`                                                                  // The session, for login and register
-	Event    string             `json:"event" example:"login" format:"string" enum:"login,register,link"`                 // Which event the state was minted for
 	LinkedTo *uuid.UUID         `json:"linked_to,omitempty" example:"019b4b0d-a682-7e34-a20c-c71a7147d7e7" format:"uuid"` // The account, for link
+	Event    string             `json:"event" example:"login" format:"string" enum:"login,register,link"`                 // Which event the state was minted for
 }
 
 // UserIdentityResponse is one provider identity linked to the caller's account.

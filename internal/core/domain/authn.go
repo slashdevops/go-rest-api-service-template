@@ -264,13 +264,13 @@ func (ref *RecoverPasswordInput) Validate() error {
 }
 
 type ResetPasswordInput struct {
-	Password string    `json:"password" format:"string" example:"ThisIs4Passw0rd" validate:"required"`
-	UserID   uuid.UUID `json:"user_id" format:"uuid" example:"01982303-f0f9-7dd3-9b51-779cddf01211" validate:"required"`
+	TokenExpiresAt time.Time `json:"-"`
+	Password       string    `json:"password" format:"string" example:"ThisIs4Passw0rd" validate:"required"`
+	UserID         uuid.UUID `json:"user_id" format:"uuid" example:"01982303-f0f9-7dd3-9b51-779cddf01211" validate:"required"`
 	// TokenID and TokenExpiresAt identify the reset token being spent. A
 	// reset link is single-use: the jti is recorded in the revoked-token store
 	// the first time and refused after, until the token would have expired.
-	TokenID        uuid.UUID `json:"-"`
-	TokenExpiresAt time.Time `json:"-"`
+	TokenID uuid.UUID `json:"-"`
 }
 
 func (ref *ResetPasswordInput) Validate() error {
@@ -287,6 +287,7 @@ func (ref *ResetPasswordInput) Validate() error {
 }
 
 type LogoutUserInput struct {
+	AccessTokenExpiresAt time.Time
 
 	// RefreshToken is the token to revoke, and it is what makes logout end a
 	// session rather than merely say it did.
@@ -311,8 +312,7 @@ type LogoutUserInput struct {
 	//
 	// Zero when the caller authenticated with a personal access token, which is
 	// revoked by deleting its row rather than by a denylist entry.
-	AccessTokenJTI       uuid.UUID
-	AccessTokenExpiresAt time.Time
+	AccessTokenJTI uuid.UUID
 }
 
 func (ref *LogoutUserInput) Validate() error {

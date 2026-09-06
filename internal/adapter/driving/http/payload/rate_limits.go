@@ -127,12 +127,6 @@ type EffectiveRateLimitsResponse struct {
 	Method   string `json:"method" example:"POST" format:"string"`
 	Endpoint string `json:"endpoint" example:"/projects/{project_id}/generate" format:"string"`
 
-	// Enforcing is false when ratelimit.enabled=false: the rules below are real
-	// and editable, and nothing is applying them. A client that renders the
-	// rules without rendering this tells an operator a limit is in place that
-	// is not.
-	Enforcing bool `json:"enforcing" example:"true"`
-
 	// BucketKey states what a budget is keyed on, because "10 per minute" alone
 	// does not say per what. A rule's verbs share one budget; each of its windows
 	// gets its own.
@@ -142,6 +136,12 @@ type EffectiveRateLimitsResponse struct {
 	// IP rule and a project rule both apply, and neither substitutes for the
 	// other.
 	Effective []EffectiveRateLimitEntry `json:"effective"`
+
+	// Enforcing is false when ratelimit.enabled=false: the rules below are real
+	// and editable, and nothing is applying them. A client that renders the
+	// rules without rendering this tells an operator a limit is in place that
+	// is not.
+	Enforcing bool `json:"enforcing" example:"true"`
 }
 
 // ToRateLimitResponse maps a domain rule onto the wire shape.

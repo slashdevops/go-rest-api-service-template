@@ -21,9 +21,9 @@ type Adapter struct {
 }
 
 type entry struct {
+	seen    time.Time
 	limiter ratelimiter.Limiter
 	budget  ratelimit.Budget
-	seen    time.Time
 }
 
 // New creates an in-process limiter.
