@@ -271,7 +271,11 @@ never silenced inline without one.
 `pr.yaml` runs `go build ./...`, `make arch-test`, `make lint`, `make test`,
 `make test-coverage` and nothing else. The Valkey container is deliberately **off** there, so the two Valkey-backed suites skip in CI and `.testcoverage.yml` carries lowered floors; run them locally. `security-scan.yaml` runs `govulncheck`
 weekly; the release workflow runs `make build-dist`. **Nothing in CI catches
-`docs/api` drifting from the annotations** — run `make build` locally. Do not
+`docs/api` drifting from the annotations** — run `make build` locally. A PR titled
+`docs`, `style` or `chore` skips all of it (the `classify` job decides from
+the title; `chore(deps)` and a `!` breaking marker still run), so the title
+is a claim about the change: a `docs` PR that touches Go is a lie the gate
+cannot catch. Do not
 add a PR step that cannot answer differently because of the change under
 review. `defaults.run.shell: bash` and `MAKE_STOP_ON_ERRORS: true` are
 load-bearing. → [`docs/development/ci-gates.md`](../docs/development/ci-gates.md)

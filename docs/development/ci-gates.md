@@ -22,6 +22,39 @@ for t in unit integration eval; do go vet -tags=$t ./... ; done
 
 ## What CI gates on
 
+### The semantic title decides whether the full run is needed
+
+`pr.yaml` has two jobs. `classify` reads the PR title and sets `skip=true`
+when it starts with `docs`, `style` or `chore` (with or without a scope);
+`build` needs it and runs only when `skip` is not `true`. Two exceptions,
+both because the declaration would be a lie:
+
+- `chore(deps)` still runs. A dependency bump is exactly what needs the
+  build — `go get -u` has broken OPA once by moving a transitive
+  dependency, and `go mod tidy` was happy with it.
+- a `!` after the type (a breaking change) still runs.
+
+Three things about the mechanism are load-bearing:
+
+- **It is a skipped job, never a workflow that does not run.** `build` is a
+  required status check on the template's `main`, and a job skipped by `if`
+  reports `skipped`, which satisfies the requirement; a workflow filtered
+  out by `paths` reports nothing, and the PR cannot be merged.
+- **The title reaches the script through an environment variable.** A PR
+  title is attacker-controlled text; `${{ }}` inside `run:` pastes it into
+  the shell.
+- **The regexes live in variables.** bash's parser trips over a `)` inside
+  a bracket expression when the pattern is written inline in `[[ =~ ]]`,
+  and the failure is a syntax error in the job, not a wrong decision.
+
+`edited` is in the trigger's `types` so retitling a PR re-decides; the
+concurrency group cancels the run a retitle supersedes.
+
+The consequence to keep in mind: the title is a claim about the change, and
+the gate believes it. A `docs` PR that touches Go compiles nowhere until the
+release workflow. Title such a PR for what it changes.
+
+
 **The PR workflow is deliberately cheap; the release workflow is thorough.**
 That split is the rule to keep — a gate belongs on the PR only if it can
 answer differently because of the change under review.
