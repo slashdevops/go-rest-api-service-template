@@ -280,6 +280,12 @@ Read it alongside [Adding a new entity](./adding-an-entity.md).
   token is single-use and what a replayed one costs, the single verification
   routine and the claims it checks, how a signing key is rotated without
   downtime, and why no credential travels in a URL.
+- [Authorization](./authorization.md) — roles, policies and resources; the
+  six seeded roles; the decision: one compiled Rego query with the caller's
+  grants as input, `*` as one UUID segment in a path and every method as an
+  action, membership rather than equality for the administrator; fail-closed
+  at each layer; the grant guard and the two bootstrap links a trigger
+  protects; the cache keys every grant change drops.
 - [Identity providers](./identity-providers.md) — sign-in through Google,
   GitHub, Entra ID and Okta: the kind on the type and the issuer on the
   instance, the frontend callback and why the API sets no cookie, identity by

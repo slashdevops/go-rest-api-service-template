@@ -18,6 +18,9 @@ import (
 )
 
 type RolesServiceConf struct {
+	// Guard refuses a grant the caller does not hold. Required: a service
+	// that can widen permissions without it is the escalation path.
+	Guard         *GrantGuard
 	Repository    repository.Roles
 	CacheService  cache.Cache
 	OT            *o11y.OpenTelemetry
@@ -25,6 +28,7 @@ type RolesServiceConf struct {
 }
 
 type RolesService struct {
+	guard           *GrantGuard
 	repository      repository.Roles
 	cacheService    cache.Cache
 	ot              *o11y.OpenTelemetry
@@ -35,6 +39,10 @@ type RolesService struct {
 
 // NewRolesService creates a new RolesService.
 func NewRolesService(conf RolesServiceConf) (*RolesService, error) {
+	if conf.Guard == nil {
+		return nil, &domain.InvalidInputError{Message: "Guard is nil, but it is required for RolesService"}
+	}
+
 	if conf.Repository == nil {
 		return nil, &domain.InvalidRepositoryError{Message: "Repository is nil, but it is required for RolesService"}
 	}
@@ -44,6 +52,7 @@ func NewRolesService(conf RolesServiceConf) (*RolesService, error) {
 	}
 
 	ref := &RolesService{
+		guard:        conf.Guard,
 		repository:   conf.Repository,
 		cacheService: conf.CacheService,
 		ot:           conf.OT,
@@ -284,6 +293,11 @@ func (ref *RolesService) LinkUsers(ctx context.Context, input *domain.LinkUsersT
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
 
+	// Assigning a role hands out everything the role holds.
+	if err := ref.guard.CheckRoles(ctx, input.CallerID, []uuid.UUID{input.RoleID}); err != nil {
+		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
 	span.SetAttributes(attribute.String("roles.id", input.RoleID.String()))
 
 	if err := ref.repository.LinkUsers(ctx, input); err != nil {
@@ -307,10 +321,7 @@ func (ref *RolesService) LinkUsers(ctx context.Context, input *domain.LinkUsersT
 				ID:   userID.String(),
 			}
 
-			authzCacheKey := cache.Identifier{
-				Type: "authz",
-				ID:   userID.String(),
-			}
+			authzCacheKey := authzCacheKey(userID)
 
 			cacheKeys = append(cacheKeys, userCacheKey, authzCacheKey)
 		}
@@ -368,10 +379,7 @@ func (ref *RolesService) UnlinkUsers(ctx context.Context, input *domain.UnlinkUs
 				ID:   userID.String(),
 			}
 
-			authzCacheKey := cache.Identifier{
-				Type: "authz",
-				ID:   userID.String(),
-			}
+			authzCacheKey := authzCacheKey(userID)
 
 			cacheKeys = append(cacheKeys, userCacheKey, authzCacheKey)
 		}
@@ -403,6 +411,10 @@ func (ref *RolesService) LinkPolicies(ctx context.Context, input *domain.LinkPol
 	}
 
 	if err := input.Validate(); err != nil {
+		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	if err := ref.guard.CheckPolicies(ctx, input.CallerID, input.PolicyIDs); err != nil {
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
 
@@ -475,6 +487,13 @@ func (ref *RolesService) UnlinkPolicies(ctx context.Context, input *domain.Unlin
 
 		if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
 			slog.Warn("service.Roles.UnlinkPolicies", "what", "failed to invalidate cache", slog.Any("error", err), "role_id", input.RoleID.String())
+		}
+
+		// The same keys LinkPolicies invalidates; see Policies.UnlinkRoles.
+		for _, policyID := range input.PolicyIDs {
+			if err := ref.cacheService.Invalidate(ctx, cache.Identifier{Type: "policy", ID: policyID.String()}); err != nil {
+				slog.Warn("service.Roles.UnlinkPolicies", "what", "failed to invalidate cache", slog.Any("error", err), "policy_id", policyID.String())
+			}
 		}
 	}
 

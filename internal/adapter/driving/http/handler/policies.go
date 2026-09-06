@@ -232,7 +232,15 @@ func (ref *PoliciesHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	callerID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		respond.WriteJSONMessage(w, r, http.StatusUnauthorized, e.Error())
+		return
+	}
+
 	input := &domain.CreatePolicyInput{
+		CallerID:        callerID,
 		ID:              req.ID,
 		Name:            req.Name,
 		Description:     req.Description,
@@ -250,6 +258,13 @@ func (ref *PoliciesHandler) create(w http.ResponseWriter, r *http.Request) {
 		if _, ok := errors.AsType[*domain.ResourceNotFoundError](err); ok {
 			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 			respond.WriteJSONMessage(w, r, http.StatusNotFound, e.Error())
+			return
+		}
+
+		// The caller does not hold what they tried to hand out.
+		if _, ok := errors.AsType[*domain.GrantNotHeldError](err); ok {
+			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			respond.WriteJSONMessage(w, r, http.StatusForbidden, e.Error())
 			return
 		}
 
@@ -324,7 +339,15 @@ func (ref *PoliciesHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	callerID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		respond.WriteJSONMessage(w, r, http.StatusUnauthorized, e.Error())
+		return
+	}
+
 	input := &domain.UpdatePolicyInput{
+		CallerID:        callerID,
 		ID:              policyID,
 		Name:            req.Name,
 		Description:     req.Description,
@@ -346,6 +369,13 @@ func (ref *PoliciesHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if _, ok := errors.AsType[*domain.SystemPolicyError](err); ok {
+			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			respond.WriteJSONMessage(w, r, http.StatusForbidden, e.Error())
+			return
+		}
+
+		// The caller does not hold what they tried to hand out.
+		if _, ok := errors.AsType[*domain.GrantNotHeldError](err); ok {
 			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 			respond.WriteJSONMessage(w, r, http.StatusForbidden, e.Error())
 			return
@@ -588,7 +618,15 @@ func (ref *PoliciesHandler) linkRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	callerID, err := getUserIDFromContext(ctx)
+	if err != nil {
+		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		respond.WriteJSONMessage(w, r, http.StatusUnauthorized, e.Error())
+		return
+	}
+
 	input := &domain.LinkRolesToPolicyInput{
+		CallerID: callerID,
 		PolicyID: policyID,
 		RoleIDs:  req.RoleIDs,
 	}
@@ -599,6 +637,13 @@ func (ref *PoliciesHandler) linkRoles(w http.ResponseWriter, r *http.Request) {
 		if isPolicyMissing || isRoleMissing {
 			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 			respond.WriteJSONMessage(w, r, http.StatusNotFound, e.Error())
+			return
+		}
+
+		// The caller does not hold what they tried to hand out.
+		if _, ok := errors.AsType[*domain.GrantNotHeldError](err); ok {
+			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			respond.WriteJSONMessage(w, r, http.StatusForbidden, e.Error())
 			return
 		}
 

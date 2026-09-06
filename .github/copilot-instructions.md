@@ -515,6 +515,44 @@ the `http.Server` — the exact regression that let this ship unbounded. The ful
 reasoning, with the request-lifecycle diagram, is in
 [`docs/architecture/http-server-timeouts.md`](../docs/architecture/http-server-timeouts.md).
 
+## Authorization: OPA, used properly
+
+The policy (`policyopa/rego/bundle/authorization/policy.rego`) is compiled
+**once** in `policyopa.New`; each request evaluates the prepared query with the
+caller's permission map in **input**. Do not move the map back into a data
+store per request, and do not build `rego.New` inside `IsAllowed`: that was a
+parse and compile on every authenticated call. `make lint` runs `opa check
+--strict`, `opa fmt` and `opa test` at 100 % coverage on the bundle;
+`policyopa.TestEngineDecisions` is the Go twin of `policy_test.rego` and both
+change together. The map reaches the engine with its top-level `permissions`
+key, exactly as `SelectAuthz` returns it; the adapter unwraps it once.
+
+Three semantics the policy fixes and a test pins: `*` in a path is one
+lowercase UUID segment, never "any segment"; `*` as an action is every
+method wherever it appears; the administrator rule is `"*" in actions`, never
+`== ["*"]`, which locked every administrator out the moment a second
+`*`-resource policy was attached. `CheckAuthz` folds HEAD to GET and logs a
+refusal at Warn with the request id. The seeded roles are in
+[`docs/architecture/authorization.md`](./docs/architecture/authorization.md);
+`GET /me` and `PUT /me` belong to `AuthenticatedUser`.
+
+**A caller may grant only what they hold.** `usecase.GrantGuard` runs before
+a policy is created, before an edit changes a policy's action or resource
+(a new name or description widens nothing and is not guarded), before policies
+are linked to a role and before roles are linked to a user, reading the
+caller's live grants from the repository (never the cache) and refusing with
+`GrantNotHeldError` → 403. Every new path that widens permissions goes through
+it; the inputs carry `CallerID` from the claims. The two bootstrap links are
+refused deletion by a trigger in `00007`; the seed's Down in `00008` disables
+it around its deletes.
+
+**Every path that changes a grant invalidates the same cache keys as its
+twin**: link and unlink drop the policy's, the roles' and, through the
+dependency graph, the `authz:<uid>` entries. Spell the key with
+`authzCacheKey`, never by hand. A grant written straight into the database
+is invisible to the API until the 12 h TTL: grant through the API, in tests
+too.
+
 ## Response hygiene and request bounds
 
 Every request through the API prefix passes one common chain, and its order

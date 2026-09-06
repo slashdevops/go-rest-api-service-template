@@ -1168,10 +1168,7 @@ func (ref *AuthnService) LogoutUser(ctx context.Context, input *domain.LogoutUse
 				Type: "user",
 				ID:   input.UserID.String(),
 			},
-			{
-				Type: "authz",
-				ID:   input.UserID.String(),
-			},
+			authzCacheKey(input.UserID),
 		}
 
 		for _, cacheKey := range cacheKeys {

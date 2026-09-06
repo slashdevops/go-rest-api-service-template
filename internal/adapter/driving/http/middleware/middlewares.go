@@ -494,7 +494,16 @@ func CheckAuthz(authz *usecase.AuthzService) Middleware {
 				return
 			}
 
-			ok, err = authz.IsAuthorized(r.Context(), sub, r.Method, r.URL.Path)
+			// HEAD is GET without a body: the mux routes it to the GET pattern,
+			// and a grant on GET must cover it, or every HEAD is a 403 for
+			// everyone but an administrator. The rate limiter folds it the
+			// same way.
+			action := r.Method
+			if action == http.MethodHead {
+				action = http.MethodGet
+			}
+
+			ok, err = authz.IsAuthorized(r.Context(), sub, action, r.URL.Path)
 			if err != nil {
 				slog.Error(
 					"authorization service error",
@@ -508,6 +517,15 @@ func CheckAuthz(authz *usecase.AuthzService) Middleware {
 			}
 
 			if !ok {
+				// A refusal is a security event: logged with the request id,
+				// like the membership refusal, so a caller probing the
+				// authorization surface is visible. It used to write nothing.
+				slog.Warn("authorization refused",
+					"request_id", respond.RequestIDFrom(r.Context()),
+					"user.id", subStr,
+					"method", r.Method,
+					"path", r.URL.Path,
+				)
 				respond.WriteJSONMessage(w, r, http.StatusForbidden, fmt.Sprintf("access denied: %s %s", r.Method, r.URL.Path))
 				return
 			}
@@ -561,13 +579,22 @@ func CheckUserExists(userService UsersServiceInterface) Middleware {
 			}
 
 			// Check if user exists in database
-			_, err = userService.GetByID(ctx, userID)
+			user, err := userService.GetByID(ctx, userID)
 			if err != nil {
 				if _, ok := errors.AsType[*domain.UserNotFoundError](err); ok {
 					respond.WriteJSONMessage(w, r, http.StatusNotFound, "user not found")
 					return
 				}
 				respond.WriteJSONMessage(w, r, http.StatusInternalServerError, "failed to verify user existence")
+				return
+			}
+
+			// A disabled account keeps whatever tokens it was issued until they
+			// expire. Login refuses it; this is where an already-issued token
+			// is refused. It surfaced when GET /me stopped being 403 for every
+			// non-administrator: a disabled user's token then read its profile.
+			if user != nil && user.Disabled != nil && *user.Disabled {
+				respond.WriteJSONMessage(w, r, http.StatusForbidden, "account is disabled")
 				return
 			}
 

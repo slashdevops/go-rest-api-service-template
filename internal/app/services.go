@@ -408,7 +408,20 @@ func (a *App) initAuthServices(
 
 	// Users service
 	// needed by Authn service
+	// The grant guard reads the repository, never the cache: it must see the
+	// grants the caller holds now. Built before every service that can widen
+	// permissions.
+	grantGuard, err := usecase.NewGrantGuard(usecase.GrantGuardConf{
+		Grants:   a.repositories.Users,
+		Policies: a.repositories.Policies,
+		OT:       a.telemetry,
+	})
+	if err != nil {
+		return fmt.Errorf("error creating grant guard: %w", err)
+	}
+
 	a.services.Users, err = usecase.NewUsersService(usecase.UsersServiceConf{
+		Guard:           grantGuard,
 		Repository:      a.repositories.Users,
 		CacheService:    cacheService,
 		ResourcesLimits: a.services.ResourcesLimits,
@@ -613,6 +626,7 @@ func (a *App) initAuthServices(
 
 	// Policies service
 	a.services.Policies, err = usecase.NewPoliciesService(usecase.PoliciesServiceConf{
+		Guard:            grantGuard,
 		Repository:       a.repositories.Policies,
 		ResourcesService: a.services.Resources,
 		CacheService:     cacheService,
@@ -624,6 +638,7 @@ func (a *App) initAuthServices(
 
 	// Roles service
 	a.services.Roles, err = usecase.NewRolesService(usecase.RolesServiceConf{
+		Guard:        grantGuard,
 		Repository:   a.repositories.Roles,
 		CacheService: cacheService,
 		OT:           a.telemetry,

@@ -24,16 +24,6 @@ type UsersServiceConsumer interface {
 	SelectAuthz(ctx context.Context, userID uuid.UUID) (map[string]any, error)
 }
 
-// AuthzServiceCache is the interface for the authz service cache methods.
-// This must be used in other services that need to access the authz cache key and invalidate it.
-// implement as dependency injection in the AuthzServiceCache interface.
-// NOTE: This is defined here to allows other services to use the AuthzServiceCache interface
-// without importing the entire authz service package.
-type AuthzServiceCache interface {
-	GetUserAuthzCacheKey(userID uuid.UUID) string
-	InvalidateUserAuthzCache(userID uuid.UUID)
-}
-
 type AuthzServiceConf struct {
 	UserService   UsersServiceConsumer
 	PolicyEngine  policy.Engine
@@ -136,6 +126,9 @@ func (ref *AuthzService) IsAuthorized(ctx context.Context, userID uuid.UUID, req
 		return false, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
 
-	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "Authorization check completed", attribute.Bool("authorized", allowed))
+	// The decision is a label on the counter, not only a span attribute:
+	// a rising deny rate is what a dashboard alerts on, and a span is not a
+	// dashboard.
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, append(attrs, attribute.Bool("authorized", allowed)), "Authorization check completed")
 	return allowed, nil
 }

@@ -379,9 +379,18 @@ build-dist-zip: ## Build the application for all platforms defined in GO_OS and 
 CONTAINER_ENGINE ?= podman
 
 .PHONY: lint
-lint: install-golangci-lint ## Run linters
+lint: install-golangci-lint install-opa ## Run linters (Go and the Rego policy)
 	@printf "👉 Running linters...\n"
 	$(call exec_cmd, golangci-lint run ./...)
+	@printf "👉 Checking the authorization policy...\n"
+	$(call exec_cmd, opa check --strict $(OPA_BUNDLE))
+	$(call exec_cmd, opa fmt --fail --list $(OPA_BUNDLE))
+	$(call exec_cmd, opa test --coverage --threshold 100 $(OPA_BUNDLE))
+
+# The Rego policy that decides every authorization. Its tests, its formatting
+# and a strict compile are part of lint: the policy used to ship with a test
+# file nothing ever ran.
+OPA_BUNDLE := ./internal/adapter/driven/policyopa/rego/bundle/authorization
 
 .PHONY: vulncheck
 vulncheck: install-govulncheck ## Check vulnerabilities
@@ -452,6 +461,10 @@ docs-api-resources: docs-swagger ## Generate the authz resource rows from swagge
 ###############################################################################
 ##@ Tools commands
 .PHONY: install-air
+install-opa: ## Install the OPA CLI, for opa check/fmt/test on the authorization policy
+	$(call ensure_tool,opa,github.com/open-policy-agent/opa@latest)
+
+.PHONY: install-air
 install-air: ## Install air for hot reload (https://github.com/cosmtrek/air)
 	$(call ensure_tool,air,github.com/air-verse/air@latest)
 
@@ -488,7 +501,7 @@ install-betteralign: ## Install betteralign for struct field alignment (https://
 	$(call ensure_tool,betteralign,github.com/dkorunic/betteralign/cmd/betteralign@latest)
 
 .PHONY: tools
-tools: install-air install-swag install-go-swagger install-goose install-go-test-coverage install-govulncheck install-go-licenses install-golangci-lint install-betteralign ## Install or rebuild every Go tool this repo uses
+tools: install-opa install-air install-swag install-go-swagger install-goose install-go-test-coverage install-govulncheck install-go-licenses install-golangci-lint install-betteralign ## Install or rebuild every Go tool this repo uses
 	@printf "👉 All tools present and built with $(GOVERSION)\n"
 
 ###############################################################################
