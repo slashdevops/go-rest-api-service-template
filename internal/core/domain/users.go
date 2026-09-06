@@ -266,11 +266,11 @@ type SelectUsersOutput struct {
 type ListUsersOutput = SelectUsersOutput
 
 type LinkRolesToUserInput struct {
+	RoleIDs []uuid.UUID
 	// CallerID is who is granting; the guard checks they hold what they hand
 	// out, and refuses a zero value. Unlink paths share this input and leave it
 	// zero: nothing is granted there.
 	CallerID uuid.UUID
-	RoleIDs  []uuid.UUID
 	UserID   uuid.UUID
 }
 

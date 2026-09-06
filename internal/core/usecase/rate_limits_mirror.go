@@ -59,13 +59,14 @@ type RateLimitRules struct {
 	// on the request path.
 	rules atomic.Pointer[[]domain.RateLimit]
 
+	ot *o11y.OpenTelemetry
+
 	lastReload     atomic.Int64
 	reloadFailures atomic.Int64
-	loaded         atomic.Bool
 
 	reloadInterval time.Duration
 
-	ot *o11y.OpenTelemetry
+	loaded atomic.Bool
 }
 
 // NewRateLimitRules creates the mirror. It does NOT load: the first load happens

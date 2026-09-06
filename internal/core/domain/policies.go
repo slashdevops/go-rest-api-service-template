@@ -100,11 +100,11 @@ type Policy struct {
 }
 
 type LinkRolesToPolicyInput struct {
+	RoleIDs []uuid.UUID
 	// CallerID is who is granting; the guard checks they hold what they hand
 	// out, and refuses a zero value. Unlink paths share this input and leave it
 	// zero: nothing is granted there.
 	CallerID uuid.UUID
-	RoleIDs  []uuid.UUID
 	PolicyID uuid.UUID
 }
 
@@ -189,14 +189,14 @@ type SelectPoliciesOutput struct {
 type ListPoliciesOutput = SelectPoliciesOutput
 
 type CreatePolicyInput struct {
-	// CallerID is who is granting; the guard checks they hold what they hand out.
-	CallerID        uuid.UUID
 	Name            string
 	Description     string
 	AllowedAction   string
 	AllowedResource string
-	ID              uuid.UUID
-	ResourceID      uuid.UUID
+	// CallerID is who is granting; the guard checks they hold what they hand out.
+	CallerID   uuid.UUID
+	ID         uuid.UUID
+	ResourceID uuid.UUID
 }
 
 func (ref *CreatePolicyInput) Validate() error {
@@ -244,13 +244,13 @@ func (ref *CreatePolicyInput) Validate() error {
 }
 
 type UpdatePolicyInput struct {
-	// CallerID is who is granting; the guard checks they hold what they hand out.
-	CallerID        uuid.UUID
 	Name            *string
 	Description     *string
 	AllowedAction   *string
 	AllowedResource *string
-	ID              uuid.UUID
+	// CallerID is who is granting; the guard checks they hold what they hand out.
+	CallerID uuid.UUID
+	ID       uuid.UUID
 }
 
 func (ref *UpdatePolicyInput) Validate() error {

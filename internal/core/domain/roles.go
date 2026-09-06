@@ -199,11 +199,11 @@ type SelectRolesOutput struct {
 type ListRolesOutput = SelectRolesOutput
 
 type LinkUsersToRoleInput struct {
+	UserIDs []uuid.UUID
 	// CallerID is who is granting; the guard checks they hold what they hand
 	// out, and refuses a zero value. Unlink paths share this input and leave it
 	// zero: nothing is granted there.
 	CallerID uuid.UUID
-	UserIDs  []uuid.UUID
 	RoleID   uuid.UUID
 }
 
@@ -234,10 +234,10 @@ func (ref *LinkUsersToRoleInput) Validate() error {
 type UnlinkUsersFromRoleInput = LinkUsersToRoleInput
 
 type LinkPoliciesToRoleInput struct {
-	// CallerID is who is granting; the guard checks they hold what they hand out.
-	CallerID  uuid.UUID
 	PolicyIDs []uuid.UUID
-	RoleID    uuid.UUID
+	// CallerID is who is granting; the guard checks they hold what they hand out.
+	CallerID uuid.UUID
+	RoleID   uuid.UUID
 }
 
 func (ref *LinkPoliciesToRoleInput) Validate() error {

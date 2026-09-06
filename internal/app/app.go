@@ -46,6 +46,36 @@ var apiPrefix = fmt.Sprintf("api/%s", apiVersion)
 //
 // For testing, use NewAppBuilder to inject mock dependencies.
 type App struct {
+	// A ratelimit.Limiter, not the concrete Valkey adapter: it is wrapped in a
+	// circuit breaker, so the concrete type is no longer what is stored.
+	rateLimitShared ratelimit.Limiter
+
+	// rateLimitNotifier propagates a rule write to the other replicas. nil
+	// without a cache, which is a supported deployment -- the reload ticker is
+	// the floor and this only removes the wait.
+	rateLimitNotifier ratelimit.ChangeNotifier
+
+	// tokenLifetimesNotifier propagates a PUT /auth/token_lifetimes to the
+	// other replicas. Same shape and same "nil without a cache" as the
+	// rate-limit one.
+	tokenLifetimesNotifier changenotify.Notifier
+
+	// changeNotifyValkey is the subscriber client every change notifier shares.
+	// Separate from cacheClient because a subscribed connection accepts
+	// nothing else; owned here so shutdown closes it once.
+	changeNotifyValkey valkey.Client
+
+	// The JWT signer, held so the HTTP middleware's validators verify tokens
+	// through the same routine the use-cases do. The middleware used to carry
+	// its own implementation, and the two disagreed about what to check.
+	tokenSigner token.Signer
+
+	// Valkey client backing the cache (nil when cache.enabled is false).
+	// Held here for two reasons the cache.Cache port cannot serve: the
+	// connection pool and its background goroutines have to be closed on
+	// shutdown, and the health check needs to PING the server directly.
+	cacheClient valkey.Client
+
 	// Configuration loaded from flags and environment
 	configs *Configs
 
@@ -72,40 +102,8 @@ type App struct {
 	// enforced — it is the limiter when cache.enabled is false, and the layer in
 	// front of the shared counter when it is not. rateLimitShared is nil without
 	// a cache client, and every rule is then per replica.
-	rateLimitLocal *ratelimitmemory.Adapter
-	// A ratelimit.Limiter, not the concrete Valkey adapter: it is wrapped in a
-	// circuit breaker, so the concrete type is no longer what is stored.
-	rateLimitShared ratelimit.Limiter
-
-	// rateLimitNotifier propagates a rule write to the other replicas. nil
-	// without a cache, which is a supported deployment -- the reload ticker is
-	// the floor and this only removes the wait.
-	rateLimitNotifier ratelimit.ChangeNotifier
-	rateLimitMetrics  *middleware.RateLimitMetrics
-
-	// tokenLifetimesNotifier propagates a PUT /auth/token_lifetimes to the
-	// other replicas. Same shape and same "nil without a cache" as the
-	// rate-limit one.
-	tokenLifetimesNotifier changenotify.Notifier
-
-	// changeNotifyValkey is the subscriber client every change notifier shares.
-	// Separate from cacheClient because a subscribed connection accepts
-	// nothing else; owned here so shutdown closes it once.
-	changeNotifyValkey valkey.Client
-
-	// replicaID names this process in the change messages it publishes.
-	replicaID string
-
-	// The JWT signer, held so the HTTP middleware's validators verify tokens
-	// through the same routine the use-cases do. The middleware used to carry
-	// its own implementation, and the two disagreed about what to check.
-	tokenSigner token.Signer
-
-	// Valkey client backing the cache (nil when cache.enabled is false).
-	// Held here for two reasons the cache.Cache port cannot serve: the
-	// connection pool and its background goroutines have to be closed on
-	// shutdown, and the health check needs to PING the server directly.
-	cacheClient valkey.Client
+	rateLimitLocal   *ratelimitmemory.Adapter
+	rateLimitMetrics *middleware.RateLimitMetrics
 
 	// Application layers (organized by architectural layer)
 	repositories *Repositories // Data access layer
@@ -119,8 +117,12 @@ type App struct {
 	startupMetrics *StartupMetrics // Startup performance metrics
 
 	// Lifecycle management
-	shutdownCh   chan struct{} // Channel to signal shutdown
-	shutdownOnce sync.Once     // Ensures shutdown only happens once
+	shutdownCh chan struct{} // Channel to signal shutdown
+
+	// replicaID names this process in the change messages it publishes.
+	replicaID string
+
+	shutdownOnce sync.Once // Ensures shutdown only happens once
 }
 
 // authKeys holds the cryptographic keys used for authentication
