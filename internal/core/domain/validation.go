@@ -39,18 +39,32 @@ var (
 	htmlTagRegex     = regexp.MustCompile(HTMLTagPattern)
 	scriptTagRegex   = regexp.MustCompile(ScriptTagPattern)
 
-	// Common weak passwords (basic list)
+	// Passwords nobody may choose, matched case-insensitively. This is the
+	// head of the public "most used passwords" lists plus the words a person
+	// types when asked for a password by a service called an API: the
+	// ten-entry list it replaces caught almost nothing that the complexity
+	// score did not. It is a floor, not a breach corpus; a real corpus is a
+	// dependency and a download, and belongs behind a setting when it comes.
 	commonPasswords = map[string]bool{
-		"password":    true,
-		"123456":      true,
-		"123456789":   true,
-		"qwerty":      true,
-		"abc123":      true,
-		"password123": true,
-		"admin":       true,
-		"root":        true,
-		"user":        true,
-		"guest":       true,
+		"password": true, "passw0rd": true, "password1": true, "password12": true,
+		"password123": true, "password1234": true, "p@ssw0rd": true, "p@ssword": true,
+		"123456": true, "1234567": true, "12345678": true, "123456789": true,
+		"1234567890": true, "12345678910": true, "987654321": true, "1q2w3e4r": true,
+		"1qaz2wsx": true, "qwerty": true, "qwerty123": true, "qwertyuiop": true,
+		"qwerty1234": true, "asdfgh": true, "asdfghjkl": true, "zxcvbnm": true,
+		"abc123": true, "abcd1234": true, "abcdefgh": true, "a1b2c3d4": true,
+		"letmein": true, "welcome": true, "welcome1": true, "welcome123": true,
+		"admin": true, "admin123": true, "administrator": true, "root": true,
+		"toor": true, "user": true, "guest": true, "test": true, "test123": true,
+		"testtest": true, "changeme": true, "default": true, "secret": true,
+		"iloveyou": true, "monkey": true, "dragon": true, "sunshine": true,
+		"princess": true, "football": true, "baseball": true, "master": true,
+		"superman": true, "batman": true, "trustno1": true, "whatever": true,
+		"111111": true, "11111111": true, "000000": true, "00000000": true,
+		"121212": true, "123123": true, "123321": true, "654321": true,
+		"666666": true, "888888": true, "aaaaaa": true, "aaaaaaaa": true,
+		"zaq12wsx": true, "michael": true, "jennifer": true, "computer": true,
+		"internet": true, "login": true, "starwars": true, "hello123": true,
 	}
 )
 
@@ -395,6 +409,34 @@ func ValidatePassword(password string, fieldName string) error {
 			Field:   fieldName,
 			Message: "password must contain a mix of uppercase, lowercase, numbers, and special characters",
 			Code:    "WEAK_PASSWORD",
+		}
+	}
+
+	return nil
+}
+
+// ValidateLoginPassword bounds a password that is being CHECKED, not chosen.
+//
+// Login used to run ValidatePassword, which is the rule for choosing one. That
+// makes every tightening of the rule a lock-out: an account whose password was
+// fine when it was set could no longer sign in, with a 400 that named the
+// policy rather than the 401 a wrong password gets. A login only has to be
+// non-empty and no longer than bcrypt will compare; whether it is strong was
+// decided when it was set, and is decided again at the next reset.
+func ValidateLoginPassword(password string, fieldName string) error {
+	if password == "" {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: "password is required",
+			Code:    "REQUIRED",
+		}
+	}
+
+	if len(password) > ValidUserPasswordMaxLength {
+		return &ValidationError{
+			Field:   fieldName,
+			Message: fmt.Sprintf("password must be at most %d characters long", ValidUserPasswordMaxLength),
+			Code:    "TOO_LONG",
 		}
 	}
 

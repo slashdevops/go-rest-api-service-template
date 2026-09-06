@@ -144,6 +144,47 @@ attacker-chosen text into the log at will.
 **`POST /auth/verify` (resend verification) was already uniform** and needed no
 change; it was checked at the same time rather than assumed.
 
+### An unverified account gets its verification mail back
+
+The uniform answer hid one case that was not an attacker: a person who had
+registered, lost or never received the verification mail, and reached for
+*"forgot password"*. Their account was **disabled** — every registration is,
+until its link is followed — and the branch above refused a disabled account
+silently. So the mail that never came was followed by another mail that never
+came, and both looked like a broken mailer.
+
+The service could not do better because `disabled` was carrying two facts: *may
+this account sign in* and *has this address been proven*. Those are now two
+columns on `users`:
+
+| column     | set by                                            | read by                                   |
+| ---------- | ------------------------------------------------- | ----------------------------------------- |
+| `verified` | the verification link; an IdP registration        | verify, resend, recovery, the login reason |
+| `disabled` | the verification link (to `false`); administrators | login, refresh, recovery                  |
+
+```mermaid
+flowchart LR
+    R["POST /auth/password/recover"] --> L{lookup}
+    L -->|"no account"| S["200, nothing sent<br/>reason on the span"]
+    L -->|"IdP account"| S
+    L -->|"verified = false"| V["200, <b>verification</b> mail<br/>same link as registration"]
+    L -->|"disabled = true"| S
+    L -->|"local, verified, enabled"| P["200, <b>reset</b> mail"]
+```
+
+The answer on the wire is the same `200` in every row; only the inbox differs.
+The verification mail carries no more than a fresh registration would have
+sent to the same address, so nothing new can be provoked by asking.
+
+Following the link sets `verified` and clears `disabled` in one update, which is
+also why an administrator cannot keep an *unverified* account shut by disabling
+it: verification would open it again. An account that should not exist is
+deleted; there is nothing in it to keep.
+
+`UpdateUserInput.Verified` is set by the verification flow only. No request
+payload maps to it, so an administrator's `PUT /users/{id}` cannot mark an
+address proven.
+
 ### And so does registration
 
 Registration was the last of the three. It answered `409 "user: already exists:
@@ -931,6 +972,30 @@ they last up to a year and have to be reissued. This is a one-time cost of
 | `authn.user.verification.web.endpoint` | `http://localhost:5173/verify` | page a verification email links to; it hands the token to the API in a header |
 | `http.server.trusted.proxies` | *(empty)* | whose `X-Forwarded-For` is believed |
 | `ratelimit.enabled` | `true` | per-source limits, from the `rate_limits` table (seeded at 100/s, burst 300) |
+
+## What a password must be
+
+`domain.ValidatePassword` is the rule for **choosing** a password: at least 8
+bytes (NIST SP 800-63B's floor for a user-chosen secret; it was 6), at most 72
+(bcrypt's input limit — `x/crypto` refuses a longer one with
+`ErrPasswordTooLong`, so the old cap of 255 accepted a password that could not
+be hashed and answered a `500` for it), not on the list of passwords nobody may
+use, and scoring at least three of *lowercase, uppercase, digit, symbol, twelve
+or more characters*. The list is the head of the public most-used-passwords
+lists plus what people type when a service asks; it is a floor, not a breach
+corpus, and a real corpus belongs behind a setting when it comes.
+
+`domain.ValidateLoginPassword` is the rule for **checking** one: non-empty and
+no longer than bcrypt will compare. Login used to run the choosing rule, which
+made every tightening a lock-out — a password that was fine when it was set
+answered a `400` naming the policy instead of reaching the bcrypt compare.
+Whether a password is strong was decided when it was set, and is decided again
+at the next reset.
+
+The frontend mirrors the choosing rule in `$lib/utils/password.ts`, wording
+included, so a refusal happens before the request and says the same thing it
+would have said after. When the rule changes here, that file changes in the
+same change.
 
 ## Known gaps
 

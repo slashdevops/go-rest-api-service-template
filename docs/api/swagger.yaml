@@ -2331,6 +2331,11 @@ definitions:
         example: "2021-01-01T00:00:00Z"
         format: date-time
         type: string
+      verified:
+        description: Indicates if the email address has been verified (by the verification
+          link or an identity provider)
+        example: true
+        type: boolean
     type: object
   payload.Version:
     description: Version is the struct that holds the version information.

@@ -146,6 +146,7 @@ const (
 	FieldUserIDs                             = "user_ids"
 	FieldUsage                               = "usage"
 	FieldValue                               = "value"
+	FieldVerified                            = "verified"
 	FieldVector                              = "vector"
 	FieldVectorFunctionID                    = "vector_function_id"
 	FieldVectorFunctionOperator              = "vector_function_operator"

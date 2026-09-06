@@ -17,6 +17,7 @@ type UserResponse struct {
 	CreatedAt    time.Time `json:"created_at,omitzero" example:"2021-01-01T00:00:00Z" format:"date-time"`              // Timestamp when the user account was created
 	UpdatedAt    time.Time `json:"updated_at,omitzero" example:"2021-01-01T00:00:00Z" format:"date-time"`              // Timestamp when the user account was last updated
 	Disabled     *bool     `json:"disabled,omitempty" example:"false"`                                                 // Indicates if the user account is currently disabled
+	Verified     *bool     `json:"verified,omitempty" example:"true"`                                                  // Indicates if the email address has been verified (by the verification link or an identity provider)
 	Admin        *bool     `json:"admin,omitempty" example:"false"`                                                    // Indicates if the user has administrative privileges
 	LocalAccount *bool     `json:"local_account,omitempty" example:"true"`                                             // Indicates if this is a locally managed account (vs SSO/federated)
 	FirstName    string    `json:"first_name,omitempty" example:"John" format:"string"`                                // User's first name

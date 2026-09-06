@@ -21,16 +21,26 @@ const (
 )
 
 var (
-	UsersFilterFields  = []string{FieldID, FieldFirstName, FieldLastName, FieldEmail, FieldDisabled, FieldLocalAccount, FieldCreatedAt, FieldUpdatedAt}
-	UsersSortFields    = []string{FieldID, FieldFirstName, FieldLastName, FieldEmail, FieldDisabled, FieldLocalAccount, FieldCreatedAt, FieldUpdatedAt}
-	UsersPartialFields = []string{FieldID, FieldFirstName, FieldLastName, FieldEmail, FieldDisabled, FieldLocalAccount, FieldCreatedAt, FieldUpdatedAt}
+	UsersFilterFields  = []string{FieldID, FieldFirstName, FieldLastName, FieldEmail, FieldDisabled, FieldVerified, FieldLocalAccount, FieldCreatedAt, FieldUpdatedAt}
+	UsersSortFields    = []string{FieldID, FieldFirstName, FieldLastName, FieldEmail, FieldDisabled, FieldVerified, FieldLocalAccount, FieldCreatedAt, FieldUpdatedAt}
+	UsersPartialFields = []string{FieldID, FieldFirstName, FieldLastName, FieldEmail, FieldDisabled, FieldVerified, FieldLocalAccount, FieldCreatedAt, FieldUpdatedAt}
 )
 
 // User is the user-account entity.
+//
+// Disabled and Verified are two facts, not one. Disabled says whether the
+// account may sign in and is what an administrator switches. Verified says
+// whether the address has been proven by following the verification link (or
+// by an identity provider, which proves its subject). A registration is
+// unverified and disabled; verification flips both; nothing else sets
+// Verified. They used to be one flag, and password recovery could not tell an
+// account that had never followed its link from one that had been switched
+// off, so it refused both.
 type User struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	Disabled     *bool
+	Verified     *bool
 	Admin        *bool
 	LocalAccount *bool
 	FirstName    string
@@ -44,6 +54,7 @@ type User struct {
 
 type InsertUserInput struct {
 	Disabled     *bool
+	Verified     *bool
 	LocalAccount *bool
 	FirstName    string
 	LastName     string
@@ -118,6 +129,9 @@ type UpdateUserInput struct {
 	Password     *string
 	PasswordHash *string
 	Disabled     *bool
+	// Verified is set by the verification flow only; no request payload maps
+	// to it.
+	Verified     *bool
 	LocalAccount *bool
 	ID           uuid.UUID
 }

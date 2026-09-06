@@ -10354,6 +10354,11 @@ const docTemplate = `{
                     "type": "string",
                     "format": "date-time",
                     "example": "2021-01-01T00:00:00Z"
+                },
+                "verified": {
+                    "description": "Indicates if the email address has been verified (by the verification link or an identity provider)",
+                    "type": "boolean",
+                    "example": true
                 }
             }
         },
