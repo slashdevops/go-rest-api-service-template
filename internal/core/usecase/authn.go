@@ -241,11 +241,12 @@ func (ref *AuthnService) LoginUser(ctx context.Context, input *domain.LoginUserI
 
 		return nil, ref.rejectLogin(ctx, span, start, attrs, "no account for that address")
 
-	// An unverified account is also disabled, so the second case would catch
-	// it; naming it first is for the operator reading the span.
-	case user.Verified != nil && !*user.Verified:
-		return nil, ref.rejectLogin(ctx, span, start, attrs, "account is not verified")
-
+	// disabled alone decides whether an account may sign in. A registration
+	// is disabled until its link is followed, so an unverified account is
+	// caught here; an account an administrator created or enabled signs in
+	// without ever having proven its address, exactly as it did before
+	// verified became its own column. Gating on verified here locked those
+	// accounts out: nothing sends them a link.
 	case user.Disabled != nil && *user.Disabled:
 		return nil, ref.rejectLogin(ctx, span, start, attrs, "account is disabled")
 

@@ -159,8 +159,14 @@ columns on `users`:
 
 | column     | set by                                            | read by                                   |
 | ---------- | ------------------------------------------------- | ----------------------------------------- |
-| `verified` | the verification link; an IdP registration        | verify, resend, recovery, the login reason |
+| `verified` | the verification link; an IdP registration        | verify, resend, recovery                  |
 | `disabled` | the verification link (to `false`); administrators | login, refresh, recovery                  |
+
+`disabled` alone decides whether an account may sign in. An account an
+administrator creates or enables has never proven its address and nothing
+sends it a link, so gating login on `verified` would lock it out; it signs in
+exactly as it did before the column existed, and a recovery request from it
+gets the verification mail first.
 
 ```mermaid
 flowchart LR

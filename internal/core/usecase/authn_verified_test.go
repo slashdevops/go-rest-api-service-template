@@ -318,7 +318,9 @@ func TestReVerifyUserAnswersByTheVerifiedFlag(t *testing.T) {
 	}
 }
 
-func TestLoginRefusesAnUnverifiedAccountWithTheRightPassword(t *testing.T) {
+// A fresh registration is refused at login because it is DISABLED until its
+// link is followed, not because it is unverified.
+func TestLoginRefusesAFreshRegistrationWithTheRightPassword(t *testing.T) {
 	t.Parallel()
 
 	f := newVerifiedFixture(t)
@@ -348,5 +350,22 @@ func TestLoginDoesNotApplyTheChoosingRule(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("a six-character legacy password must reach the compare and sign in, got %v", err)
+	}
+}
+
+// An account an administrator created or enabled has never proven its
+// address, and nothing will send it a verification link. disabled is what
+// decides sign-in; verified must not.
+func TestLoginAdmitsAnEnabledAccountThatNeverVerified(t *testing.T) {
+	t.Parallel()
+
+	f := newVerifiedFixture(t)
+	f.users.add(account(t, "provisioned@example.com", false, false))
+
+	_, err := f.svc.LoginUser(t.Context(), &domain.LoginUserInput{
+		Email: "provisioned@example.com", Password: "Meadow7Lark!", LoginMethod: domain.LoginMethodPassword,
+	})
+	if err != nil {
+		t.Fatalf("an enabled account must sign in whether or not it verified, got %v", err)
 	}
 }
