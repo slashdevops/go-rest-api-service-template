@@ -136,6 +136,17 @@ func (ref *IDPsHandler) getByID(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		// The use case's own rules: an oidc kind without an issuer, a github
+		// kind with one, a callback that is not a URL. Field-named 400s, not 500s.
+		_, isValidation := errors.AsType[*domain.ValidationErrors](err)
+		_, isInvalidInput := errors.AsType[*domain.InvalidInputError](err)
+		_, isTypeMissing := errors.AsType[*domain.IDPTypesNotFoundError](err)
+		if isValidation || isInvalidInput || isTypeMissing {
+			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+			return
+		}
+
 		_, isInvalidByteSeq := errors.AsType[*domain.InvalidByteSequenceError](err)
 		_, isInvalidMsgFmt := errors.AsType[*domain.InvalidMessageFormatError](err)
 		_, isUndefCol := errors.AsType[*domain.UndefinedColumnError](err)
@@ -157,15 +168,16 @@ func (ref *IDPsHandler) getByID(w http.ResponseWriter, r *http.Request) {
 			ID:   out.IDPType.ID,
 			Name: out.IDPType.Name,
 		},
-		Name:                out.Name,
-		Description:         out.Description,
-		CallbackURL:         out.CallbackURL,
-		LoginRedirectURL:    out.LoginRedirectURL,
-		RegisterRedirectURL: out.RegisterRedirectURL,
-		Logo:                out.Logo,
-		ClientID:            out.ClientID,
-		CreatedAt:           out.CreatedAt,
-		UpdatedAt:           out.UpdatedAt,
+		Name:          out.Name,
+		Description:   out.Description,
+		CallbackURL:   out.CallbackURL,
+		IssuerURL:     out.IssuerURL,
+		Logo:          out.Logo,
+		ClientID:      out.ClientID,
+		Enabled:       new(out.Enabled),
+		AutoProvision: new(out.AutoProvision),
+		CreatedAt:     out.CreatedAt,
+		UpdatedAt:     out.UpdatedAt,
 	}
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
@@ -226,16 +238,17 @@ func (ref *IDPsHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := &domain.CreateIDPInput{
-		ID:                  req.ID,
-		IDPTypeID:           req.IDPTypeID,
-		Name:                req.Name,
-		Description:         req.Description,
-		CallbackURL:         req.CallbackURL,
-		LoginRedirectURL:    req.LoginRedirectURL,
-		RegisterRedirectURL: req.RegisterRedirectURL,
-		Logo:                req.Logo,
-		ClientID:            req.ClientID,
-		ClientSecret:        req.ClientSecret,
+		ID:            req.ID,
+		IDPTypeID:     req.IDPTypeID,
+		Name:          req.Name,
+		Description:   req.Description,
+		CallbackURL:   req.CallbackURL,
+		IssuerURL:     req.IssuerURL,
+		Logo:          req.Logo,
+		ClientID:      req.ClientID,
+		ClientSecret:  req.ClientSecret,
+		Enabled:       req.Enabled == nil || *req.Enabled,
+		AutoProvision: req.AutoProvision == nil || *req.AutoProvision,
 	}
 
 	if err := ref.service.Create(ctx, input); err != nil {
@@ -248,6 +261,17 @@ func (ref *IDPsHandler) create(w http.ResponseWriter, r *http.Request) {
 		if _, ok := errors.AsType[*domain.IDPAlreadyExistsError](err); ok {
 			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 			respond.WriteJSONMessage(w, r, http.StatusConflict, e.Error())
+			return
+		}
+
+		// The use case's own rules: an oidc kind without an issuer, a github
+		// kind with one, a callback that is not a URL. Field-named 400s, not 500s.
+		_, isValidation := errors.AsType[*domain.ValidationErrors](err)
+		_, isInvalidInput := errors.AsType[*domain.InvalidInputError](err)
+		_, isTypeMissing := errors.AsType[*domain.IDPTypesNotFoundError](err)
+		if isValidation || isInvalidInput || isTypeMissing {
+			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
 			return
 		}
 
@@ -324,16 +348,17 @@ func (ref *IDPsHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	input := &domain.UpdateIDPInput{
-		ID:                  idpID,
-		IDPTypeID:           req.IDPTypeID,
-		Name:                req.Name,
-		Description:         req.Description,
-		CallbackURL:         req.CallbackURL,
-		LoginRedirectURL:    req.LoginRedirectURL,
-		RegisterRedirectURL: req.RegisterRedirectURL,
-		Logo:                req.Logo,
-		ClientID:            req.ClientID,
-		ClientSecret:        req.ClientSecret,
+		ID:            idpID,
+		IDPTypeID:     req.IDPTypeID,
+		Name:          req.Name,
+		Description:   req.Description,
+		CallbackURL:   req.CallbackURL,
+		IssuerURL:     req.IssuerURL,
+		Logo:          req.Logo,
+		ClientID:      req.ClientID,
+		ClientSecret:  req.ClientSecret,
+		Enabled:       req.Enabled,
+		AutoProvision: req.AutoProvision,
 	}
 
 	if err := ref.service.UpdateByID(ctx, input); err != nil {
@@ -346,6 +371,17 @@ func (ref *IDPsHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 		if _, ok := errors.AsType[*domain.IDPAlreadyExistsError](err); ok {
 			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 			respond.WriteJSONMessage(w, r, http.StatusConflict, e.Error())
+			return
+		}
+
+		// The use case's own rules: an oidc kind without an issuer, a github
+		// kind with one, a callback that is not a URL. Field-named 400s, not 500s.
+		_, isValidation := errors.AsType[*domain.ValidationErrors](err)
+		_, isInvalidInput := errors.AsType[*domain.InvalidInputError](err)
+		_, isTypeMissing := errors.AsType[*domain.IDPTypesNotFoundError](err)
+		if isValidation || isInvalidInput || isTypeMissing {
+			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
 			return
 		}
 
@@ -411,6 +447,17 @@ func (ref *IDPsHandler) deleteByID(w http.ResponseWriter, r *http.Request) {
 		if _, ok := errors.AsType[*domain.IDPNotFoundError](err); ok {
 			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 			respond.WriteJSONMessage(w, r, http.StatusNotFound, e.Error())
+			return
+		}
+
+		// The use case's own rules: an oidc kind without an issuer, a github
+		// kind with one, a callback that is not a URL. Field-named 400s, not 500s.
+		_, isValidation := errors.AsType[*domain.ValidationErrors](err)
+		_, isInvalidInput := errors.AsType[*domain.InvalidInputError](err)
+		_, isTypeMissing := errors.AsType[*domain.IDPTypesNotFoundError](err)
+		if isValidation || isInvalidInput || isTypeMissing {
+			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
 			return
 		}
 
@@ -509,15 +556,16 @@ func (ref *IDPsHandler) list(w http.ResponseWriter, r *http.Request) {
 				ID:   idp.IDPType.ID,
 				Name: idp.IDPType.Name,
 			},
-			Name:                idp.Name,
-			Description:         idp.Description,
-			CallbackURL:         idp.CallbackURL,
-			LoginRedirectURL:    idp.LoginRedirectURL,
-			RegisterRedirectURL: idp.RegisterRedirectURL,
-			Logo:                idp.Logo,
-			ClientID:            idp.ClientID,
-			CreatedAt:           idp.CreatedAt,
-			UpdatedAt:           idp.UpdatedAt,
+			Name:          idp.Name,
+			Description:   idp.Description,
+			CallbackURL:   idp.CallbackURL,
+			IssuerURL:     idp.IssuerURL,
+			Logo:          idp.Logo,
+			ClientID:      idp.ClientID,
+			Enabled:       new(idp.Enabled),
+			AutoProvision: new(idp.AutoProvision),
+			CreatedAt:     idp.CreatedAt,
+			UpdatedAt:     idp.UpdatedAt,
 		}
 	}
 

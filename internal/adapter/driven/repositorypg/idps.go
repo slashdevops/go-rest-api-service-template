@@ -150,8 +150,8 @@ func (ref *IDPsRepository) Insert(ctx context.Context, input *domain.InsertIDPIn
 	span.SetAttributes(attribute.String("input.id", input.ID.String()))
 
 	query := `
-        INSERT INTO idps (id, idp_types, name, description, callback_url, login_redirect_url, register_redirect_url, logo, client_id, client_secret)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10);
+        INSERT INTO idps (id, idp_types, name, description, callback_url, issuer_url, logo, client_id, client_secret, enabled, auto_provision)
+        VALUES ($1,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10,$11);
     `
 
 	_, err := ref.db.Exec(ctx, query,
@@ -160,11 +160,12 @@ func (ref *IDPsRepository) Insert(ctx context.Context, input *domain.InsertIDPIn
 		input.Name,
 		input.Description,
 		input.CallbackURL,
-		input.LoginRedirectURL,
-		input.RegisterRedirectURL,
+		input.IssuerURL,
 		input.Logo,
 		input.ClientID,
 		input.ClientSecret,
+		input.Enabled,
+		input.AutoProvision,
 	)
 	if err != nil {
 		return o11y.RecordError(ctx, span, start, ref.handlePgError(err, input), ref.metrics, attrs)
@@ -216,14 +217,11 @@ func (ref *IDPsRepository) UpdateByID(ctx context.Context, input *domain.UpdateI
 		args = append(args, nil)
 	}
 
-	if input.LoginRedirectURL != nil && *input.LoginRedirectURL != "" {
-		args = append(args, *input.LoginRedirectURL)
-	} else {
-		args = append(args, nil)
-	}
-
-	if input.RegisterRedirectURL != nil && *input.RegisterRedirectURL != "" {
-		args = append(args, *input.RegisterRedirectURL)
+	// issuer_url: nil leaves it alone, "" clears it (a row moving to the
+	// github kind), anything else replaces it. The query distinguishes the
+	// first two with a sentinel, because NULL already means "leave it".
+	if input.IssuerURL != nil {
+		args = append(args, *input.IssuerURL)
 	} else {
 		args = append(args, nil)
 	}
@@ -246,18 +244,21 @@ func (ref *IDPsRepository) UpdateByID(ctx context.Context, input *domain.UpdateI
 		args = append(args, nil)
 	}
 
+	args = append(args, input.Enabled, input.AutoProvision)
+
 	query := `
         UPDATE idps SET
-            idp_types             = COALESCE(NULLIF($2::uuid, idp_types), idp_types),
-            name                  = COALESCE(NULLIF($3, name), name),
-            description           = COALESCE(NULLIF($4, description), description),
-            callback_url          = COALESCE(NULLIF($5, callback_url), callback_url),
-            login_redirect_url    = COALESCE(NULLIF($6, login_redirect_url), login_redirect_url),
-            register_redirect_url = COALESCE(NULLIF($7, register_redirect_url), register_redirect_url),
-            logo                  = COALESCE(NULLIF($8, logo), logo),
-            client_id             = COALESCE(NULLIF($9, client_id), client_id),
-            client_secret         = COALESCE(NULLIF($10, client_secret), client_secret),
-            updated_at            = CURRENT_TIMESTAMP
+            idp_types      = COALESCE(NULLIF($2::uuid, idp_types), idp_types),
+            name           = COALESCE(NULLIF($3, name), name),
+            description    = COALESCE(NULLIF($4, description), description),
+            callback_url   = COALESCE(NULLIF($5, callback_url), callback_url),
+            issuer_url     = CASE WHEN $6::varchar IS NULL THEN issuer_url ELSE NULLIF($6::varchar, '') END,
+            logo           = COALESCE(NULLIF($7, logo), logo),
+            client_id      = COALESCE(NULLIF($8, client_id), client_id),
+            client_secret  = COALESCE(NULLIF($9, client_secret), client_secret),
+            enabled        = COALESCE($10::boolean, enabled),
+            auto_provision = COALESCE($11::boolean, auto_provision),
+            updated_at     = CURRENT_TIMESTAMP
         WHERE id = $1;
     `
 
@@ -340,14 +341,15 @@ func (ref *IDPsRepository) SelectByID(ctx context.Context, id uuid.UUID) (*domai
             idp.name,
             idp.description,
             idp.callback_url,
-            idp.login_redirect_url,
-            idp.register_redirect_url,
+            COALESCE(idp.issuer_url, ''),
             idp.logo,
             idp.client_id,
             idp.client_secret,
+            idp.enabled,
+            idp.auto_provision,
             idp.created_at,
             idp.updated_at,
-            ARRAY[COALESCE(idpt.id::varchar, '00000000-0000-0000-0000-000000000000'), COALESCE(idpt.name::varchar, ''), COALESCE(idpt.scopes::text, '{}'), COALESCE(idpt.user_info_api_url::varchar, '')] AS idp_type
+            ARRAY[COALESCE(idpt.id::varchar, '00000000-0000-0000-0000-000000000000'), COALESCE(idpt.name::varchar, ''), COALESCE(idpt.scopes::text, '{}'), COALESCE(idpt.user_info_api_url::varchar, ''), COALESCE(idpt.kind::varchar, ''), COALESCE(idpt.issuer_hint::varchar, '')] AS idp_type
         FROM idps AS idp
             LEFT JOIN idp_types AS idpt ON idp.idp_types = idpt.id
         WHERE idp.id=$1;
@@ -364,11 +366,12 @@ func (ref *IDPsRepository) SelectByID(ctx context.Context, id uuid.UUID) (*domai
 		&idp.Name,
 		&idp.Description,
 		&idp.CallbackURL,
-		&idp.LoginRedirectURL,
-		&idp.RegisterRedirectURL,
+		&idp.IssuerURL,
 		&idp.Logo,
 		&idp.ClientID,
 		&idp.ClientSecret,
+		&idp.Enabled,
+		&idp.AutoProvision,
 		&idp.CreatedAt,
 		&idp.UpdatedAt,
 		&idpType,
@@ -382,28 +385,7 @@ func (ref *IDPsRepository) SelectByID(ctx context.Context, id uuid.UUID) (*domai
 		return nil, o11y.RecordError(ctx, span, start, ref.handlePgError(err, nil), ref.metrics, attrs)
 	}
 
-	// Parse the IDP type array
-	if len(idpType) >= 4 {
-		if id, err := uuid.Parse(idpType[0]); err == nil {
-			idp.IDPType.ID = id
-		}
-
-		idp.IDPType.Name = idpType[1]
-
-		// Parse scopes from text array format like "{scope1,scope2}"
-		if idpType[2] != "{}" {
-			scopesStr := strings.Trim(idpType[2], "{}")
-			if scopesStr != "" {
-				idp.IDPType.Scopes = strings.Split(scopesStr, ",")
-				// Trim whitespace from each scope
-				for i, scope := range idp.IDPType.Scopes {
-					idp.IDPType.Scopes[i] = strings.TrimSpace(scope)
-				}
-			}
-		}
-
-		idp.IDPType.UserInfoAPIURL = idpType[3]
-	}
+	parseIDPTypeArray(&idp.IDPType, idpType)
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "idp retrieved successfully", attribute.String("idp.id", id.String()))
 	return &idp, nil
@@ -428,14 +410,15 @@ func (ref *IDPsRepository) SelectByName(ctx context.Context, name string) (*doma
             idp.name,
             idp.description,
             idp.callback_url,
-            idp.login_redirect_url,
-            idp.register_redirect_url,
+            COALESCE(idp.issuer_url, ''),
             idp.logo,
             idp.client_id,
             idp.client_secret,
+            idp.enabled,
+            idp.auto_provision,
             idp.created_at,
             idp.updated_at,
-            ARRAY[COALESCE(idpt.id::varchar, '00000000-0000-0000-0000-000000000000'), COALESCE(idpt.name::varchar, ''), COALESCE(idpt.scopes::text, '{}'), COALESCE(idpt.user_info_api_url::varchar, '')] AS idp_type
+            ARRAY[COALESCE(idpt.id::varchar, '00000000-0000-0000-0000-000000000000'), COALESCE(idpt.name::varchar, ''), COALESCE(idpt.scopes::text, '{}'), COALESCE(idpt.user_info_api_url::varchar, ''), COALESCE(idpt.kind::varchar, ''), COALESCE(idpt.issuer_hint::varchar, '')] AS idp_type
         FROM idps AS idp
             LEFT JOIN idp_types AS idpt ON idp.idp_types = idpt.id
         WHERE idp.name=$1;
@@ -452,11 +435,12 @@ func (ref *IDPsRepository) SelectByName(ctx context.Context, name string) (*doma
 		&idp.Name,
 		&idp.Description,
 		&idp.CallbackURL,
-		&idp.LoginRedirectURL,
-		&idp.RegisterRedirectURL,
+		&idp.IssuerURL,
 		&idp.Logo,
 		&idp.ClientID,
 		&idp.ClientSecret,
+		&idp.Enabled,
+		&idp.AutoProvision,
 		&idp.CreatedAt,
 		&idp.UpdatedAt,
 		&idpType,
@@ -470,28 +454,7 @@ func (ref *IDPsRepository) SelectByName(ctx context.Context, name string) (*doma
 		return nil, o11y.RecordError(ctx, span, start, ref.handlePgError(err, nil), ref.metrics, attrs)
 	}
 
-	// Parse the IDP type array
-	if len(idpType) >= 4 {
-		if id, err := uuid.Parse(idpType[0]); err == nil {
-			idp.IDPType.ID = id
-		}
-
-		idp.IDPType.Name = idpType[1]
-
-		// Parse scopes from text array format like "{scope1,scope2}"
-		if idpType[2] != "{}" {
-			scopesStr := strings.Trim(idpType[2], "{}")
-			if scopesStr != "" {
-				idp.IDPType.Scopes = strings.Split(scopesStr, ",")
-				// Trim whitespace from each scope
-				for i, scope := range idp.IDPType.Scopes {
-					idp.IDPType.Scopes[i] = strings.TrimSpace(scope)
-				}
-			}
-		}
-
-		idp.IDPType.UserInfoAPIURL = idpType[3]
-	}
+	parseIDPTypeArray(&idp.IDPType, idpType)
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "idp retrieved successfully", attribute.String("idp.name", name))
 	return &idp, nil
@@ -519,15 +482,16 @@ func (ref *IDPsRepository) Select(ctx context.Context, input *domain.SelectIDPsI
 		"name",
 		"description",
 		"callback_url",
-		"login_redirect_url",
-		"register_redirect_url",
+		"COALESCE(idps.issuer_url, '') AS issuer_url",
 		"logo",
 		"client_id",
 		"client_secret",
+		"enabled",
+		"auto_provision",
 		"created_at",
 		"updated_at",
 		"serial_id",
-		"ARRAY[COALESCE(idpt.id::varchar, '00000000-0000-0000-0000-000000000000'), COALESCE(idpt.name::varchar, ''), COALESCE(idpt.scopes::text, '{}'), COALESCE(idpt.user_info_api_url::varchar, '')] AS idp_type",
+		"ARRAY[COALESCE(idpt.id::varchar, '00000000-0000-0000-0000-000000000000'), COALESCE(idpt.name::varchar, ''), COALESCE(idpt.scopes::text, '{}'), COALESCE(idpt.user_info_api_url::varchar, ''), COALESCE(idpt.kind::varchar, ''), COALESCE(idpt.issuer_hint::varchar, '')] AS idp_type",
 	}
 
 	fieldsStr := buildFieldSelection(sqlFieldsPrefix, fieldsArray, input.Fields)
@@ -610,28 +574,7 @@ func (ref *IDPsRepository) Select(ctx context.Context, input *domain.SelectIDPsI
 			return nil, o11y.RecordError(ctx, span, start, ref.handlePgError(err, input), ref.metrics, attrs)
 		}
 
-		// Parse the IDP type array
-		if len(idpType) >= 4 {
-			if id, err := uuid.Parse(idpType[0]); err == nil {
-				item.IDPType.ID = id
-			}
-
-			item.IDPType.Name = idpType[1]
-
-			// Parse scopes from text array format like "{scope1,scope2}"
-			if idpType[2] != "{}" {
-				scopesStr := strings.Trim(idpType[2], "{}")
-				if scopesStr != "" {
-					item.IDPType.Scopes = strings.Split(scopesStr, ",")
-					// Trim whitespace from each scope
-					for i, scope := range item.IDPType.Scopes {
-						item.IDPType.Scopes[i] = strings.TrimSpace(scope)
-					}
-				}
-			}
-
-			item.IDPType.UserInfoAPIURL = idpType[3]
-		}
+		parseIDPTypeArray(&item.IDPType, idpType)
 
 		fetchedItems = append(fetchedItems, item)
 	}
@@ -777,11 +720,12 @@ func (ref *IDPsRepository) buildScanFields(item *domain.IDP, idpType *[]string, 
 			&item.Name,
 			&item.Description,
 			&item.CallbackURL,
-			&item.LoginRedirectURL,
-			&item.RegisterRedirectURL,
+			&item.IssuerURL,
 			&item.Logo,
 			&item.ClientID,
 			&item.ClientSecret,
+			&item.Enabled,
+			&item.AutoProvision,
 			&item.CreatedAt,
 			&item.UpdatedAt,
 			&item.SerialID,
@@ -805,10 +749,12 @@ func (ref *IDPsRepository) buildScanFields(item *domain.IDP, idpType *[]string, 
 			scanFields = append(scanFields, &item.Description)
 		case "callback_url":
 			scanFields = append(scanFields, &item.CallbackURL)
-		case "login_redirect_url":
-			scanFields = append(scanFields, &item.LoginRedirectURL)
-		case "register_redirect_url":
-			scanFields = append(scanFields, &item.RegisterRedirectURL)
+		case "issuer_url":
+			scanFields = append(scanFields, &item.IssuerURL)
+		case "enabled":
+			scanFields = append(scanFields, &item.Enabled)
+		case "auto_provision":
+			scanFields = append(scanFields, &item.AutoProvision)
 		case "logo":
 			scanFields = append(scanFields, &item.Logo)
 		case "client_id":
@@ -834,4 +780,31 @@ func (ref *IDPsRepository) buildScanFields(item *domain.IDP, idpType *[]string, 
 
 	scanFields = append(scanFields, &item.SerialID)
 	return scanFields
+}
+
+// parseIDPTypeArray unpacks the ARRAY[...] the queries build for the joined
+// type row: id, name, scopes as a text array literal, user-info URL, kind,
+// issuer hint. One place for it, where there used to be three copies.
+func parseIDPTypeArray(t *domain.IDPTypes, idpType []string) {
+	if len(idpType) < 6 {
+		return
+	}
+
+	if id, err := uuid.Parse(idpType[0]); err == nil {
+		t.ID = id
+	}
+
+	t.Name = idpType[1]
+
+	// Scopes come back as a text array literal like "{scope1,scope2}".
+	if scopesStr := strings.Trim(idpType[2], "{}"); scopesStr != "" {
+		t.Scopes = strings.Split(scopesStr, ",")
+		for i, scope := range t.Scopes {
+			t.Scopes[i] = strings.TrimSpace(scope)
+		}
+	}
+
+	t.UserInfoAPIURL = idpType[3]
+	t.Kind = domain.IDPTypeKind(idpType[4])
+	t.IssuerHint = idpType[5]
 }

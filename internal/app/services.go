@@ -498,6 +498,7 @@ func (a *App) initAuthServices(
 
 	a.services.IDPs, err = usecase.NewIDPsService(usecase.IDPsServiceConf{
 		Repository:      a.repositories.IDPs,
+		IDPTypes:        a.repositories.IDPTypes,
 		CacheService:    cacheService,
 		ResourcesLimits: a.services.ResourcesLimits,
 		Cipher:          cipherAdapter,
@@ -507,14 +508,22 @@ func (a *App) initAuthServices(
 		return fmt.Errorf("error creating idps service: %w", err)
 	}
 
+	oauthProvider, err := oauthidp.New(oauthidp.Config{HTTPClient: httpClient})
+	if err != nil {
+		return fmt.Errorf("error creating the OAuth provider adapter: %w", err)
+	}
+
 	a.services.AuthnIDPs, err = usecase.NewAuthnIDPsService(usecase.AuthnIDPsServiceConf{
-		AuthnService:  a.services.Authn,
-		IDPsService:   a.services.IDPs,
-		TokenSigner:   tokenSigner,
-		OAuth:         oauthidp.New(),
-		RevokedTokens: a.repositories.RevokedTokens,
-		Issuer:        a.configs.Authn.Issuer.Value,
-		OT:            a.telemetry,
+		AuthnService:    a.services.Authn,
+		IDPsService:     a.services.IDPs,
+		UserService:     a.services.Users,
+		UsersIdentities: a.repositories.UsersIdentities,
+		TokenSigner:     tokenSigner,
+		OAuth:           oauthProvider,
+		RevokedTokens:   a.repositories.RevokedTokens,
+		Cipher:          cipherAdapter,
+		Issuer:          a.configs.Authn.Issuer.Value,
+		OT:              a.telemetry,
 	})
 	if err != nil {
 		return fmt.Errorf("error creating authn idps service: %w", err)

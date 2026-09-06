@@ -13,6 +13,7 @@ const (
 	TokenTypeBearer            TokenType = "Bearer"
 	TokenTypeIDPSignin         TokenType = "idp_signin"
 	TokenTypeIDPRegister       TokenType = "idp_register"
+	TokenTypeIDPLink           TokenType = "idp_link"
 )
 
 // String returns the string representation of the token type.
@@ -30,7 +31,8 @@ func (tt TokenType) IsValid() bool {
 		TokenTypePersonalAccess,
 		TokenTypeBearer,
 		TokenTypeIDPSignin,
-		TokenTypeIDPRegister:
+		TokenTypeIDPRegister,
+		TokenTypeIDPLink:
 		return true
 	}
 

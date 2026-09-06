@@ -21,33 +21,30 @@ const docTemplate = `{
     "paths": {
         "/auth/idp/available": {
             "get": {
-                "description": "Retrieve all identity providers configured and available for user authentication and registration.",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "Retrieve every ENABLED identity provider, for the login page. Disabled providers stay configured and are not offered",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Authentication"
+                    "AuthnIDPs"
                 ],
                 "summary": "List identity providers",
                 "operationId": "0198fb33-7333-76f9-bcb4-1af086de3e10",
                 "responses": {
                     "200": {
-                        "description": "List of available Identity Providers retrieved successfully",
+                        "description": "The providers",
                         "schema": {
                             "$ref": "#/definitions/payload.ListIDPAvailableResponse"
                         }
                     },
-                    "400": {
-                        "description": "Malformed request",
+                    "429": {
+                        "description": "Too many requests",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
                     "500": {
-                        "description": "Internal server error retrieving IDPs",
+                        "description": "Internal server error",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -57,15 +54,12 @@ const docTemplate = `{
         },
         "/auth/idp/{idp_id}/callback": {
             "get": {
-                "description": "Process OAuth callback from Identity Provider, validates state and authorization code.",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "Called by the frontend callback route with the state and code from the provider, never by the browser: JSON answer, no cookie, no redirect. Spends the state, exchanges the code with PKCE, resolves the identity by subject",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Authentication"
+                    "AuthnIDPs"
                 ],
                 "summary": "Handle IDP OAuth callback",
                 "operationId": "01988e60-89e5-72ee-9db4-db5cd7535717",
@@ -73,59 +67,154 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "format": "uuid",
-                        "description": "Identity Provider unique identifier",
+                        "description": "Identity provider id",
                         "name": "idp_id",
                         "in": "path",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "OAuth state parameter for CSRF protection",
+                        "description": "The state the provider echoed back",
                         "name": "state",
                         "in": "query",
                         "required": true
                     },
                     {
                         "type": "string",
-                        "description": "OAuth authorization code from IDP",
+                        "description": "The authorization code, absent when the provider reports an error",
                         "name": "code",
-                        "in": "query",
-                        "required": true
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "The provider's error code, for example access_denied",
+                        "name": "error",
+                        "in": "query"
                     }
                 ],
                 "responses": {
-                    "302": {
-                        "description": "Callback processed successfully. Authentication cookies are set and the caller is redirected to the IDP's configured login or register redirect URL. This endpoint never returns a JSON body on success — it always issues a redirect.",
+                    "200": {
+                        "description": "The outcome",
                         "schema": {
-                            "type": "string"
-                        },
-                        "headers": {
-                            "Location": {
-                                "type": "string",
-                                "description": "The IDP's configured LoginRedirectURL or RegisterRedirectURL"
-                            }
+                            "$ref": "#/definitions/payload.IDPCallbackResponse"
                         }
                     },
                     "400": {
-                        "description": "Invalid parameters, missing state/code, or invalid IDP ID format",
+                        "description": "A state that is missing, spent, expired or minted for another provider, or a missing code",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "401": {
+                        "description": "The provider refused the sign-in, or the identity is not linked to an account here",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
                     "404": {
-                        "description": "Identity Provider not found",
+                        "description": "Unknown or disabled identity provider",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
                     "409": {
-                        "description": "User already exists during registration",
+                        "description": "The identity is already linked to an account",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
                     "500": {
-                        "description": "Internal server error during callback processing",
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "503": {
+                        "description": "The identity provider is not reachable",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    }
+                }
+            }
+        },
+        "/auth/idp/{idp_id}/link": {
+            "get": {
+                "security": [
+                    {
+                        "AccessToken": []
+                    }
+                ],
+                "description": "Build the authorization URL for linking a provider identity to the signed-in account. The only way an existing account gains one: the session proves the account, the provider proves the identity",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "AuthnIDPs"
+                ],
+                "summary": "Initiate IDP link",
+                "operationId": "01a07319-1d32-7bd2-8ba0-f7da9aaaed0a",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identity provider id",
+                        "name": "idp_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "The URL to send the browser to",
+                        "schema": {
+                            "$ref": "#/definitions/payload.IDPLoginResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid identity provider id",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid or expired token",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "404": {
+                        "description": "Unknown or disabled identity provider",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "503": {
+                        "description": "The identity provider is not reachable",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -135,15 +224,12 @@ const docTemplate = `{
         },
         "/auth/idp/{idp_id}/login": {
             "get": {
-                "description": "Initiate authentication with specified Identity Provider and returns redirect URL for OAuth flow.",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "Build the authorization URL for a sign-in. The caller sends the browser there; the provider returns it to the frontend callback route with a state and a code",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Authentication"
+                    "AuthnIDPs"
                 ],
                 "summary": "Initiate IDP login",
                 "operationId": "01988e60-89e5-72ab-adb4-3eef95d1afd3",
@@ -151,7 +237,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "format": "uuid",
-                        "description": "Identity Provider unique identifier",
+                        "description": "Identity provider id",
                         "name": "idp_id",
                         "in": "path",
                         "required": true
@@ -159,19 +245,37 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Login URL generated successfully. RedirectURL and RedirectCode are fields of the JSON body — this endpoint returns 200, it does not itself redirect.",
+                        "description": "The URL to send the browser to",
                         "schema": {
                             "$ref": "#/definitions/payload.IDPLoginResponse"
                         }
                     },
                     "400": {
-                        "description": "Invalid IDP ID format or malformed request",
+                        "description": "Invalid identity provider id",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "404": {
+                        "description": "Unknown or disabled identity provider",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
                     "500": {
-                        "description": "Internal server error during URL generation. NOTE: an unknown Identity Provider currently surfaces here rather than as a 404 — the handler has no not-found branch. Tracked as a behaviour defect; this annotation documents what the endpoint does today, not what it should do.",
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "503": {
+                        "description": "The identity provider is not reachable",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -181,15 +285,12 @@ const docTemplate = `{
         },
         "/auth/idp/{idp_id}/register": {
             "get": {
-                "description": "Initiate user registration with specified Identity Provider and returns redirect URL for OAuth registration flow.",
-                "consumes": [
-                    "application/json"
-                ],
+                "description": "Build the authorization URL for a registration. Same flow as a login; the callback creates the account when the provider vouches for the email and allows auto-provisioning",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
-                    "Authentication"
+                    "AuthnIDPs"
                 ],
                 "summary": "Initiate IDP registration",
                 "operationId": "019894ba-6014-79cf-bff4-6668484cc7e3",
@@ -197,7 +298,7 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "format": "uuid",
-                        "description": "Identity Provider unique identifier",
+                        "description": "Identity provider id",
                         "name": "idp_id",
                         "in": "path",
                         "required": true
@@ -205,19 +306,37 @@ const docTemplate = `{
                 ],
                 "responses": {
                     "200": {
-                        "description": "Registration URL generated successfully. RedirectURL and RedirectCode are fields of the JSON body — this endpoint returns 200, it does not itself redirect.",
+                        "description": "The URL to send the browser to",
                         "schema": {
                             "$ref": "#/definitions/payload.IDPRegisterResponse"
                         }
                     },
                     "400": {
-                        "description": "Invalid IDP ID format or malformed request",
+                        "description": "Invalid identity provider id",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "404": {
+                        "description": "Unknown or disabled identity provider",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
                     "500": {
-                        "description": "Internal server error during URL generation. NOTE: an unknown Identity Provider currently surfaces here rather than as a 404 — the handler has no not-found branch. Tracked as a behaviour defect; this annotation documents what the endpoint does today, not what it should do.",
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "503": {
+                        "description": "The identity provider is not reachable",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -1718,6 +1837,134 @@ const docTemplate = `{
                     },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    }
+                }
+            }
+        },
+        "/me/identities": {
+            "get": {
+                "security": [
+                    {
+                        "AccessToken": []
+                    }
+                ],
+                "description": "The identity providers the signed-in account can sign in through",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Me"
+                ],
+                "summary": "List my linked identities",
+                "operationId": "01a07319-1d32-7ca7-834a-d8dcc6a19fa0",
+                "responses": {
+                    "200": {
+                        "description": "The linked identities",
+                        "schema": {
+                            "$ref": "#/definitions/payload.ListUserIdentitiesResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid or expired token",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    }
+                }
+            }
+        },
+        "/me/identities/{idp_id}": {
+            "delete": {
+                "security": [
+                    {
+                        "AccessToken": []
+                    }
+                ],
+                "description": "Remove the identity at one provider from the signed-in account. Refused when it is the only way into an account that has no password",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Me"
+                ],
+                "summary": "Unlink my identity",
+                "operationId": "01a07319-1d32-7cac-885b-6c544f5dbe08",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identity provider id",
+                        "name": "idp_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Identity unlinked",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid identity provider id",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "401": {
+                        "description": "Invalid or expired token",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "403": {
+                        "description": "Not authorized",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "404": {
+                        "description": "No identity at that provider",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "409": {
+                        "description": "It is the only way into the account",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -6858,7 +7105,8 @@ const docTemplate = `{
                 "personal_access",
                 "Bearer",
                 "idp_signin",
-                "idp_register"
+                "idp_register",
+                "idp_link"
             ],
             "x-enum-varnames": [
                 "TokenTypeAccess",
@@ -6868,7 +7116,8 @@ const docTemplate = `{
                 "TokenTypePersonalAccess",
                 "TokenTypeBearer",
                 "TokenTypeIDPSignin",
-                "TokenTypeIDPRegister"
+                "TokenTypeIDPRegister",
+                "TokenTypeIDPLink"
             ]
         },
         "payload.AuthzPaths": {
@@ -6905,11 +7154,14 @@ const docTemplate = `{
                 "client_secret",
                 "description",
                 "idp_type_id",
-                "login_redirect_url",
-                "name",
-                "register_redirect_url"
+                "name"
             ],
             "properties": {
+                "auto_provision": {
+                    "description": "Defaults to true",
+                    "type": "boolean",
+                    "example": true
+                },
                 "callback_url": {
                     "description": "OAuth callback URL",
                     "type": "string",
@@ -6940,6 +7192,11 @@ const docTemplate = `{
                     "minLength": 10,
                     "example": "Google OAuth2 Identity Provider"
                 },
+                "enabled": {
+                    "description": "Defaults to true",
+                    "type": "boolean",
+                    "example": true
+                },
                 "id": {
                     "description": "Optional custom ID",
                     "type": "string",
@@ -6952,11 +7209,11 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "019b4b0d-a682-7e1d-bd83-3864c7d5aa43"
                 },
-                "login_redirect_url": {
-                    "description": "Login redirect URL",
+                "issuer_url": {
+                    "description": "Required for an oidc kind; the value the ID token's iss must equal",
                     "type": "string",
                     "format": "uri",
-                    "example": "https://example.com/login"
+                    "example": "https://accounts.google.com"
                 },
                 "logo": {
                     "description": "Logo URL",
@@ -6973,12 +7230,6 @@ const docTemplate = `{
                     "maxLength": 100,
                     "minLength": 2,
                     "example": "Google"
-                },
-                "register_redirect_url": {
-                    "description": "Registration redirect URL",
-                    "type": "string",
-                    "format": "uri",
-                    "example": "https://example.com/register"
                 }
             }
         },
@@ -7448,6 +7699,12 @@ const docTemplate = `{
             "description": "Available identity provider information including type and branding details",
             "type": "object",
             "properties": {
+                "auto_provision": {
+                    "description": "Whether a sign-in from an identity nobody has linked yet creates an\naccount. The login page offers \"register with\" only when this is true.",
+                    "type": "boolean",
+                    "format": "boolean",
+                    "example": true
+                },
                 "description": {
                     "description": "Detailed description",
                     "type": "string",
@@ -7479,6 +7736,32 @@ const docTemplate = `{
                     "type": "string",
                     "format": "string",
                     "example": "Google"
+                }
+            }
+        },
+        "payload.IDPCallbackResponse": {
+            "description": "The outcome of a provider callback: a session for login and register, the linked account for link",
+            "type": "object",
+            "properties": {
+                "event": {
+                    "description": "Which event the state was minted for",
+                    "type": "string",
+                    "format": "string",
+                    "example": "login"
+                },
+                "linked_to": {
+                    "description": "The account, for link",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "019b4b0d-a682-7e34-a20c-c71a7147d7e7"
+                },
+                "login": {
+                    "description": "The session, for login and register",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/payload.LoginUserResponse"
+                        }
+                    ]
                 }
             }
         },
@@ -7524,11 +7807,16 @@ const docTemplate = `{
             "description": "Complete identity provider configuration including OAuth credentials and redirect URLs",
             "type": "object",
             "properties": {
+                "auto_provision": {
+                    "description": "A first sign-in with a provider-verified email may create an account",
+                    "type": "boolean",
+                    "example": true
+                },
                 "callback_url": {
-                    "description": "OAuth callback URL",
+                    "description": "The redirect_uri registered with the provider: the frontend's callback route URL",
                     "type": "string",
                     "format": "uri",
-                    "example": "https://example.com/callback"
+                    "example": "https://app.example.com/auth/idp/019b4b0d-a682-7e19-a524-866cfffef121/callback"
                 },
                 "client_id": {
                     "description": "OAuth client ID",
@@ -7548,6 +7836,11 @@ const docTemplate = `{
                     "format": "string",
                     "example": "Google Identity Provider"
                 },
+                "enabled": {
+                    "description": "Offered on the login page and accepted at the callback",
+                    "type": "boolean",
+                    "example": true
+                },
                 "id": {
                     "description": "Unique identifier",
                     "type": "string",
@@ -7562,11 +7855,11 @@ const docTemplate = `{
                         }
                     ]
                 },
-                "login_redirect_url": {
-                    "description": "Login redirect URL",
+                "issuer_url": {
+                    "description": "OpenID Connect issuer; empty for the github kind",
                     "type": "string",
                     "format": "uri",
-                    "example": "https://example.com/login"
+                    "example": "https://login.microsoftonline.com/00000000-0000-0000-0000-000000000000/v2.0"
                 },
                 "logo": {
                     "description": "Logo URL",
@@ -7579,12 +7872,6 @@ const docTemplate = `{
                     "type": "string",
                     "format": "string",
                     "example": "Google"
-                },
-                "register_redirect_url": {
-                    "description": "Registration redirect URL",
-                    "type": "string",
-                    "format": "uri",
-                    "example": "https://example.com/register"
                 },
                 "updated_at": {
                     "description": "Timestamp when the identity provider was last updated",
@@ -7640,6 +7927,18 @@ const docTemplate = `{
                     "format": "uuid",
                     "example": "019b4b0d-a682-7e30-8b33-650caa6446c7"
                 },
+                "issuer_hint": {
+                    "description": "What to put in an instance's issuer_url; empty for the github kind",
+                    "type": "string",
+                    "format": "uri",
+                    "example": "https://login.microsoftonline.com/\u003ctenant-id\u003e/v2.0"
+                },
+                "kind": {
+                    "description": "How the provider is spoken to: oidc (discovery, PKCE, ID token) or github (plain OAuth2)",
+                    "type": "string",
+                    "format": "string",
+                    "example": "oidc"
+                },
                 "name": {
                     "description": "Display name of the identity provider type (e.g., Google, Github, Microsoft)",
                     "type": "string",
@@ -7676,10 +7975,10 @@ const docTemplate = `{
                     "example": "2021-01-01T00:00:00Z"
                 },
                 "user_info_api_url": {
-                    "description": "API endpoint URL to retrieve user information after authentication",
+                    "description": "User-info endpoint, stated only for the github kind; an oidc kind discovers it",
                     "type": "string",
                     "format": "uri",
-                    "example": "https://www.googleapis.com/oauth2/v3/userinfo"
+                    "example": "https://api.github.com/user"
                 }
             }
         },
@@ -8007,6 +8306,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/domain.Paginator"
                         }
                     ]
+                }
+            }
+        },
+        "payload.ListUserIdentitiesResponse": {
+            "description": "The provider identities linked to the account",
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/payload.UserIdentityResponse"
+                    }
                 }
             }
         },
@@ -9027,6 +9338,11 @@ const docTemplate = `{
             "description": "Request payload for updating an existing identity provider configuration (all fields optional)",
             "type": "object",
             "properties": {
+                "auto_provision": {
+                    "description": "Updated auto-provision flag",
+                    "type": "boolean",
+                    "example": false
+                },
                 "callback_url": {
                     "description": "Updated callback URL",
                     "type": "string",
@@ -9057,17 +9373,22 @@ const docTemplate = `{
                     "minLength": 10,
                     "example": "Updated Google Identity Provider"
                 },
+                "enabled": {
+                    "description": "Updated enabled flag",
+                    "type": "boolean",
+                    "example": false
+                },
                 "idp_type_id": {
                     "description": "Updated IDP type ID",
                     "type": "string",
                     "format": "uuid",
                     "example": "019b4b0d-a682-7e21-9f5c-725b8be59cd5"
                 },
-                "login_redirect_url": {
-                    "description": "Updated login redirect URL",
+                "issuer_url": {
+                    "description": "Updated issuer; an empty string clears it",
                     "type": "string",
                     "format": "uri",
-                    "example": "https://example.com/login"
+                    "example": "https://accounts.google.com"
                 },
                 "logo": {
                     "description": "Updated logo URL",
@@ -9084,12 +9405,6 @@ const docTemplate = `{
                     "maxLength": 100,
                     "minLength": 2,
                     "example": "Google Updated"
-                },
-                "register_redirect_url": {
-                    "description": "Updated registration redirect URL",
-                    "type": "string",
-                    "format": "uri",
-                    "example": "https://example.com/register"
                 }
             }
         },
@@ -9377,6 +9692,42 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.AuthzPermissions"
                         }
                     ]
+                }
+            }
+        },
+        "payload.UserIdentityResponse": {
+            "description": "A provider identity linked to the account",
+            "type": "object",
+            "properties": {
+                "email": {
+                    "description": "The email the provider reported when the link was made",
+                    "type": "string",
+                    "format": "email",
+                    "example": "jane@example.com"
+                },
+                "idp_id": {
+                    "description": "The provider row",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "019b4b0d-a682-7e19-a524-866cfffef121"
+                },
+                "idp_name": {
+                    "description": "The provider row's name",
+                    "type": "string",
+                    "format": "string",
+                    "example": "Company Entra ID"
+                },
+                "idp_type_name": {
+                    "description": "The provider's type",
+                    "type": "string",
+                    "format": "string",
+                    "example": "EntraID"
+                },
+                "linked_at": {
+                    "description": "When the link was made",
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2026-09-05T10:12:00Z"
                 }
             }
         },

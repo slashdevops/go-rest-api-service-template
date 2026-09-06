@@ -2,17 +2,22 @@ package usecase
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
+
 	"uuid"
 
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
+	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/cipher"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/oauth"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/repository"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/token"
@@ -22,10 +27,16 @@ import (
 const (
 	idpLoginDuration        = 15 * time.Minute
 	idpRegistrationDuration = 25 * time.Minute
+	idpLinkDuration         = 15 * time.Minute
 )
 
+// AuthnServiceConsumer is the half of the authn service an IdP sign-in needs.
+//
+// LoginUserByID, never LoginUser: the identity has already been resolved to an
+// account by (idp, subject) when this is called, and the old email-based login
+// is exactly what let a provider-asserted email take an account over.
 type AuthnServiceConsumer interface {
-	LoginUser(ctx context.Context, input *domain.LoginUserInput) (*domain.LoginUserOutput, error)
+	LoginUserByID(ctx context.Context, userID uuid.UUID, method domain.LoginMethod) (*domain.LoginUserOutput, error)
 	RegisterUser(ctx context.Context, input *domain.RegisterUserInput) error
 }
 
@@ -33,23 +44,60 @@ type IDPsServiceConsumer interface {
 	GetByID(ctx context.Context, id uuid.UUID) (*domain.IDP, error)
 }
 
+// IDPUserServiceConsumer is what identity resolution needs from users: does an
+// account with this email exist, and does this account have a password.
+type IDPUserServiceConsumer interface {
+	GetByEmail(ctx context.Context, email string) (*domain.User, error)
+	GetByID(ctx context.Context, id uuid.UUID) (*domain.User, error)
+}
+
 type AuthnIDPsServiceConf struct {
-	AuthnService  AuthnServiceConsumer
-	IDPsService   IDPsServiceConsumer
-	TokenSigner   token.Signer
-	OAuth         oauth.Provider
-	RevokedTokens repository.RevokedTokens
+	AuthnService    AuthnServiceConsumer
+	IDPsService     IDPsServiceConsumer
+	UserService     IDPUserServiceConsumer
+	UsersIdentities repository.UsersIdentities
+	TokenSigner     token.Signer
+	OAuth           oauth.Provider
+	RevokedTokens   repository.RevokedTokens
+
+	// Cipher seals the PKCE verifier, the nonce and the linking account into
+	// the state token. The state is signed, so it cannot be forged, but it is
+	// readable by whoever sees the URL, and the verifier must not be.
+	Cipher cipher.Cipher
+
 	OT            *o11y.OpenTelemetry
 	Issuer        string
 	MetricsPrefix string
 }
 
+// AuthnIDPsService drives the three provider events: login, register, link.
+//
+// # How a callback becomes an account
+//
+// The provider's word is the subject; the email is a hint. A callback resolves
+// (idp, subject) in users_identities FIRST:
+//
+//   - known identity: the linked account signs in, whatever the email says now;
+//   - unknown identity, link event: the signed-in account that started the
+//     link gets the identity, provided no account already owns it;
+//   - unknown identity, login or register: an account may be CREATED when the
+//     IdP allows auto-provisioning, the provider vouches for the email, and no
+//     account has that email yet. Otherwise the sign-in is refused with one
+//     wording for every reason, because the differences would tell whoever
+//     controls the provider account which addresses have accounts here.
+//
+// An existing account is never linked by email. The holder links a provider
+// from their profile while signed in, which is the only moment both sides of
+// the link are proven.
 type AuthnIDPsService struct {
 	authnService    AuthnServiceConsumer
 	idpsService     IDPsServiceConsumer
+	userService     IDPUserServiceConsumer
+	usersIdentities repository.UsersIdentities
 	tokenSigner     token.Signer
 	oauth           oauth.Provider
 	revokedTokens   repository.RevokedTokens
+	cipher          cipher.Cipher
 	ot              *o11y.OpenTelemetry
 	metrics         *o11y.LayerMetrics
 	metricsMetadata o11y.Metadata
@@ -67,12 +115,31 @@ func NewAuthnIDPsService(conf AuthnIDPsServiceConf) (*AuthnIDPsService, error) {
 		return nil, &domain.InvalidIDPsServiceError{Message: "IDPsService is nil, but it is required for AuthnIDPsService"}
 	}
 
+	if conf.UserService == nil {
+		return nil, &domain.InvalidUserServiceError{Message: "UserService is nil, but it is required for AuthnIDPsService"}
+	}
+
+	if conf.UsersIdentities == nil {
+		return nil, &domain.InvalidRepositoryError{Message: "UsersIdentities is nil, but it is required for AuthnIDPsService; without it an identity cannot be resolved to an account"}
+	}
+
 	if conf.TokenSigner == nil {
 		return nil, &domain.InvalidTokenSignerError{Message: "TokenSigner is nil, but it is required for AuthnIDPsService"}
 	}
 
 	if conf.OAuth == nil {
 		return nil, &domain.InvalidIdentityProvidersError{Message: "OAuth provider is nil, but it is required for AuthnIDPsService"}
+	}
+
+	if conf.Cipher == nil {
+		return nil, &domain.InvalidCipherError{Message: "Cipher is nil, but it is required for AuthnIDPsService; the PKCE verifier travels sealed inside the state"}
+	}
+
+	if conf.RevokedTokens == nil {
+		// The state used to be replayable when this was nil, with a warning.
+		// A replayable state is a callback anyone who saw the URL can replay,
+		// so it is required now.
+		return nil, &domain.InvalidRepositoryError{Message: "RevokedTokens is nil, but it is required for AuthnIDPsService; the OAuth state must be single-use"}
 	}
 
 	if len(conf.Issuer) <= 2 || len(conf.Issuer) > 100 {
@@ -84,22 +151,21 @@ func NewAuthnIDPsService(conf AuthnIDPsServiceConf) (*AuthnIDPsService, error) {
 	}
 
 	ref := &AuthnIDPsService{
-		authnService:  conf.AuthnService,
-		idpsService:   conf.IDPsService,
-		tokenSigner:   conf.TokenSigner,
-		oauth:         conf.OAuth,
-		revokedTokens: conf.RevokedTokens,
-		issuer:        conf.Issuer,
-		ot:            conf.OT,
-		metricsMetadata: o11y.Metadata{
-			Layer:  AppLayer,
-			Domain: "AuthnIDPs",
-			Action: "NewAuthnIDPsService",
-		},
+		authnService:    conf.AuthnService,
+		idpsService:     conf.IDPsService,
+		userService:     conf.UserService,
+		usersIdentities: conf.UsersIdentities,
+		tokenSigner:     conf.TokenSigner,
+		oauth:           conf.OAuth,
+		revokedTokens:   conf.RevokedTokens,
+		cipher:          conf.Cipher,
+		issuer:          conf.Issuer,
+		ot:              conf.OT,
+		metricsMetadata: o11y.Metadata{Layer: AppLayer, Domain: "AuthnIDPs", Action: "NewAuthnIDPsService"},
 	}
+
 	if conf.MetricsPrefix != "" {
-		ref.metricsPrefix = strings.ReplaceAll(conf.MetricsPrefix, "-", "_")
-		ref.metricsPrefix += "_"
+		ref.metricsPrefix = strings.ReplaceAll(conf.MetricsPrefix, "-", "_") + "_"
 	}
 
 	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
@@ -112,334 +178,418 @@ func NewAuthnIDPsService(conf AuthnIDPsServiceConf) (*AuthnIDPsService, error) {
 
 	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
 		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s handler calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
+		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
+		metric.WithUnit("s"),
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = &o11y.LayerMetrics{Counter: callsCounter, Histogram: callsDuration}
 
 	return ref, nil
 }
 
-// validateCallbackInputs validates the basic inputs for the callback function.
-func (ref *AuthnIDPsService) validateCallbackInputs(ctx context.Context, span trace.Span, attrs []attribute.KeyValue, idpID uuid.UUID, state, code string) error {
-	start := time.Now()
-
-	supported, err := ref.idpsService.GetByID(ctx, idpID)
-	if err != nil {
-		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-	}
-
-	if supported == nil {
-		return fmt.Errorf("IDP %s is not supported", idpID)
-	}
-
-	if state == "" {
-		errorValue := &domain.InvalidIdentityProvidersError{Message: "state is empty"}
-		return o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
-	}
-
-	if code == "" {
-		errorValue := &domain.InvalidIdentityProvidersError{Message: "code is empty"}
-		return o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
-	}
-
-	return nil
+// stateData is what the state token carries sealed: the PKCE verifier the
+// exchange needs, the nonce the ID token must echo, and -- for a link -- the
+// account the signed-in user was when they started.
+type stateData struct {
+	Verifier string    `json:"v"`
+	Nonce    string    `json:"n"`
+	UserID   uuid.UUID `json:"u,omitzero"`
 }
 
-// validateAndParseClaims validates and parses JWT claims from the state.
-func (ref *AuthnIDPsService) validateAndParseClaims(ctx context.Context, state string, idpID uuid.UUID) (map[string]any, error) {
-	start := time.Now()
-	ctx, span, attrs := o11y.SetupTrace(ctx, ref.ot.Traces.Tracer, ref.metricsMetadata, "validateAndParseClaims")
-	defer span.End()
-
-	claims, err := ref.tokenSigner.Verify(ctx, state)
-	if err != nil {
-		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-	}
-
-	tokenType, ok := claims["token_type"].(string)
-	if !ok {
-		errorValue := &domain.InvalidJWTError{Message: "token_type claim is missing"}
-		return nil, o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
-	}
-
-	if tokenType != domain.TokenTypeIDPSignin.String() && tokenType != domain.TokenTypeIDPRegister.String() {
-		errorValue := &domain.InvalidJWTError{Message: fmt.Sprintf("unknown token type %s", tokenType)}
-		return nil, o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
-	}
-
-	// sub in this case is login or register (domain.IDPEventType)
-	eventType, ok := claims["sub"].(string)
-	if !ok {
-		errorValue := &domain.InvalidJWTError{Message: "sub claim is missing"}
-		return nil, o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
-	}
-
-	// validate event type
-	if eventType != domain.IDPEventTypeLogin.String() && eventType != domain.IDPEventTypeRegister.String() {
-		errorValue := &domain.InvalidJWTError{Message: fmt.Sprintf("unknown sub claim %s", eventType)}
-		return nil, o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
-	}
-
-	// idp id is the same as the event type
-	jwtIDPID, ok := claims["idp"].(string)
-	if !ok {
-		errorValue := &domain.InvalidJWTError{Message: "idp claim is missing"}
-		return nil, o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
-	}
-
-	// validate idp
-	if jwtIDPID != idpID.String() {
-		errorValue := &domain.InvalidJWTError{Message: fmt.Sprintf("unknown idp claim %s", jwtIDPID)}
-		return nil, o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
-	}
-
-	// Spend the state.
-	//
-	// The state is the only thing binding this callback to the redirect that
-	// started it, and until now it was reusable for its whole life: the same
-	// state and code could be replayed, and a callback URL captured from a log,
-	// a referrer or browser history stayed live. A single-use state is what the
-	// parameter is for.
-	//
-	// It is spent HERE, before the authorization code is exchanged, and that is
-	// deliberate: a state that survives a failed exchange is a state an attacker
-	// can retry. The cost is that a transient failure at the provider means
-	// starting the flow again, which is the right way round.
-	if err := ref.consumeState(ctx, claims); err != nil {
-		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-	}
-
-	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "service.AuthnIDPs.validateAndParseClaims")
-
-	return claims, nil
-}
-
-// consumeState marks the state token spent, and refuses it if something already
-// had. Without a store there is nothing to record it in, so the state stays
-// replayable and says so in the log rather than pretending otherwise.
-func (ref *AuthnIDPsService) consumeState(ctx context.Context, claims map[string]any) error {
-	if ref.revokedTokens == nil {
-		slog.Warn("service.AuthnIDPs: no revocation store, so the OAuth state is replayable until it expires")
-
-		return nil
-	}
-
-	jti, err := uuid.Parse(claimString(claims, "jti"))
-	if err != nil {
-		return &domain.InvalidJWTError{Message: "jti claim is not a uuid"}
-	}
-
-	expiresAt := time.Now().Add(idpLoginDuration)
-	if exp, ok := claimExpiry(claims); ok {
-		expiresAt = exp
-	}
-
-	// uuid.Nil() for the user: a state token's subject is the event that
-	// started the flow, and in a registration flow no account exists yet.
-	// The state token's own token_type claim names what is being spent: an
-	// idp_signin or idp_register state. Anything else was refused by the
-	// verifier before reaching here.
-	tokenType := domain.TokenType(claimString(claims, "token_type"))
-	if !tokenType.IsValid() {
-		return &domain.InvalidJWTError{Message: "token_type claim is invalid"}
-	}
-
-	firstUse, err := ref.revokedTokens.Consume(ctx, jti, uuid.Nil(), tokenType, expiresAt)
-	if err != nil {
-		return err
-	}
-
-	if !firstUse {
-		// The same wording every other bad state gets. A caller learns their
-		// state was not accepted, never that it was accepted once already,
-		// which would confirm to whoever captured it that they had the real
-		// thing.
-		slog.Warn("service.AuthnIDPs: an OAuth state was presented twice; the callback was refused", "jti", jti)
-
-		return &domain.InvalidJWTError{Message: "the state is not valid"}
-	}
-
-	return nil
-}
-
-func (ref *AuthnIDPsService) GetLoginURL(ctx context.Context, idpID uuid.UUID, eventType domain.IDPEventType) (string, error) {
+// GetLoginURL implements driving.AuthnIDPs.
+func (ref *AuthnIDPsService) GetLoginURL(ctx context.Context, idpID uuid.UUID, eventType domain.IDPEventType, userID uuid.UUID) (string, error) {
 	start := time.Now()
 	ctx, span, attrs := o11y.SetupTrace(ctx, ref.ot.Traces.Tracer, ref.metricsMetadata, "GetLoginURL")
 	defer span.End()
 
 	if idpID == uuid.Nil() {
-		errorValue := &domain.InvalidIdentityProvidersError{Message: "idpID is empty"}
-		return "", o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
+		return "", o11y.RecordError(ctx, span, start, &domain.InvalidIdentityProvidersError{Message: "idpID is empty"}, ref.metrics, attrs)
 	}
 
-	// Validate eventType
-	if eventType != domain.IDPEventTypeLogin && eventType != domain.IDPEventTypeRegister {
-		errorValue := &domain.InvalidIdentityProvidersError{Message: fmt.Sprintf("invalid event type: %s", eventType)}
-		return "", o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
-	}
+	var tokenType domain.TokenType
 
-	jwtClaims := domain.JWTClaims{
-		IDP:     idpID.String(),
-		Subject: eventType.String(),
-		Issuer:  ref.issuer,
-	}
+	var duration time.Duration
 
 	switch eventType {
 	case domain.IDPEventTypeLogin:
-		jwtClaims.TokenType = domain.TokenTypeIDPSignin
-		jwtClaims.TokenDuration = idpLoginDuration
+		tokenType, duration = domain.TokenTypeIDPSignin, idpLoginDuration
 	case domain.IDPEventTypeRegister:
-		jwtClaims.TokenType = domain.TokenTypeIDPRegister
-		jwtClaims.TokenDuration = idpRegistrationDuration
+		tokenType, duration = domain.TokenTypeIDPRegister, idpRegistrationDuration
+	case domain.IDPEventTypeLink:
+		if userID == uuid.Nil() {
+			return "", o11y.RecordError(ctx, span, start, &domain.InvalidIdentityProvidersError{Message: "a link needs the signed-in account"}, ref.metrics, attrs)
+		}
+
+		tokenType, duration = domain.TokenTypeIDPLink, idpLinkDuration
+	default:
+		return "", o11y.RecordError(ctx, span, start, &domain.InvalidIdentityProvidersError{Message: fmt.Sprintf("invalid event type: %s", eventType)}, ref.metrics, attrs)
 	}
 
-	state, err := ref.tokenSigner.Sign(ctx, jwtClaims)
-	if err != nil {
-		slog.Error("service.AuthnIDPs.GetLoginURL", "error", err)
-		e := &domain.InvalidIdentityProvidersError{Message: "failed to create IDP signin state"}
-		return "", o11y.RecordError(ctx, span, start, e, ref.metrics, attrs)
-	}
-
+	// The IdP first: a disabled or unknown provider is refused before a state
+	// is minted for it.
 	idp, err := ref.idpsService.GetByID(ctx, idpID)
-	if err != nil {
-		return "", o11y.RecordError(ctx, span, start, &domain.InvalidIdentityProvidersError{Message: fmt.Sprintf("failed to get idp %s: %v", idpID, err)}, ref.metrics, attrs)
-	}
-
-	url, err := ref.oauth.LoginURL(ctx, idp, state)
 	if err != nil {
 		return "", o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
 
-	slog.Debug("service.AuthnIDPs.GetLoginURL", "idpID", idpID, "eventType", eventType, "url", url)
+	if !idp.Enabled {
+		return "", o11y.RecordError(ctx, span, start, &domain.IDPNotFoundError{Message: "this identity provider is not enabled"}, ref.metrics, attrs)
+	}
 
-	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "service.AuthnIDPs.GetLoginURL")
+	req := oauth.AuthRequest{Nonce: randomToken(), CodeVerifier: randomToken()}
+
+	sealed, err := ref.seal(stateData{Verifier: req.CodeVerifier, Nonce: req.Nonce, UserID: userID})
+	if err != nil {
+		return "", o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	state, err := ref.tokenSigner.Sign(ctx, domain.JWTClaims{
+		IDP:           idpID.String(),
+		Subject:       eventType.String(),
+		Issuer:        ref.issuer,
+		TokenType:     tokenType,
+		TokenDuration: duration,
+		Data:          sealed,
+	})
+	if err != nil {
+		slog.Error("service.AuthnIDPs.GetLoginURL: could not sign the state", "error", err)
+
+		return "", o11y.RecordError(ctx, span, start, &domain.InvalidIdentityProvidersError{Message: "failed to create the sign-in state"}, ref.metrics, attrs)
+	}
+
+	req.State = state
+
+	url, err := ref.oauth.AuthCodeURL(ctx, idp, req)
+	if err != nil {
+		return "", o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "authorization URL built",
+		attribute.String("idp.id", idpID.String()), attribute.String("event", eventType.String()))
 
 	return url, nil
 }
 
-func (ref *AuthnIDPsService) Callback(ctx context.Context, idpID uuid.UUID, state, code string) domain.IDPCallbackResult {
+// Callback implements driving.AuthnIDPs.
+func (ref *AuthnIDPsService) Callback(ctx context.Context, idpID uuid.UUID, state, code string) (*domain.IDPCallbackOutput, error) {
 	start := time.Now()
 	ctx, span, attrs := o11y.SetupTrace(ctx, ref.ot.Traces.Tracer, ref.metricsMetadata, "Callback")
 	defer span.End()
 
-	if err := ref.validateCallbackInputs(ctx, span, attrs, idpID, state, code); err != nil {
-		return &domain.UnknownCallbackResult{Err: err}
+	if idpID == uuid.Nil() || state == "" || code == "" {
+		return nil, o11y.RecordError(ctx, span, start, &domain.InvalidIdentityProvidersError{Message: "idp, state and code are required"}, ref.metrics, attrs)
 	}
 
-	claims, err := ref.validateAndParseClaims(ctx, state, idpID)
+	claims, data, eventType, err := ref.spendState(ctx, state, idpID)
 	if err != nil {
-		return &domain.UnknownCallbackResult{Err: err}
+		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
+
+	_ = claims
 
 	idp, err := ref.idpsService.GetByID(ctx, idpID)
 	if err != nil {
-		errVal := &domain.InvalidIdentityProvidersError{Message: fmt.Sprintf("failed to get idp %s: %v", idpID, err)}
-		return &domain.UnknownCallbackResult{Err: o11y.RecordError(ctx, span, start, errVal, ref.metrics, attrs)}
+		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
 
-	tokenType := claims["token_type"].(string)
-	switch tokenType {
-	case domain.TokenTypeIDPSignin.String(): // handle login callback for login
-		slog.Debug("service.AuthnIDPs.Callback - login", "idpID", idpID, "tokenType", tokenType)
+	if !idp.Enabled {
+		return nil, o11y.RecordError(ctx, span, start, &domain.IDPNotFoundError{Message: "this identity provider is not enabled"}, ref.metrics, attrs)
+	}
 
-		userInfo, err := ref.oauth.Authenticate(ctx, idp, code)
-		if err != nil {
-			// Passed through rather than re-wrapped. The adapter already says
-			// this in words this service owns and has logged the provider's own
-			// text; wrapping it again would only prefix ours with ours.
-			return &domain.LoginCallbackResult{
-				Result: nil,
-				Err:    o11y.RecordError(ctx, span, start, err, ref.metrics, attrs),
-			}
-		}
+	info, err := ref.oauth.Exchange(ctx, idp, code, oauth.AuthRequest{State: state, Nonce: data.Nonce, CodeVerifier: data.Verifier})
+	if err != nil {
+		// The adapter already says this in words this service owns and has
+		// logged the provider's own text.
+		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
 
-		input := &domain.LoginUserInput{
-			Email:       userInfo.Email,
-			LoginMethod: domain.LoginMethodOAuth,
-		}
+	span.SetAttributes(attribute.String("idp.id", idpID.String()), attribute.String("event", eventType.String()))
 
-		out, err := ref.authnService.LoginUser(ctx, input)
-		if err != nil {
-			errorValue := &domain.InvalidAuthnServiceError{Message: fmt.Sprintf("failed to login user: %v", err)}
-			return &domain.LoginCallbackResult{
-				Result: nil,
-				Err:    o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs),
-			}
-		}
+	var out *domain.IDPCallbackOutput
 
-		o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "service.AuthnIDPs.Callback")
-
-		return &domain.LoginCallbackResult{
-			Result: out,
-			Err:    nil,
-		}
-
-	case domain.TokenTypeIDPRegister.String(): // handle registration callback for Register
-		slog.Debug("service.AuthnIDPs.Callback", "event", "registration", "idpID", idpID, "userInfo", "fetching")
-
-		userInfo, err := ref.oauth.Authenticate(ctx, idp, code)
-		if err != nil {
-			// See the login branch: the adapter owns this wording already.
-			return &domain.RegisterCallbackResult{
-				Result: nil,
-				Err:    o11y.RecordError(ctx, span, start, err, ref.metrics, attrs),
-			}
-		}
-
-		userID := uuid.NewV7()
-
-		userPassword := uuid.NewV7()
-
-		inputRegister := &domain.RegisterUserInput{
-			ID:             userID,
-			Email:          userInfo.Email,
-			FirstName:      userInfo.FirstName,
-			LastName:       userInfo.LastName,
-			Password:       userPassword.String(), // random password, not used
-			Disabled:       new(false),
-			RegisterMethod: domain.RegisterMethodOAuth,
-		}
-
-		// Call the registration service
-		if err := ref.authnService.RegisterUser(ctx, inputRegister); err != nil {
-			errorValue := &domain.InvalidAuthnServiceError{Message: fmt.Sprintf("failed to register user: %v", err)}
-			return &domain.RegisterCallbackResult{
-				Result: nil,
-				Err:    o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs),
-			}
-		}
-
-		inputLogin := &domain.LoginUserInput{
-			Email:       userInfo.Email,
-			LoginMethod: domain.LoginMethodOAuth,
-		}
-
-		out, err := ref.authnService.LoginUser(ctx, inputLogin)
-		if err != nil {
-			errorValue := &domain.InvalidAuthnServiceError{Message: fmt.Sprintf("failed to login user: %v", err)}
-			return &domain.RegisterCallbackResult{
-				Result: nil,
-				Err:    o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs),
-			}
-		}
-
-		o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "service.AuthnIDPs.Callback")
-
-		return &domain.RegisterCallbackResult{
-			Result: out,
-			Err:    nil,
-		}
-
+	switch eventType {
+	case domain.IDPEventTypeLink:
+		out, err = ref.link(ctx, idp, info, data.UserID)
 	default:
-		errorValue := &domain.InvalidIdentityProvidersError{Message: fmt.Sprintf("unknown token type %s", tokenType)}
-		return &domain.UnknownCallbackResult{Err: o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)}
+		out, err = ref.signIn(ctx, idp, info, eventType)
 	}
+
+	if err != nil {
+		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "callback completed", attribute.String("event", eventType.String()))
+
+	return out, nil
+}
+
+// signIn resolves the identity and ends with a session, or creates the
+// account first when every condition for that holds.
+func (ref *AuthnIDPsService) signIn(ctx context.Context, idp *domain.IDP, info *domain.UserInfo, eventType domain.IDPEventType) (*domain.IDPCallbackOutput, error) {
+	identity, err := ref.usersIdentities.SelectBySubject(ctx, idp.ID, info.Subject)
+
+	switch {
+	case err == nil:
+		// A known identity signs in as the account it is linked to, whatever
+		// email the provider reports today.
+		login, err := ref.authnService.LoginUserByID(ctx, identity.UserID, domain.LoginMethodOAuth)
+		if err != nil {
+			return nil, err
+		}
+
+		return &domain.IDPCallbackOutput{EventType: eventType, Login: login}, nil
+
+	case !isNotFound(err):
+		return nil, err
+	}
+
+	// Unknown identity. Provisioning has three conditions, and each failure
+	// is answered with the same wording -- see IDPIdentityNotLinkedError.
+	if !idp.AutoProvision {
+		slog.Info("service.AuthnIDPs: sign-in refused, auto-provisioning is off", "idp", idp.Name)
+
+		return nil, &domain.IDPIdentityNotLinkedError{}
+	}
+
+	if !info.EmailVerified {
+		slog.Info("service.AuthnIDPs: sign-in refused, the provider does not vouch for the email", "idp", idp.Name)
+
+		return nil, &domain.IDPIdentityNotLinkedError{}
+	}
+
+	if existing, err := ref.userService.GetByEmail(ctx, info.Email); err == nil && existing != nil {
+		// The one case the takeover lived in: an account with this email
+		// exists and nothing proves this identity belongs to its holder.
+		slog.Warn("service.AuthnIDPs: sign-in refused, an account with the provider's email exists and is not linked to this identity",
+			"idp", idp.Name, "user.id", existing.ID.String())
+
+		return nil, &domain.IDPIdentityNotLinkedError{}
+	} else if err != nil && !isNotFound(err) {
+		return nil, err
+	}
+
+	userID := uuid.NewV7()
+
+	if err := ref.authnService.RegisterUser(ctx, &domain.RegisterUserInput{
+		ID:             userID,
+		Email:          info.Email,
+		FirstName:      info.FirstName,
+		LastName:       info.LastName,
+		Password:       uuid.NewV7().String(), // random and never used; the account has no password
+		Disabled:       new(false),
+		RegisterMethod: domain.RegisterMethodOAuth,
+	}); err != nil {
+		return nil, err
+	}
+
+	if err := ref.usersIdentities.Link(ctx, &domain.LinkUserIdentityInput{
+		UserID: userID, IDPID: idp.ID, Subject: info.Subject, Email: info.Email,
+	}); err != nil {
+		return nil, err
+	}
+
+	login, err := ref.authnService.LoginUserByID(ctx, userID, domain.LoginMethodOAuth)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Info("service.AuthnIDPs: account provisioned from a provider identity", "idp", idp.Name, "user.id", userID.String())
+
+	return &domain.IDPCallbackOutput{EventType: eventType, Login: login}, nil
+}
+
+// link attaches the identity to the account that started the link.
+func (ref *AuthnIDPsService) link(ctx context.Context, idp *domain.IDP, info *domain.UserInfo, userID uuid.UUID) (*domain.IDPCallbackOutput, error) {
+	if userID == uuid.Nil() {
+		return nil, &domain.InvalidJWTError{Message: "the link state names no account"}
+	}
+
+	// The account must still exist and be enabled: the state was minted up to
+	// fifteen minutes ago.
+	user, err := ref.userService.GetByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	if user.Disabled != nil && *user.Disabled {
+		return nil, &domain.IDPIdentityNotLinkedError{}
+	}
+
+	if err := ref.usersIdentities.Link(ctx, &domain.LinkUserIdentityInput{
+		UserID: userID, IDPID: idp.ID, Subject: info.Subject, Email: info.Email,
+	}); err != nil {
+		return nil, err
+	}
+
+	slog.Info("service.AuthnIDPs: provider identity linked", "idp", idp.Name, "user.id", userID.String())
+
+	return &domain.IDPCallbackOutput{EventType: domain.IDPEventTypeLink, Linked: userID}, nil
+}
+
+// ListIdentities implements driving.AuthnIDPs.
+func (ref *AuthnIDPsService) ListIdentities(ctx context.Context, userID uuid.UUID) ([]domain.UserIdentity, error) {
+	start := time.Now()
+	ctx, span, attrs := o11y.SetupTrace(ctx, ref.ot.Traces.Tracer, ref.metricsMetadata, "ListIdentities")
+	defer span.End()
+
+	items, err := ref.usersIdentities.SelectByUserID(ctx, userID)
+	if err != nil {
+		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "identities listed", attribute.Int("count", len(items)))
+
+	return items, nil
+}
+
+// UnlinkIdentity implements driving.AuthnIDPs.
+func (ref *AuthnIDPsService) UnlinkIdentity(ctx context.Context, userID, idpID uuid.UUID) error {
+	start := time.Now()
+	ctx, span, attrs := o11y.SetupTrace(ctx, ref.ot.Traces.Tracer, ref.metricsMetadata, "UnlinkIdentity")
+	defer span.End()
+
+	// Never strand an account: one with no password (local_account false)
+	// and a single identity would have nothing left to sign in with.
+	user, err := ref.userService.GetByID(ctx, userID)
+	if err != nil {
+		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	if user.LocalAccount == nil || !*user.LocalAccount {
+		items, err := ref.usersIdentities.SelectByUserID(ctx, userID)
+		if err != nil {
+			return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		}
+
+		if len(items) <= 1 {
+			return o11y.RecordError(ctx, span, start, &domain.UserIdentityAlreadyLinkedError{Message: "this is the only way into the account; set a password or link another provider first"}, ref.metrics, attrs)
+		}
+	}
+
+	if err := ref.usersIdentities.Unlink(ctx, &domain.UnlinkUserIdentityInput{UserID: userID, IDPID: idpID}); err != nil {
+		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "identity unlinked", attribute.String("idp.id", idpID.String()))
+
+	return nil
+}
+
+// spendState verifies the state, checks it was minted for this IdP, spends it,
+// and unseals what it carried.
+//
+// It is spent BEFORE the authorization code is exchanged: a state that
+// survives a failed exchange is a state an attacker can retry. The cost is that
+// a transient failure at the provider means starting the flow again.
+func (ref *AuthnIDPsService) spendState(ctx context.Context, state string, idpID uuid.UUID) (map[string]any, stateData, domain.IDPEventType, error) {
+	var data stateData
+
+	claims, err := ref.tokenSigner.Verify(ctx, state)
+	if err != nil {
+		return nil, data, "", err
+	}
+
+	tokenType := domain.TokenType(claimString(claims, "token_type"))
+
+	var eventType domain.IDPEventType
+
+	switch tokenType {
+	case domain.TokenTypeIDPSignin:
+		eventType = domain.IDPEventTypeLogin
+	case domain.TokenTypeIDPRegister:
+		eventType = domain.IDPEventTypeRegister
+	case domain.TokenTypeIDPLink:
+		eventType = domain.IDPEventTypeLink
+	default:
+		return nil, data, "", &domain.InvalidJWTError{Message: "the state is not valid"}
+	}
+
+	// The event the token was signed for and the one its subject names must
+	// agree, and the IdP must be the one the callback arrived at.
+	if claimString(claims, "sub") != eventType.String() || claimString(claims, "idp") != idpID.String() {
+		return nil, data, "", &domain.InvalidJWTError{Message: "the state is not valid"}
+	}
+
+	jti, err := uuid.Parse(claimString(claims, "jti"))
+	if err != nil {
+		return nil, data, "", &domain.InvalidJWTError{Message: "the state is not valid"}
+	}
+
+	expiresAt := time.Now().Add(idpRegistrationDuration)
+	if exp, ok := claimExpiry(claims); ok {
+		expiresAt = exp
+	}
+
+	// uuid.Nil() for the user: a state token's subject is the event, and in a
+	// registration flow no account exists yet.
+	firstUse, err := ref.revokedTokens.Consume(ctx, jti, uuid.Nil(), tokenType, expiresAt)
+	if err != nil {
+		return nil, data, "", err
+	}
+
+	if !firstUse {
+		// The same wording every other bad state gets. A caller learns their
+		// state was not accepted, never that it was accepted once already.
+		slog.Warn("service.AuthnIDPs: an OAuth state was presented twice; the callback was refused", "jti", jti)
+
+		return nil, data, "", &domain.InvalidJWTError{Message: "the state is not valid"}
+	}
+
+	if err := ref.unseal(claimString(claims, "data"), &data); err != nil {
+		return nil, data, "", &domain.InvalidJWTError{Message: "the state is not valid"}
+	}
+
+	if data.Verifier == "" || data.Nonce == "" {
+		return nil, data, "", &domain.InvalidJWTError{Message: "the state is not valid"}
+	}
+
+	return claims, data, eventType, nil
+}
+
+func (ref *AuthnIDPsService) seal(data stateData) (string, error) {
+	raw, err := json.Marshal(data)
+	if err != nil {
+		return "", err
+	}
+
+	return ref.cipher.EncryptString(raw)
+}
+
+func (ref *AuthnIDPsService) unseal(sealed string, data *stateData) error {
+	if sealed == "" {
+		return errors.New("the state carries no data")
+	}
+
+	raw, err := ref.cipher.DecryptString(sealed)
+	if err != nil {
+		return err
+	}
+
+	return json.Unmarshal(raw, data)
+}
+
+// randomToken is 32 random bytes, URL-safe: a PKCE verifier (43 characters,
+// within RFC 7636's 43-128) and a nonce.
+func randomToken() string {
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic("crypto/rand failed: " + err.Error())
+	}
+
+	return base64.RawURLEncoding.EncodeToString(b)
+}
+
+func isNotFound(err error) bool {
+	if _, ok := errors.AsType[*domain.UserIdentityNotFoundError](err); ok {
+		return true
+	}
+
+	if _, ok := errors.AsType[*domain.UserNotFoundError](err); ok {
+		return true
+	}
+
+	return false
 }

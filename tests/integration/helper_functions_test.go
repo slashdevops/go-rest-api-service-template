@@ -1193,7 +1193,7 @@ func getIDPTypeFromDBByName(t *testing.T, typeName string) domain.IDPTypes {
 	t.Helper()
 
 	query := `
-		SELECT id, name, description, scopes, user_info_api_url, system, created_at, updated_at, serial_id
+		SELECT id, name, description, scopes, COALESCE(user_info_api_url, ''), kind, COALESCE(issuer_hint, ''), system, created_at, updated_at, serial_id
 		FROM idp_types
 		WHERE name = $1
 	`
@@ -1207,6 +1207,8 @@ func getIDPTypeFromDBByName(t *testing.T, typeName string) domain.IDPTypes {
 		&idpType.Description,
 		&idpType.Scopes,
 		&idpType.UserInfoAPIURL,
+		&idpType.Kind,
+		&idpType.IssuerHint,
 		&idpType.System,
 		&idpType.CreatedAt,
 		&idpType.UpdatedAt,
@@ -1235,9 +1237,8 @@ func createIDPInDB(t *testing.T, idpTypeID uuid.UUID, name, description string, 
 	query := `
 		INSERT INTO idps (
 			id, idp_types, name, description, callback_url,
-			login_redirect_url, register_redirect_url, logo,
-			client_id, client_secret
-		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			issuer_url, logo, client_id, client_secret
+		) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 	`
 
 	_, err = testDBPool.Exec(
@@ -1246,9 +1247,8 @@ func createIDPInDB(t *testing.T, idpTypeID uuid.UUID, name, description string, 
 		idpTypeID,
 		name,
 		description,
-		"http://localhost:8080/api/v1/auth/idp/callback",
-		"http://localhost:8080/login",
-		"http://localhost:8080/register",
+		"http://localhost:5173/auth/idp/"+idpID.String()+"/callback",
+		"https://accounts.google.com",
 		"https://example.com/logo.png",
 		"test-client-id",
 		"test-client-secret",
@@ -1268,11 +1268,12 @@ func getIDPFromDBByID(t *testing.T, idpID uuid.UUID) *domain.IDP {
 	query := `
 		SELECT
 			i.id, i.name, i.description, i.callback_url,
-			i.login_redirect_url, i.register_redirect_url,
+			COALESCE(i.issuer_url, ''), i.enabled, i.auto_provision,
 			i.logo, i.client_id, i.created_at, i.updated_at,
 			i.serial_id,
 			it.id, it.name, it.description, it.scopes,
-			it.user_info_api_url, it.system, it.created_at,
+			COALESCE(it.user_info_api_url, ''), it.kind, COALESCE(it.issuer_hint, ''),
+			it.system, it.created_at,
 			it.updated_at, it.serial_id
 		FROM idps i
 		INNER JOIN idp_types it ON i.idp_types = it.id
@@ -1287,8 +1288,9 @@ func getIDPFromDBByID(t *testing.T, idpID uuid.UUID) *domain.IDP {
 		&idp.Name,
 		&idp.Description,
 		&idp.CallbackURL,
-		&idp.LoginRedirectURL,
-		&idp.RegisterRedirectURL,
+		&idp.IssuerURL,
+		&idp.Enabled,
+		&idp.AutoProvision,
 		&idp.Logo,
 		&idp.ClientID,
 		&idp.CreatedAt,
@@ -1299,6 +1301,8 @@ func getIDPFromDBByID(t *testing.T, idpID uuid.UUID) *domain.IDP {
 		&idp.IDPType.Description,
 		&idp.IDPType.Scopes,
 		&idp.IDPType.UserInfoAPIURL,
+		&idp.IDPType.Kind,
+		&idp.IDPType.IssuerHint,
 		&idp.IDPType.System,
 		&idp.IDPType.CreatedAt,
 		&idp.IDPType.UpdatedAt,

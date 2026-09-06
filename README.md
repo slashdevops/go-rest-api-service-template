@@ -213,6 +213,7 @@ make docs-api-resources # regenerate the authz resource rows for migration 00008
 | 📦 [Adding an entity](./docs/architecture/adding-an-entity.md) | the end-to-end recipe for a new resource |
 | 🔌 [Adding an adapter](./docs/architecture/adding-an-adapter.md) | when you need a new external system |
 | 🔐 [Authentication](./docs/architecture/authentication.md) | tokens, rotation, revocation, throttling |
+| 🪪 [Identity providers](./docs/architecture/identity-providers.md) | OIDC and GitHub sign-in: a provider proves a subject, never an email; linking, provisioning, the callback contract |
 | ⏳ [Token lifetimes](./docs/architecture/token-lifetimes.md) | the access/refresh lifetimes as a database row edited through the API |
 | 🚦 [Rate limiting](./docs/architecture/rate-limiting.md) | the rule model and how it is enforced |
 | 📏 [Resource limits](./docs/architecture/resource-limits.md) | scopes, resolution, the signature |

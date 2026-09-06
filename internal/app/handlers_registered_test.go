@@ -33,8 +33,8 @@ func TestEveryHandlerIsRegistered(t *testing.T) {
 
 	handlers := reflect.TypeFor[Handlers]()
 
-	for i := range handlers.NumField() {
-		field := handlers.Field(i).Name
+	for field := range handlers.Fields() {
+		field := field.Name
 
 		if !strings.Contains(string(src), "a.handlers."+field+".RegisterRoutes(") {
 			t.Errorf(

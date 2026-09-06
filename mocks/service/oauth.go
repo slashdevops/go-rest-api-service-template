@@ -14,6 +14,7 @@ import (
 	reflect "reflect"
 
 	domain "github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
+	oauth "github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/oauth"
 	gomock "go.uber.org/mock/gomock"
 )
 
@@ -41,32 +42,32 @@ func (m *MockProvider) EXPECT() *MockProviderMockRecorder {
 	return m.recorder
 }
 
-// Authenticate mocks base method.
-func (m *MockProvider) Authenticate(ctx context.Context, idp *domain.IDP, code string) (*domain.UserInfo, error) {
+// AuthCodeURL mocks base method.
+func (m *MockProvider) AuthCodeURL(ctx context.Context, idp *domain.IDP, req oauth.AuthRequest) (string, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "Authenticate", ctx, idp, code)
-	ret0, _ := ret[0].(*domain.UserInfo)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// Authenticate indicates an expected call of Authenticate.
-func (mr *MockProviderMockRecorder) Authenticate(ctx, idp, code any) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Authenticate", reflect.TypeOf((*MockProvider)(nil).Authenticate), ctx, idp, code)
-}
-
-// LoginURL mocks base method.
-func (m *MockProvider) LoginURL(ctx context.Context, idp *domain.IDP, state string) (string, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LoginURL", ctx, idp, state)
+	ret := m.ctrl.Call(m, "AuthCodeURL", ctx, idp, req)
 	ret0, _ := ret[0].(string)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
-// LoginURL indicates an expected call of LoginURL.
-func (mr *MockProviderMockRecorder) LoginURL(ctx, idp, state any) *gomock.Call {
+// AuthCodeURL indicates an expected call of AuthCodeURL.
+func (mr *MockProviderMockRecorder) AuthCodeURL(ctx, idp, req any) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LoginURL", reflect.TypeOf((*MockProvider)(nil).LoginURL), ctx, idp, state)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "AuthCodeURL", reflect.TypeOf((*MockProvider)(nil).AuthCodeURL), ctx, idp, req)
+}
+
+// Exchange mocks base method.
+func (m *MockProvider) Exchange(ctx context.Context, idp *domain.IDP, code string, req oauth.AuthRequest) (*domain.UserInfo, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Exchange", ctx, idp, code, req)
+	ret0, _ := ret[0].(*domain.UserInfo)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Exchange indicates an expected call of Exchange.
+func (mr *MockProviderMockRecorder) Exchange(ctx, idp, code, req any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Exchange", reflect.TypeOf((*MockProvider)(nil).Exchange), ctx, idp, code, req)
 }

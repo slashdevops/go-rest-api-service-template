@@ -1,7 +1,7 @@
 package domain
 
 import (
-	"errors"
+	"net/url"
 	"time"
 
 	"uuid"
@@ -32,6 +32,13 @@ const (
 	IDPEventTypeUnknown  IDPEventType = "unknown"
 	IDPEventTypeLogin    IDPEventType = "login"
 	IDPEventTypeRegister IDPEventType = "register"
+
+	// IDPEventTypeLink is a signed-in user attaching a provider identity to
+	// their own account. It is the only moment both sides of a link are
+	// proven: the session proves the account, the provider proves the
+	// identity. An IdP sign-in whose identity is unknown is refused, never
+	// auto-linked by email.
+	IDPEventTypeLink IDPEventType = "link"
 )
 
 func (e IDPEventType) String() string {
@@ -42,48 +49,66 @@ var (
 	IDPsFilterFields  = []string{FieldID, FieldName, FieldSystem, FieldCreatedAt, FieldUpdatedAt}
 	IDPsSortFields    = []string{FieldID, FieldName, FieldSystem, FieldCreatedAt, FieldUpdatedAt}
 	IDPsPartialFields = []string{
-		FieldID, FieldName, FieldDescription, FieldSystem,
-		FieldProjects, FieldLLMEngineTypes, FieldCreatedAt, FieldUpdatedAt,
+		FieldID, FieldName, FieldDescription, FieldCallbackURL, FieldIssuerURL, FieldLogo,
+		FieldClientID, FieldEnabled, FieldAutoProvision, FieldCreatedAt, FieldUpdatedAt,
 	}
 )
 
 // IDPAvailable is the partial-projection IDP entity used by the "available providers" listing.
 type IDPAvailable struct {
-	Name        string
-	Description string
-	Logo        string
-	IDPType     IDPTypes
-	ID          uuid.UUID
+	Name          string
+	Description   string
+	Logo          string
+	IDPType       IDPTypes
+	ID            uuid.UUID
+	AutoProvision bool
 }
 
 // IDP is the identity provider entity.
 type IDP struct {
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
-	Name                string
-	Description         string
-	CallbackURL         string
-	LoginRedirectURL    string
-	RegisterRedirectURL string
-	Logo                string
-	ClientID            string
-	ClientSecret        string
-	IDPType             IDPTypes
-	SerialID            int64
-	ID                  uuid.UUID
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+	Name        string
+	Description string
+
+	// CallbackURL is the redirect_uri registered with the provider: the
+	// FRONTEND's callback route, whose server hands state and code to this API.
+	CallbackURL string
+
+	// IssuerURL is, for the oidc kind, the issuer whose discovery document
+	// describes the provider and the value the ID token's iss must equal. One
+	// tenant per row: the issuer is what pins it.
+	IssuerURL    string
+	Logo         string
+	ClientID     string
+	ClientSecret string
+	IDPType      IDPTypes
+	SerialID     int64
+	ID           uuid.UUID
+
+	// Enabled: offered on the login page and accepted at the callback.
+	Enabled bool
+
+	// AutoProvision: a sign-in from an unknown identity with a provider-verified
+	// email may create an account. Off means only linked identities sign in.
+	AutoProvision bool
 }
 
+// IsOIDC reports whether the provider speaks OpenID Connect.
+func (ref *IDP) IsOIDC() bool { return ref.IDPType.Kind == IDPTypeKindOIDC }
+
 type InsertIDPInput struct {
-	Name                string
-	Description         string
-	CallbackURL         string
-	LoginRedirectURL    string
-	RegisterRedirectURL string
-	Logo                string
-	ClientID            string
-	ClientSecret        string
-	ID                  uuid.UUID
-	IDPTypeID           uuid.UUID
+	Name          string
+	Description   string
+	CallbackURL   string
+	IssuerURL     string
+	Logo          string
+	ClientID      string
+	ClientSecret  string
+	ID            uuid.UUID
+	IDPTypeID     uuid.UUID
+	Enabled       bool
+	AutoProvision bool
 }
 
 func (ref *InsertIDPInput) Validate() error {
@@ -97,18 +122,19 @@ func (ref *InsertIDPInput) Validate() error {
 	}
 
 	for field, val := range map[string]string{
-		FieldName:                ref.Name,
-		FieldDescription:         ref.Description,
-		FieldCallbackURL:         ref.CallbackURL,
-		FieldLoginRedirectURL:    ref.LoginRedirectURL,
-		FieldRegisterRedirectURL: ref.RegisterRedirectURL,
-		FieldClientID:            ref.ClientID,
-		FieldClientSecret:        ref.ClientSecret,
+		FieldName:         ref.Name,
+		FieldDescription:  ref.Description,
+		FieldCallbackURL:  ref.CallbackURL,
+		FieldClientID:     ref.ClientID,
+		FieldClientSecret: ref.ClientSecret,
 	} {
 		if val == "" {
 			errs.Add(&ValidationError{Field: field, Message: field + " is required", Code: "REQUIRED"})
 		}
 	}
+
+	errs.Add(validateIDPURL(FieldCallbackURL, ref.CallbackURL, true))
+	errs.Add(validateIDPURL(FieldIssuerURL, ref.IssuerURL, false))
 
 	if errs.HasErrors() {
 		return &errs
@@ -117,19 +143,45 @@ func (ref *InsertIDPInput) Validate() error {
 	return nil
 }
 
+// validateIDPURL accepts an absolute http(s) URL. The callback is where the
+// provider sends the browser and the issuer is where the adapter fetches
+// discovery from, so a relative path, a bare host or another scheme is a
+// provider that can never complete a sign-in -- refused here, where the
+// operator sees it, rather than as a callback that never arrives.
+//
+// The issuer is validated only when set: the github kind has none, and which
+// kind needs one is the use case's question because it has the type row.
+func validateIDPURL(field, value string, required bool) error {
+	if value == "" {
+		if required {
+			return &ValidationError{Field: field, Message: field + " is required", Code: "REQUIRED"}
+		}
+
+		return nil
+	}
+
+	u, err := url.Parse(value)
+	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
+		return &ValidationError{Field: field, Message: field + " must be an absolute http(s) URL", Code: "INVALID_URL"}
+	}
+
+	return nil
+}
+
 type CreateIDPInput = InsertIDPInput
 
 type UpdateIDPInput struct {
-	IDPTypeID           *uuid.UUID
-	Name                *string
-	Description         *string
-	CallbackURL         *string
-	LoginRedirectURL    *string
-	RegisterRedirectURL *string
-	Logo                *string
-	ClientID            *string
-	ClientSecret        *string
-	ID                  uuid.UUID
+	IDPTypeID     *uuid.UUID
+	Name          *string
+	Description   *string
+	CallbackURL   *string
+	IssuerURL     *string
+	Logo          *string
+	ClientID      *string
+	ClientSecret  *string
+	Enabled       *bool
+	AutoProvision *bool
+	ID            uuid.UUID
 }
 
 func (ref *UpdateIDPInput) Validate() error {
@@ -149,8 +201,8 @@ func (ref *UpdateIDPInput) Validate() error {
 		field string
 		val   *string
 	}{
-		{FieldRegisterRedirectURL, ref.RegisterRedirectURL},
-		{FieldLogo, ref.Logo},
+		{FieldName, ref.Name},
+		{FieldDescription, ref.Description},
 		{FieldClientID, ref.ClientID},
 		{FieldClientSecret, ref.ClientSecret},
 	}
@@ -158,6 +210,17 @@ func (ref *UpdateIDPInput) Validate() error {
 		if c.val != nil && *c.val == "" {
 			errs.Add(&ValidationError{Field: c.field, Message: c.field + " is required", Code: "REQUIRED"})
 		}
+	}
+
+	if ref.CallbackURL != nil {
+		errs.Add(validateIDPURL(FieldCallbackURL, *ref.CallbackURL, true))
+	}
+
+	// An empty issuer on update means "clear it", right for a row moving to
+	// the github kind and wrong for an oidc row; the use case, which holds the
+	// type, decides. Here only a non-empty value is parsed.
+	if ref.IssuerURL != nil {
+		errs.Add(validateIDPURL(FieldIssuerURL, *ref.IssuerURL, false))
 	}
 
 	if errs.HasErrors() {
@@ -183,86 +246,28 @@ func (ref *DeleteIDPInput) Validate() error {
 }
 
 // UserInfo represents the user information returned by an IDP.
+// UserInfo is what a provider says about the person who just signed in.
+//
+// Subject is the identity; Email is a hint. EmailVerified is what the
+// provider asserts, or what the kind implies (Entra ID, single tenant: the
+// directory's own attribute), and it gates account creation.
 type UserInfo struct {
-	Email     string
-	FirstName string
-	LastName  string
+	Subject       string
+	Email         string
+	FirstName     string
+	LastName      string
+	EmailVerified bool
 }
 
-// IDPCallbackResult represents the result of an IDP callback.
-type IDPCallbackResult interface {
-	GetEventType() IDPEventType
-	GetLoginResponse() (*LoginUserOutput, error)
-	GetRegisterResponse() (*LoginUserOutput, error)
-	GetUnknownResponse() error
-}
-
-type LoginCallbackResult struct {
-	Result *LoginUserOutput
-	Err    error
-}
-
-func (r *LoginCallbackResult) GetEventType() IDPEventType {
-	return IDPEventTypeLogin
-}
-
-func (r *LoginCallbackResult) GetLoginResponse() (*LoginUserOutput, error) {
-	if r.Err != nil {
-		return nil, r.Err
-	}
-	return r.Result, nil
-}
-
-func (r *LoginCallbackResult) GetRegisterResponse() (*LoginUserOutput, error) {
-	return nil, errors.New("not applicable for login event")
-}
-
-func (r *LoginCallbackResult) GetUnknownResponse() error {
-	return nil
-}
-
-type RegisterCallbackResult struct {
-	Result *LoginUserOutput
-	Err    error
-}
-
-func (r *RegisterCallbackResult) GetEventType() IDPEventType {
-	return IDPEventTypeRegister
-}
-
-func (r *RegisterCallbackResult) GetLoginResponse() (*LoginUserOutput, error) {
-	return nil, errors.New("not applicable for register event")
-}
-
-func (r *RegisterCallbackResult) GetRegisterResponse() (*LoginUserOutput, error) {
-	if r.Err != nil {
-		return nil, r.Err
-	}
-	return r.Result, nil
-}
-
-func (r *RegisterCallbackResult) GetUnknownResponse() error {
-	return r.Err
-}
-
-type UnknownCallbackResult struct {
-	Err error
-}
-
-func (r *UnknownCallbackResult) GetEventType() IDPEventType {
-	return IDPEventTypeUnknown
-}
-
-func (r *UnknownCallbackResult) GetLoginResponse() (*LoginUserOutput, error) {
-	return nil, errors.New("not applicable for unknown event")
-}
-
-func (r *UnknownCallbackResult) GetRegisterResponse() (*LoginUserOutput, error) {
-	return nil, errors.New("not applicable for unknown event")
-}
-
-func (r *UnknownCallbackResult) GetUnknownResponse() error {
-	return r.Err
+// IDPCallbackOutput is what a provider callback produced.
+//
+// Login and Register end with a session, so Login carries the tokens the
+// frontend stores. Link ends with a row and no new session -- the caller was
+// already signed in -- so Login is nil and Linked says which account.
+type IDPCallbackOutput struct {
+	Login     *LoginUserOutput
+	EventType IDPEventType
+	Linked    uuid.UUID
 }
 
 type SelectIDPsInput struct {

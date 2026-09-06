@@ -123,6 +123,18 @@ func (a *App) initRepositories() error {
 		return fmt.Errorf("failed to create revoked tokens repository: %w", err)
 	}
 
+	a.repositories.UsersIdentities, err = repositorypg.NewUsersIdentitiesRepository(
+		repositorypg.UsersIdentitiesRepositoryConfig{
+			DB:              a.dbPool,
+			MaxPingTimeout:  a.configs.Database.MaxPingTimeout.Value,
+			MaxQueryTimeout: a.configs.Database.MaxQueryTimeout.Value,
+			OT:              a.telemetry,
+		},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to create users identities repository: %w", err)
+	}
+
 	a.repositories.RateLimits, err = repositorypg.NewRateLimitsRepository(
 		repositorypg.RateLimitsRepositoryConfig{
 			DB:              a.dbPool,

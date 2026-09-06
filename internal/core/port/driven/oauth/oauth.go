@@ -1,12 +1,13 @@
-// Package oauth defines the driven port that use-cases consume to
-// drive an OAuth2-based identity provider login flow. The
-// implementation lives in internal/adapter/driven/oauthidp which
-// wraps golang.org/x/oauth2 and the per-IDP UserInfo HTTP endpoints.
+// Package oauth defines the driven port that use-cases consume to drive an
+// identity-provider sign-in. The implementation lives in
+// internal/adapter/driven/oauthidp: OpenID Connect with discovery, PKCE, a
+// nonce and a verified ID token for the oidc kind, plain OAuth2 against fixed
+// endpoints for the github kind.
 //
-// Use-cases stay free of HTTP, JSON, and IDP-specific shapes; they
-// describe what they want ("build a login URL", "exchange this
-// callback code for a UserInfo"), and the adapter handles the
-// transport and parsing.
+// Use-cases stay free of HTTP, JSON and provider shapes. They mint the state,
+// the nonce and the PKCE verifier, ask for the authorization URL, and hand the
+// callback's code back with the verifier and nonce; what comes back is one
+// [domain.UserInfo] whose Subject is the identity.
 package oauth
 
 import (
@@ -17,16 +18,28 @@ import (
 
 //go:generate go tool mockgen -package=mocks -destination=../../../../../mocks/service/oauth.go -source=oauth.go Provider
 
+// AuthRequest is what the use case decided before sending the browser away.
+//
+// State is the signed, single-use token the provider echoes back. Nonce goes
+// into the ID token and is checked on return, so a token minted for another
+// request cannot complete this one. CodeVerifier is the PKCE secret the use
+// case keeps (encrypted, inside the state) and presents at the exchange; the
+// adapter derives the S256 challenge from it.
+type AuthRequest struct {
+	State        string
+	Nonce        string
+	CodeVerifier string
+}
+
 // Provider is the driven port consumed by use-cases.
 type Provider interface {
-	// LoginURL builds the IDP authorization URL the user should be
-	// redirected to. state is a CSRF/correlation token the IDP will
-	// echo back on callback.
-	LoginURL(ctx context.Context, idp *domain.IDP, state string) (string, error)
+	// AuthCodeURL builds the provider's authorization URL for req.
+	AuthCodeURL(ctx context.Context, idp *domain.IDP, req AuthRequest) (string, error)
 
-	// Authenticate exchanges a callback `code` for the user's
-	// canonical identity at the IDP. The adapter handles the
-	// OAuth token exchange, the UserInfo HTTP fetch, and the
-	// per-IDP response parsing.
-	Authenticate(ctx context.Context, idp *domain.IDP, code string) (*domain.UserInfo, error)
+	// Exchange trades the callback code for the person's identity: the token
+	// exchange with PKCE, the ID token verified against the discovered keys
+	// and the nonce for the oidc kind, the user and emails endpoints for the
+	// github kind. Every failure is one of this service's own errors; the
+	// provider's wording goes to the log, never to the caller.
+	Exchange(ctx context.Context, idp *domain.IDP, code string, req AuthRequest) (*domain.UserInfo, error)
 }

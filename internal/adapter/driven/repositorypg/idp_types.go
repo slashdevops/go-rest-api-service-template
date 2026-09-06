@@ -152,7 +152,9 @@ func (ref *IDPTypesRepository) SelectByID(ctx context.Context, id uuid.UUID) (*d
             description,
             system,
             scopes,
-            user_info_api_url,
+            COALESCE(user_info_api_url, ''),
+            kind,
+            COALESCE(issuer_hint, ''),
             created_at,
             updated_at
         FROM idp_types
@@ -171,6 +173,8 @@ func (ref *IDPTypesRepository) SelectByID(ctx context.Context, id uuid.UUID) (*d
 		&idp.System,
 		&idp.Scopes,
 		&idp.UserInfoAPIURL,
+		&idp.Kind,
+		&idp.IssuerHint,
 		&idp.CreatedAt,
 		&idp.UpdatedAt,
 	)
@@ -202,7 +206,9 @@ func (ref *IDPTypesRepository) SelectByName(ctx context.Context, name string) (*
             description,
             system,
             scopes,
-            user_info_api_url,
+            COALESCE(user_info_api_url, ''),
+            kind,
+            COALESCE(issuer_hint, ''),
             created_at,
             updated_at
         FROM idp_types
@@ -221,6 +227,8 @@ func (ref *IDPTypesRepository) SelectByName(ctx context.Context, name string) (*
 		&idp.System,
 		&idp.Scopes,
 		&idp.UserInfoAPIURL,
+		&idp.Kind,
+		&idp.IssuerHint,
 		&idp.CreatedAt,
 		&idp.UpdatedAt,
 	)
@@ -255,7 +263,9 @@ func (ref *IDPTypesRepository) Select(ctx context.Context, input *domain.SelectI
 		"description",
 		"system",
 		"scopes",
-		"user_info_api_url",
+		"COALESCE(idpt.user_info_api_url, '') AS user_info_api_url",
+		"kind",
+		"COALESCE(idpt.issuer_hint, '') AS issuer_hint",
 		"created_at",
 		"updated_at",
 		"serial_id",
@@ -432,6 +442,8 @@ func (ref *IDPTypesRepository) buildScanFields(item *domain.IDPTypes, requestedF
 			&item.System,
 			&item.Scopes,
 			&item.UserInfoAPIURL,
+			&item.Kind,
+			&item.IssuerHint,
 			&item.CreatedAt,
 			&item.UpdatedAt,
 			&item.SerialID,
@@ -458,6 +470,10 @@ func (ref *IDPTypesRepository) buildScanFields(item *domain.IDPTypes, requestedF
 			scanFields = append(scanFields, &item.Scopes)
 		case "user_info_api_url":
 			scanFields = append(scanFields, &item.UserInfoAPIURL)
+		case "kind":
+			scanFields = append(scanFields, &item.Kind)
+		case "issuer_hint":
+			scanFields = append(scanFields, &item.IssuerHint)
 		case "created_at":
 			scanFields = append(scanFields, &item.CreatedAt)
 		case "updated_at":
