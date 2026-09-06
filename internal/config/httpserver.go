@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -28,6 +29,10 @@ const (
 	ValidHTTPServerMinIdleTimeout       = 1 * time.Second
 	ValidHTTPServerMaxMaxHeaderBytes    = 10 << 20 // 10 MiB
 	ValidHTTPServerMinMaxHeaderBytes    = 4 << 10  // 4 KiB
+	ValidHTTPServerMaxMaxBodyBytes      = 1 << 30  // 1 GiB
+	ValidHTTPServerMinMaxBodyBytes      = 1 << 10  // 1 KiB
+	ValidHTTPServerMaxHSTSMaxAge        = 10 * 365 * 24 * time.Hour
+	ValidHTTPServerMinHSTSMaxAge        = 1 * time.Hour
 
 	DefaultHTTPServerShutdownTimeout = 5 * time.Second
 	DefaultHTTPServerAddress         = "localhost"
@@ -36,6 +41,13 @@ const (
 	DefaultHTTPServerPprofPort       = 6060
 	DefaultHTTPServerPprofAddress    = "localhost"
 	DefaultHTTPServerPprofEnabled    = false
+
+	// DefaultHTTPServerSwaggerEnabled is false. The swagger UI and its JSON
+	// describe every operation, every field and every example -- including
+	// the seeded administrator's credentials as the login example -- to
+	// anyone who asks, on the same listener as the API. It is a development
+	// aid; the dev stack switches it on, a deployment says so explicitly.
+	DefaultHTTPServerSwaggerEnabled = false
 
 	// DefaultHTTPServerReadHeaderTimeout bounds how long a client may take to
 	// send its request headers. This is the Slowloris defence: without it a
@@ -51,6 +63,37 @@ const (
 	// DefaultHTTPServerMaxHeaderBytes matches Go's own default (1 MiB) and is
 	// stated explicitly so it is tunable without a code change.
 	DefaultHTTPServerMaxHeaderBytes = 1 << 20
+
+	// DefaultHTTPServerMaxBodyBytes bounds the request body on every route
+	// that is not a bulk ingest. There used to be no bound at all: measured
+	// 2026-09-06, a 200 MiB JSON body posted to /auth/login was read in full
+	// before being rejected, taking the process from 52 MiB to 674 MiB RSS.
+	// ReadTimeout is deliberately off (below), so this is the only thing that
+	// stops one request from allocating whatever it likes.
+	DefaultHTTPServerMaxBodyBytes = 1 << 20 // 1 MiB
+
+	// DefaultHTTPServerMaxBodyBytesIngest is the bound for the embedding
+	// ingest route, which legitimately posts a lot of text. It is a separate
+	// setting because one number cannot serve both: large enough for ingest
+	// is far too large for a login form.
+	DefaultHTTPServerMaxBodyBytesIngest = 32 << 20 // 32 MiB
+
+	// DefaultHTTPServerHSTSEnabled is false: Strict-Transport-Security is sent
+	// when TLS terminates in this process, and this switch is for the other
+	// case -- a proxy terminating TLS in front of a plaintext service. Sent
+	// over plain HTTP the header is ignored by browsers, so a wrong "true" is
+	// harmless; a wrong "false" behind a proxy leaves the downgrade open.
+	DefaultHTTPServerHSTSEnabled = false
+
+	// DefaultHTTPServerHSTSMaxAge is two years, the value the preload list
+	// requires. Shorter means a browser forgets the pin sooner.
+	DefaultHTTPServerHSTSMaxAge = 730 * 24 * time.Hour
+
+	// DefaultHTTPServerPublicURL is empty, which makes every Location header
+	// a path reference ("/api/v1/roles/<id>"). Set it to the URL clients use
+	// to reach the service and Location becomes absolute. It used to be built
+	// from the request's Origin header, so a caller chose the host in it.
+	DefaultHTTPServerPublicURL = ""
 
 	// DefaultHTTPServerReadTimeout is deliberately 0, meaning disabled.
 	//
@@ -128,6 +171,12 @@ type HTTPServerConfig struct {
 	PprofAddress         Field[string]
 	PprofPort            Field[int]
 	MaxHeaderBytes       Field[int]
+	MaxBodyBytes         Field[int]
+	MaxBodyBytesIngest   Field[int]
+	HSTSMaxAge           Field[time.Duration]
+	PublicURL            Field[string]
+	HSTSEnabled          Field[bool]
+	SwaggerEnabled       Field[bool]
 	TLSEnabled           Field[bool]
 	PprofEnabled         Field[bool]
 	CorsEnabled          Field[bool]
@@ -144,15 +193,21 @@ func NewHTTPServerConfig() *HTTPServerConfig {
 		CertificateFile: NewField("http.server.tls.cert.file", "HTTP_SERVER_TLS_CERT_FILE", "Server Certificate File", DefaultHTTPServerCertificateFile),
 		TLSEnabled:      NewField("http.server.tls.enabled", "HTTP_SERVER_TLS_ENABLED", "Enable TLS", DefaultHTTPServerTLSEnabled),
 
-		ReadHeaderTimeout: NewField("http.server.read.header.timeout", "HTTP_SERVER_READ_HEADER_TIMEOUT", "Maximum time to read request headers. Bounds Slowloris-style attacks; does not limit the handler", DefaultHTTPServerReadHeaderTimeout),
-		ReadTimeout:       NewField("http.server.read.timeout", "HTTP_SERVER_READ_TIMEOUT", "Maximum time to read the whole request including the body. 0 disables it, which is the default because bulk ingest bodies are unbounded", DefaultHTTPServerReadTimeout),
-		WriteTimeout:      NewField("http.server.write.timeout", "HTTP_SERVER_WRITE_TIMEOUT", "Maximum time to write the response, measured from the end of the header read, so it caps total request duration. 0 disables it, which is the default because a retried generation can legitimately run for minutes", DefaultHTTPServerWriteTimeout),
-		IdleTimeout:       NewField("http.server.idle.timeout", "HTTP_SERVER_IDLE_TIMEOUT", "Maximum time an idle keep-alive connection is kept open", DefaultHTTPServerIdleTimeout),
-		MaxHeaderBytes:    NewField("http.server.max.header.bytes", "HTTP_SERVER_MAX_HEADER_BYTES", "Maximum size in bytes of the request headers", DefaultHTTPServerMaxHeaderBytes),
+		ReadHeaderTimeout:  NewField("http.server.read.header.timeout", "HTTP_SERVER_READ_HEADER_TIMEOUT", "Maximum time to read request headers. Bounds Slowloris-style attacks; does not limit the handler", DefaultHTTPServerReadHeaderTimeout),
+		ReadTimeout:        NewField("http.server.read.timeout", "HTTP_SERVER_READ_TIMEOUT", "Maximum time to read the whole request including the body. 0 disables it, which is the default because bulk ingest bodies are unbounded", DefaultHTTPServerReadTimeout),
+		WriteTimeout:       NewField("http.server.write.timeout", "HTTP_SERVER_WRITE_TIMEOUT", "Maximum time to write the response, measured from the end of the header read, so it caps total request duration. 0 disables it, which is the default because a retried generation can legitimately run for minutes", DefaultHTTPServerWriteTimeout),
+		IdleTimeout:        NewField("http.server.idle.timeout", "HTTP_SERVER_IDLE_TIMEOUT", "Maximum time an idle keep-alive connection is kept open", DefaultHTTPServerIdleTimeout),
+		MaxHeaderBytes:     NewField("http.server.max.header.bytes", "HTTP_SERVER_MAX_HEADER_BYTES", "Maximum size in bytes of the request headers", DefaultHTTPServerMaxHeaderBytes),
+		MaxBodyBytes:       NewField("http.server.max.body.bytes", "HTTP_SERVER_MAX_BODY_BYTES", "Maximum size in bytes of a request body; a larger one is refused with 413 before it is read", DefaultHTTPServerMaxBodyBytes),
+		MaxBodyBytesIngest: NewField("http.server.max.body.bytes.ingest", "HTTP_SERVER_MAX_BODY_BYTES_INGEST", "Maximum size in bytes of an embedding ingest request body; must not be below http.server.max.body.bytes", DefaultHTTPServerMaxBodyBytesIngest),
+		HSTSEnabled:        NewField("http.server.hsts.enabled", "HTTP_SERVER_HSTS_ENABLED", "Send Strict-Transport-Security even without TLS in this process, for a deployment where a proxy terminates TLS. Always sent when http.server.tls.enabled is true", DefaultHTTPServerHSTSEnabled),
+		HSTSMaxAge:         NewField("http.server.hsts.max.age", "HTTP_SERVER_HSTS_MAX_AGE", "Strict-Transport-Security max-age", DefaultHTTPServerHSTSMaxAge),
+		PublicURL:          NewField("http.server.public.url", "HTTP_SERVER_PUBLIC_URL", "URL clients use to reach this service, e.g. https://api.example.com; when set, Location headers are absolute. Empty means Location is a path reference", DefaultHTTPServerPublicURL),
 
-		PprofAddress: NewField("http.server.pprof.address", "HTTP_SERVER_PPROF_ADDRESS", "Pprof Address", DefaultHTTPServerPprofAddress),
-		PprofPort:    NewField("http.server.pprof.port", "HTTP_SERVER_PPROF_PORT", "Pprof Port", DefaultHTTPServerPprofPort),
-		PprofEnabled: NewField("http.server.pprof.enabled", "HTTP_SERVER_PPROF_ENABLED", "Enable pprof. WARNING: Enable this only for debugging, it has performance impact!", DefaultHTTPServerPprofEnabled),
+		PprofAddress:   NewField("http.server.pprof.address", "HTTP_SERVER_PPROF_ADDRESS", "Pprof Address", DefaultHTTPServerPprofAddress),
+		PprofPort:      NewField("http.server.pprof.port", "HTTP_SERVER_PPROF_PORT", "Pprof Port", DefaultHTTPServerPprofPort),
+		SwaggerEnabled: NewField("http.server.swagger.enabled", "HTTP_SERVER_SWAGGER_ENABLED", "Serve the swagger UI and JSON under /swagger/. Off by default: it documents every operation and example to anyone who asks", DefaultHTTPServerSwaggerEnabled),
+		PprofEnabled:   NewField("http.server.pprof.enabled", "HTTP_SERVER_PPROF_ENABLED", "Enable pprof. WARNING: Enable this only for debugging, it has performance impact!", DefaultHTTPServerPprofEnabled),
 
 		CorsEnabled:          NewField("http.server.cors.enabled", "HTTP_SERVER_CORS_ENABLED", "Enable CORS", DefaultHTTPServerCorsEnabled),
 		CorsAllowCredentials: NewField("http.server.cors.allow.credentials", "HTTP_SERVER_CORS_ALLOW_CREDENTIALS", "Allow Credentials for CORS", DefaultHTTPServerCorsAllowCredentials),
@@ -178,10 +233,16 @@ func (c *HTTPServerConfig) ParseEnvVars() {
 	c.WriteTimeout.Value = GetEnv(c.WriteTimeout.EnVarName, c.WriteTimeout.Value)
 	c.IdleTimeout.Value = GetEnv(c.IdleTimeout.EnVarName, c.IdleTimeout.Value)
 	c.MaxHeaderBytes.Value = GetEnv(c.MaxHeaderBytes.EnVarName, c.MaxHeaderBytes.Value)
+	c.MaxBodyBytes.Value = GetEnv(c.MaxBodyBytes.EnVarName, c.MaxBodyBytes.Value)
+	c.MaxBodyBytesIngest.Value = GetEnv(c.MaxBodyBytesIngest.EnVarName, c.MaxBodyBytesIngest.Value)
+	c.HSTSEnabled.Value = GetEnv(c.HSTSEnabled.EnVarName, c.HSTSEnabled.Value)
+	c.HSTSMaxAge.Value = GetEnv(c.HSTSMaxAge.EnVarName, c.HSTSMaxAge.Value)
+	c.PublicURL.Value = GetEnv(c.PublicURL.EnVarName, c.PublicURL.Value)
 
 	c.PprofAddress.Value = GetEnv(c.PprofAddress.EnVarName, c.PprofAddress.Value)
 	c.PprofPort.Value = GetEnv(c.PprofPort.EnVarName, c.PprofPort.Value)
 	c.PprofEnabled.Value = GetEnv(c.PprofEnabled.EnVarName, c.PprofEnabled.Value)
+	c.SwaggerEnabled.Value = GetEnv(c.SwaggerEnabled.EnVarName, c.SwaggerEnabled.Value)
 
 	c.CorsEnabled.Value = GetEnv(c.CorsEnabled.EnVarName, c.CorsEnabled.Value)
 	c.CorsAllowCredentials.Value = GetEnv(c.CorsAllowCredentials.EnVarName, c.CorsAllowCredentials.Value)
@@ -270,6 +331,41 @@ func (c *HTTPServerConfig) Validate() error {
 			Field:   "http.server.max.header.bytes",
 			Value:   fmt.Sprintf("%d", c.MaxHeaderBytes.Value),
 			Message: fmt.Sprintf("invalid http.server.max.header.bytes, must be between %d and %d", ValidHTTPServerMinMaxHeaderBytes, ValidHTTPServerMaxMaxHeaderBytes),
+		}
+	}
+
+	if c.MaxBodyBytes.Value < ValidHTTPServerMinMaxBodyBytes || c.MaxBodyBytes.Value > ValidHTTPServerMaxMaxBodyBytes {
+		return &InvalidConfigurationError{
+			Field:   "http.server.max.body.bytes",
+			Value:   fmt.Sprintf("%d", c.MaxBodyBytes.Value),
+			Message: fmt.Sprintf("invalid http.server.max.body.bytes, must be between %d and %d", ValidHTTPServerMinMaxBodyBytes, ValidHTTPServerMaxMaxBodyBytes),
+		}
+	}
+
+	if c.MaxBodyBytesIngest.Value < c.MaxBodyBytes.Value || c.MaxBodyBytesIngest.Value > ValidHTTPServerMaxMaxBodyBytes {
+		return &InvalidConfigurationError{
+			Field:   "http.server.max.body.bytes.ingest",
+			Value:   fmt.Sprintf("%d", c.MaxBodyBytesIngest.Value),
+			Message: fmt.Sprintf("invalid http.server.max.body.bytes.ingest, must be between http.server.max.body.bytes (%d) and %d", c.MaxBodyBytes.Value, ValidHTTPServerMaxMaxBodyBytes),
+		}
+	}
+
+	if c.HSTSMaxAge.Value < ValidHTTPServerMinHSTSMaxAge || c.HSTSMaxAge.Value > ValidHTTPServerMaxHSTSMaxAge {
+		return &InvalidConfigurationError{
+			Field:   "http.server.hsts.max.age",
+			Value:   c.HSTSMaxAge.Value.String(),
+			Message: fmt.Sprintf("invalid http.server.hsts.max.age, must be between %v and %v", ValidHTTPServerMinHSTSMaxAge, ValidHTTPServerMaxHSTSMaxAge),
+		}
+	}
+
+	if c.PublicURL.Value != "" {
+		u, err := url.Parse(c.PublicURL.Value)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+			return &InvalidConfigurationError{
+				Field:   "http.server.public.url",
+				Value:   c.PublicURL.Value,
+				Message: "invalid http.server.public.url, must be an absolute http or https URL with no query or fragment",
+			}
 		}
 	}
 

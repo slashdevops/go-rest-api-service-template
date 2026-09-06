@@ -6,8 +6,6 @@ import (
 	"log"
 	"os"
 
-	_ "net/http/pprof"
-
 	"github.com/slashdevops/go-rest-api-service-template/internal/app"
 )
 

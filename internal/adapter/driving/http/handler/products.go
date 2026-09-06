@@ -2,7 +2,6 @@ package handler
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -145,7 +144,7 @@ func (ref *ProductsHandler) writeProductError(
 	}
 
 	e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-	respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+	respond.WriteInternalError(w, r, e)
 }
 
 // writeConflict answers the two errors only a write can produce, and reports
@@ -218,6 +217,8 @@ func (ref *ProductsHandler) productPathParams(
 //	@Failure		404			{object}	payload.HTTPMessage				"Project not found, or the caller has no access to it"
 //	@Failure		409			{object}	payload.HTTPMessage				"Product with that name already exists in the project, or the project's product limit is reached"
 //	@Failure		429			{object}	payload.HTTPMessage				"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
+//	@Failure		413			{object}	payload.HTTPMessage				"Request body larger than http.server.max.body.bytes"
+//	@Failure		415			{object}	payload.HTTPMessage				"Body not declared as application/json"
 //	@Failure		500			{object}	payload.HTTPMessage				"Internal server error during product creation"
 //	@Router			/projects/{project_id}/products [post]
 //	@Security		AccessToken
@@ -232,9 +233,9 @@ func (ref *ProductsHandler) createByProjectID(w http.ResponseWriter, r *http.Req
 	}
 
 	var req payload.CreateProductRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 
 		return
 	}
@@ -244,7 +245,7 @@ func (ref *ProductsHandler) createByProjectID(w http.ResponseWriter, r *http.Req
 	req.ID, err = domain.EnsureUUIDV7(req.ID)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -275,7 +276,7 @@ func (ref *ProductsHandler) createByProjectID(w http.ResponseWriter, r *http.Req
 	}
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s/%s", r.Header.Get("Origin"), r.RequestURI, input.ID.String()))
+	respond.SetLocation(w, r, input.ID.String())
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "Product created",
 		attribute.String("product.id", input.ID.String()))
@@ -318,7 +319,7 @@ func (ref *ProductsHandler) getByIDByProjectID(w http.ResponseWriter, r *http.Re
 
 	if err := respond.WriteJSONData(w, http.StatusOK, payload.ProductResponse(*out)); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -345,6 +346,8 @@ func (ref *ProductsHandler) getByIDByProjectID(w http.ResponseWriter, r *http.Re
 //	@Failure		404			{object}	payload.HTTPMessage				"Product not found, or the caller has no access to the project"
 //	@Failure		409			{object}	payload.HTTPMessage				"Another product in the project already has that name"
 //	@Failure		429			{object}	payload.HTTPMessage				"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
+//	@Failure		413			{object}	payload.HTTPMessage				"Request body larger than http.server.max.body.bytes"
+//	@Failure		415			{object}	payload.HTTPMessage				"Body not declared as application/json"
 //	@Failure		500			{object}	payload.HTTPMessage				"Internal server error"
 //	@Router			/projects/{project_id}/products/{product_id} [put]
 //	@Security		AccessToken
@@ -359,9 +362,9 @@ func (ref *ProductsHandler) updateByIDByProjectID(w http.ResponseWriter, r *http
 	}
 
 	var req payload.UpdateProductRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 
 		return
 	}
@@ -459,6 +462,7 @@ func (ref *ProductsHandler) deleteByIDByProjectID(w http.ResponseWriter, r *http
 //	@Failure		401			{object}	payload.HTTPMessage				"Missing or invalid authentication token"
 //	@Failure		403			{object}	payload.HTTPMessage				"Insufficient permissions"
 //	@Failure		429			{object}	payload.HTTPMessage				"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
+//	@Failure		404			{object}	payload.HTTPMessage				"Project not found, or the caller is not a member of it"
 //	@Failure		500			{object}	payload.HTTPMessage				"Internal server error"
 //	@Router			/projects/{project_id}/products [get]
 //	@Security		AccessToken
@@ -583,7 +587,7 @@ func (ref *ProductsHandler) writeList(
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}

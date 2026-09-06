@@ -149,13 +149,13 @@ func (ref *ResourcesLimitsHandler) statusForMe(w http.ResponseWriter, r *http.Re
 	})
 	if err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	if err := ref.writeScopeStatus(w, status); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -175,6 +175,7 @@ func (ref *ResourcesLimitsHandler) statusForMe(w http.ResponseWriter, r *http.Re
 //	@Failure		401			{object}	payload.HTTPMessage						"Missing or invalid authentication"
 //	@Failure		403			{object}	payload.HTTPMessage						"Insufficient permissions"
 //	@Failure		429			{object}	payload.HTTPMessage						"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
+//	@Failure		404			{object}	payload.HTTPMessage						"Project not found, or the caller is not a member of it"
 //	@Failure		500			{object}	payload.HTTPMessage						"Internal server error"
 //	@Router			/projects/{project_id}/resources_limits [get]
 //	@Security		AccessToken
@@ -196,13 +197,13 @@ func (ref *ResourcesLimitsHandler) statusForProject(w http.ResponseWriter, r *ht
 	})
 	if err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	if err := ref.writeScopeStatus(w, status); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -296,7 +297,7 @@ func (ref *ResourcesLimitsHandler) list(w http.ResponseWriter, r *http.Request) 
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 

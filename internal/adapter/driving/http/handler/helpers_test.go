@@ -149,7 +149,7 @@ func TestParsePrevTokenQueryParams(t *testing.T) {
 			name:      "Invalid token (bad format)",
 			prevToken: "invalid", // Input that causes a base64 decoding error
 			expected:  "",
-			err:       &domain.InvalidTokenError{Message: "invalid cursor: invalid token: not base64"},
+			err:       &domain.InvalidTokenError{Message: "invalid prev_token"},
 		},
 		{
 			name:      "Valid token (encoded as Prev)",
@@ -161,7 +161,7 @@ func TestParsePrevTokenQueryParams(t *testing.T) {
 			name:      "Invalid token (direction mismatch - next token for prev param)",
 			prevToken: validNextToken,
 			expected:  "", // On error, the function returns an empty string for the token
-			err:       &domain.InvalidTokenError{Message: "invalid cursor: token direction mismatch: expected prev, got next"},
+			err:       &domain.InvalidTokenError{Message: "invalid prev_token"},
 		},
 	}
 

@@ -2,7 +2,12 @@
 # FROM --platform=${TARGETPLATFORM:-linux/amd64} alpine:latest
 
 # https://github.com/GoogleContainerTools/distroless/blob/main/base/README.md
-FROM --platform=${TARGETPLATFORM:-linux/amd64} gcr.io/distroless/base
+#
+# The :nonroot variant, and USER below: the image used to run as root, which
+# turns any code execution in the service into root in the container. Pinned
+# to the debian12 line and the nonroot tag; a digest pin is per-architecture
+# on this image and the build is multi-arch, so the tag is the pin.
+FROM --platform=${TARGETPLATFORM:-linux/amd64} gcr.io/distroless/base-debian12:nonroot
 
 # these parameters are required
 # example: --build-arg SERVICE_NAME=go-rest-api-service-template --build-arg GOOS=linux --build-arg GOARCH=arm64
@@ -28,5 +33,7 @@ WORKDIR /app
 ENV PATH="/app:${PATH}"
 
 COPY --chmod=755 "dist/${SERVICE_NAME}-${GOOS}-${GOARCH}" /app/microservice
+
+USER nonroot:nonroot
 
 ENTRYPOINT ["/app/microservice"]

@@ -675,6 +675,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -840,6 +852,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -973,6 +997,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many failed login attempts for this account; see Retry-After",
                         "schema": {
@@ -1048,6 +1084,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -1097,6 +1145,18 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Invalid request body or email format",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -1171,6 +1231,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -1240,6 +1312,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -1295,6 +1379,18 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Invalid request body or validation error",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -1411,6 +1507,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests",
                         "schema": {
@@ -1470,6 +1578,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "500": {
                         "description": "Internal server error during email send",
                         "schema": {
@@ -1516,6 +1636,24 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "409": {
+                        "description": "Account already verified",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -1768,6 +1906,18 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "User already exists (duplicate email)",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -2196,6 +2346,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -2355,6 +2517,18 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Policy name already in use",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -2615,6 +2789,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -2694,6 +2880,18 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Policy not found",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -2972,6 +3170,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -3128,6 +3338,18 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Project name already in use",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -3303,6 +3525,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "404": {
+                        "description": "Project not found, or the caller is not a member of it",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -3392,6 +3620,18 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Product with that name already exists in the project, or the project's product limit is reached",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -3568,6 +3808,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -3710,6 +3962,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "404": {
+                        "description": "Project not found, or the caller is not a member of it",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -3813,6 +4071,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "404": {
+                        "description": "Project not found, or the caller is not a member of it",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -3902,6 +4166,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -3981,6 +4257,18 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Project or user not found",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -4152,6 +4440,18 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "A rate limit with that name already exists",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -4405,6 +4705,18 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "A rate limit with that name already exists",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -5036,6 +5348,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -5195,6 +5519,18 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Role with same name already exists",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -5467,6 +5803,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -5546,6 +5894,18 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Role not found",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -5736,6 +6096,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -5815,6 +6187,18 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Role not found",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -5993,6 +6377,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -6153,6 +6549,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -6270,6 +6678,78 @@ const docTemplate = `{
                         "description": "The user's effective permissions, keyed by category. Note the extra nesting compared with /me/authz, which strips the outer \\\"permissions\\\" level",
                         "schema": {
                             "$ref": "#/definitions/payload.UserAuthzResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid user ID format",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid authentication token",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "403": {
+                        "description": "Insufficient permissions",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    }
+                }
+            }
+        },
+        "/users/{user_id}/password/reset": {
+            "post": {
+                "security": [
+                    {
+                        "AccessToken": []
+                    }
+                ],
+                "description": "Email the account holder a password-reset link. PUT /users/{user_id} used to accept a new password outright, so a grant on it was a takeover of any account; a reset link needs the mailbox as well. Answers 202 whether or not the address can be reached, and says nothing about why.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Users"
+                ],
+                "summary": "Send password reset email",
+                "operationId": "01a07662-d5ca-7c8f-aa04-0a29d6cad3bd",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "User unique identifier",
+                        "name": "user_id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "202": {
+                        "description": "Reset email requested",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
                     "400": {
@@ -6488,6 +6968,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -6567,6 +7059,18 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "User not found",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
                         "schema": {
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
@@ -6766,6 +7270,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -6855,6 +7371,18 @@ const docTemplate = `{
                             "$ref": "#/definitions/payload.HTTPMessage"
                         }
                     },
+                    "413": {
+                        "description": "Request body larger than http.server.max.body.bytes",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "415": {
+                        "description": "Body not declared as application/json",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
                     "429": {
                         "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
                         "schema": {
@@ -6899,6 +7427,47 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "domain.BuildInfo": {
+            "description": "Comprehensive health information including component status and metrics.",
+            "type": "object",
+            "properties": {
+                "build_date": {
+                    "type": "string",
+                    "format": "string",
+                    "example": "2021-01-01T00:00:00Z"
+                },
+                "git_branch": {
+                    "type": "string",
+                    "format": "string",
+                    "example": "main"
+                },
+                "git_commit": {
+                    "type": "string",
+                    "format": "string",
+                    "example": "abcdef123456"
+                },
+                "go_version": {
+                    "type": "string",
+                    "format": "string",
+                    "example": "go1.27.1"
+                },
+                "go_version_arch": {
+                    "type": "string",
+                    "format": "string",
+                    "example": "arm64"
+                },
+                "go_version_os": {
+                    "type": "string",
+                    "format": "string",
+                    "example": "linux"
+                },
+                "version": {
+                    "type": "string",
+                    "format": "string",
+                    "example": "1.0.0"
+                }
+            }
+        },
         "domain.Check": {
             "description": "One component's health verdict. Status only: this endpoint is public",
             "type": "object",
@@ -7513,9 +8082,11 @@ const docTemplate = `{
             }
         },
         "payload.DetailedHealth": {
-            "description": "Comprehensive health information including component status and metrics.",
             "type": "object",
             "properties": {
+                "build": {
+                    "$ref": "#/definitions/domain.BuildInfo"
+                },
                 "components": {
                     "type": "object",
                     "additionalProperties": {
@@ -7664,6 +8235,12 @@ const docTemplate = `{
                     "type": "string",
                     "format": "string",
                     "example": "/api/v1/users"
+                },
+                "request_id": {
+                    "description": "RequestID is the id the X-Request-ID response header carries, repeated\nhere so a client that only kept the body can still quote it. A 500\nsays nothing else; this is what an operator joins to the log.",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "01a075b7-8dda-7bdb-94e2-8000a61c171c"
                 },
                 "status_code": {
                     "type": "integer",
@@ -9636,7 +10213,7 @@ const docTemplate = `{
             }
         },
         "payload.UpdateUserRequest": {
-            "description": "Request payload for updating an existing user account (all fields optional)",
+            "description": "Request payload for updating an existing user account (all fields optional). A password is never set this way: POST /users/{user_id}/password/reset emails the account holder a reset link, so taking over an account needs its mailbox, not a grant on PUT /users.",
             "type": "object",
             "properties": {
                 "disabled": {
@@ -9670,14 +10247,6 @@ const docTemplate = `{
                     "description": "Set account type (local vs federated)",
                     "type": "boolean",
                     "example": true
-                },
-                "password": {
-                    "description": "New password",
-                    "type": "string",
-                    "format": "password",
-                    "maxLength": 72,
-                    "minLength": 8,
-                    "example": "NewSecureP@ssw0rd"
                 }
             }
         },
@@ -9793,6 +10362,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "build_date": {
+                    "description": "The build details are present only on the authenticated\n/health/detailed answer. GET /version used to hand an anonymous caller\nthe commit, the branch and the Go version -- the same disclosure that\nwas removed from /health/status -- and it is exempt from rate limiting.",
                     "type": "string",
                     "format": "string",
                     "example": "2021-01-01T00:00:00Z"

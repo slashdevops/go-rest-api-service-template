@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -118,6 +117,8 @@ func (ref *ProjectsHandler) RegisterRoutes(mux *http.ServeMux, middlewares ...mi
 //	@Failure		403		{object}	payload.HTTPMessage				"Insufficient permissions"
 //	@Failure		404		{object}	payload.HTTPMessage				"Owning user not found"
 //	@Failure		409		{object}	payload.HTTPMessage				"Project with name already exists"
+//	@Failure		413		{object}	payload.HTTPMessage				"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage				"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage				"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage				"Internal server error during project creation"
 //	@Router			/projects [post]
@@ -135,16 +136,16 @@ func (ref *ProjectsHandler) create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.CreateProjectRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
 	req.ID, err = domain.EnsureUUIDV7(req.ID)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -192,12 +193,12 @@ func (ref *ProjectsHandler) create(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s/%s", r.Header.Get("Origin"), r.RequestURI, input.ID.String()))
+	respond.SetLocation(w, r, input.ID.String())
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "Project created",
 		attribute.String("project.id", input.ID.String()))
@@ -259,7 +260,7 @@ func (ref *ProjectsHandler) getByIDByUserID(w http.ResponseWriter, r *http.Reque
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -275,7 +276,7 @@ func (ref *ProjectsHandler) getByIDByUserID(w http.ResponseWriter, r *http.Reque
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -299,6 +300,8 @@ func (ref *ProjectsHandler) getByIDByUserID(w http.ResponseWriter, r *http.Reque
 //	@Failure		403			{object}	payload.HTTPMessage				"System projects cannot be modified"
 //	@Failure		404			{object}	payload.HTTPMessage				"Project or owning user not found"
 //	@Failure		409			{object}	payload.HTTPMessage				"Project name already in use"
+//	@Failure		413			{object}	payload.HTTPMessage				"Request body larger than http.server.max.body.bytes"
+//	@Failure		415			{object}	payload.HTTPMessage				"Body not declared as application/json"
 //	@Failure		429			{object}	payload.HTTPMessage				"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500			{object}	payload.HTTPMessage				"Internal server error during update"
 //	@Router			/projects/{project_id} [put]
@@ -323,9 +326,9 @@ func (ref *ProjectsHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.UpdateProjectRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -375,12 +378,12 @@ func (ref *ProjectsHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, &domain.InternalServerError{Message: "failed to update project"}, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s", r.Header.Get("Origin"), r.RequestURI))
+	respond.SetLocation(w, r)
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "Project updated",
 		attribute.String("project.id", input.ID.String()))
@@ -452,7 +455,7 @@ func (ref *ProjectsHandler) deleteByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -554,7 +557,7 @@ func (ref *ProjectsHandler) listByUserID(w http.ResponseWriter, r *http.Request)
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -654,7 +657,7 @@ func (ref *ProjectsHandler) list(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -678,6 +681,8 @@ func (ref *ProjectsHandler) list(w http.ResponseWriter, r *http.Request) {
 //	@Failure		403			{object}	payload.HTTPMessage					"Insufficient permissions"
 //	@Failure		404			{object}	payload.HTTPMessage					"Project not found"
 //	@Failure		409			{object}	payload.HTTPMessage					"One or more users are already linked to the project"
+//	@Failure		413			{object}	payload.HTTPMessage					"Request body larger than http.server.max.body.bytes"
+//	@Failure		415			{object}	payload.HTTPMessage					"Body not declared as application/json"
 //	@Failure		429			{object}	payload.HTTPMessage					"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500			{object}	payload.HTTPMessage					"Internal server error during user linking"
 //	@Router			/projects/{project_id}/users [post]
@@ -695,9 +700,9 @@ func (ref *ProjectsHandler) linkUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.LinkUsersToProjectRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -738,12 +743,12 @@ func (ref *ProjectsHandler) linkUsers(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s/%s/users", r.Header.Get("Origin"), r.RequestURI, projectID.String()))
+	respond.SetLocation(w, r, projectID.String(), "users")
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "link users to project",
 		attribute.String("project.id", projectID.String()))
@@ -766,6 +771,8 @@ func (ref *ProjectsHandler) linkUsers(w http.ResponseWriter, r *http.Request) {
 //	@Failure		401			{object}	payload.HTTPMessage						"Missing or invalid authentication token"
 //	@Failure		403			{object}	payload.HTTPMessage						"Insufficient permissions"
 //	@Failure		404			{object}	payload.HTTPMessage						"Project or user not found"
+//	@Failure		413			{object}	payload.HTTPMessage						"Request body larger than http.server.max.body.bytes"
+//	@Failure		415			{object}	payload.HTTPMessage						"Body not declared as application/json"
 //	@Failure		429			{object}	payload.HTTPMessage						"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500			{object}	payload.HTTPMessage						"Internal server error during user unlinking"
 //	@Router			/projects/{project_id}/users [delete]
@@ -783,9 +790,9 @@ func (ref *ProjectsHandler) unlinkUsers(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req payload.UnlinkUsersFromProjectRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -818,12 +825,12 @@ func (ref *ProjectsHandler) unlinkUsers(w http.ResponseWriter, r *http.Request) 
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s/%s/users", r.Header.Get("Origin"), r.RequestURI, projectID.String()))
+	respond.SetLocation(w, r, projectID.String(), "users")
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "unlink users from project",
 		attribute.String("project.id", projectID.String()))

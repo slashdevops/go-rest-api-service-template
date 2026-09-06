@@ -427,7 +427,7 @@ func (ref *UsersService) List(ctx context.Context, input *domain.ListUsersInput)
 
 	if input == nil {
 		errorValue := &domain.InvalidInputError{Message: "input is required"}
-		o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
+		_ = o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
 		return nil, errorValue
 	}
 

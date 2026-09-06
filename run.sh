@@ -30,6 +30,9 @@ go run cmd/go-rest-api-service-template/main.go \
   -authn.public.key.file=./certs/jwt.pub \
   -authn.symmetric.key.file=./certs/aes-256-symmetric-hex.key \
   -http.server.pprof.enabled=false \
+  -http.server.swagger.enabled=true \
+  -authn.seed.admin.password.allowed=true \
+  -http.client.allow.private.addresses=true \
   -http.server.cors.enabled=true \
   -http.server.cors.allowed.origins="*" \
   -http.server.trusted.proxies= \

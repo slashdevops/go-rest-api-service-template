@@ -71,7 +71,6 @@ func createTestPolicyWithParams(t *testing.T, accessToken, namePrefix, resource,
 		"description":      "Test policy " + policyID.String(),
 		"allowed_action":   action,
 		"allowed_resource": resource,
-		"effect":           effect,
 	}
 
 	accessTokenHeader := map[string]string{"Authorization": "Bearer " + accessToken}
@@ -1684,12 +1683,11 @@ func TestPolicyCreate_EdgeCases(t *testing.T) {
 
 		policyID := uuid.NewV7()
 		policy := map[string]any{
-			"id":          policyID.String(),
-			"name":        "test-policy-" + policyID.String(),
-			"description": "Test policy",
-			"resource":    "/api/v1/test",
-			"action":      "read",
-			"effect":      "allow",
+			"id":               policyID.String(),
+			"name":             "test-policy-" + policyID.String(),
+			"description":      "Test policy",
+			"allowed_action":   "GET",
+			"allowed_resource": "/api/v1/test",
 		}
 
 		response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy)
@@ -1710,12 +1708,11 @@ func TestPolicyCreate_EdgeCases(t *testing.T) {
 
 		policyID := uuid.NewV7()
 		policy := map[string]any{
-			"id":          policyID.String(),
-			"name":        "test-policy-" + policyID.String(),
-			"description": "Test policy",
-			"resource":    "/api/v1/test",
-			"action":      "read",
-			"effect":      "allow",
+			"id":               policyID.String(),
+			"name":             "test-policy-" + policyID.String(),
+			"description":      "Test policy",
+			"allowed_action":   "GET",
+			"allowed_resource": "/api/v1/test",
 		}
 
 		response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, invalidTokenHeader)
@@ -1737,12 +1734,11 @@ func TestPolicyCreate_EdgeCases(t *testing.T) {
 
 		policyID := uuid.NewV7()
 		policy := map[string]any{
-			"id":          policyID.String(),
-			"name":        "",
-			"description": "Test policy",
-			"resource":    "/api/v1/test",
-			"action":      "read",
-			"effect":      "allow",
+			"id":               policyID.String(),
+			"name":             "",
+			"description":      "Test policy",
+			"allowed_action":   "GET",
+			"allowed_resource": "/api/v1/test",
 		}
 
 		response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
@@ -1767,9 +1763,11 @@ func TestPolicyCreate_EdgeCases(t *testing.T) {
 			"id":          policyID.String(),
 			"name":        "test-policy-" + policyID.String(),
 			"description": "Test policy",
-			"resource":    "/api/v1/test",
-			"action":      "read",
-			"effect":      "invalid", // not 'allow' or 'deny'
+			// "effect" was never a field of this API. It used to be dropped
+			// silently; it is refused by name now, which is the 400 asserted.
+			"allowed_action":   "GET",
+			"allowed_resource": "/api/v1/test",
+			"effect":           "invalid",
 		}
 
 		response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
@@ -1790,12 +1788,11 @@ func TestPolicyCreate_EdgeCases(t *testing.T) {
 		}
 
 		policy := map[string]any{
-			"id":          "invalid-uuid",
-			"name":        "test-policy-invalid",
-			"description": "Test policy",
-			"resource":    "/api/v1/test",
-			"action":      "read",
-			"effect":      "allow",
+			"id":               "invalid-uuid",
+			"name":             "test-policy-invalid",
+			"description":      "Test policy",
+			"allowed_action":   "GET",
+			"allowed_resource": "/api/v1/test",
 		}
 
 		response, err := sendHTTPRequest(t, ctx, policyCreateEndpoint, policy, accessTokenHeader)
@@ -2101,13 +2098,14 @@ func TestPolicyLinkRoles_EdgeCases(t *testing.T) {
 		assert.NoError(t, err)
 		defer response.Body.Close()
 
-		// NOTE: This should return 404, but currently returns 500 with FK constraint violation
-		// TODO: Handler should validate policy existence before database operation
-		assert.Equal(t, http.StatusInternalServerError, response.StatusCode, "Expected status code 500 (FK violation). Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
+		// The foreign-key violation is mapped to the row that is missing. It
+		// used to fall through as a 500 carrying the driver's text.
+		assert.Equal(t, http.StatusNotFound, response.StatusCode, "Expected status code 404 for a link to a missing policy. Got %d. Message: %s", response.StatusCode, readResponseBody(t, response))
 
 		apiResp, err := parserResponseBody[payload.HTTPMessage](t, response)
 		assert.NoError(t, err, "Failed to parse response body")
-		assert.Contains(t, apiResp.Message, "foreign key constraint", "Expected FK constraint error message")
+		assert.Contains(t, apiResp.Message, "not found", "Expected a not-found message")
+		assert.NotContains(t, apiResp.Message, "foreign key", "The driver's text must not reach the client")
 	})
 
 	t.Run("link_roles_with_empty_array", func(t *testing.T) {

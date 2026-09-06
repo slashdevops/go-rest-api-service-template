@@ -18,8 +18,6 @@ const (
 	MaxStringLength           = 10000
 	MaxEmailLength            = 254 // RFC 5321 limit
 	MaxURLLength              = 2048
-	MaxJSONFieldCount         = 1000
-	MaxJSONNestingDepth       = 32
 	MaxPaginationLimit        = 1000
 	MaxFilterExpressionLength = 2048
 	MaxSortExpressionLength   = 1024

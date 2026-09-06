@@ -1,4 +1,36 @@
 definitions:
+  domain.BuildInfo:
+    description: Comprehensive health information including component status and metrics.
+    properties:
+      build_date:
+        example: "2021-01-01T00:00:00Z"
+        format: string
+        type: string
+      git_branch:
+        example: main
+        format: string
+        type: string
+      git_commit:
+        example: abcdef123456
+        format: string
+        type: string
+      go_version:
+        example: go1.27.1
+        format: string
+        type: string
+      go_version_arch:
+        example: arm64
+        format: string
+        type: string
+      go_version_os:
+        example: linux
+        format: string
+        type: string
+      version:
+        example: 1.0.0
+        format: string
+        type: string
+    type: object
   domain.Check:
     description: 'One component''s health verdict. Status only: this endpoint is public'
     properties:
@@ -500,8 +532,9 @@ definitions:
     - password
     type: object
   payload.DetailedHealth:
-    description: Comprehensive health information including component status and metrics.
     properties:
+      build:
+        $ref: '#/definitions/domain.BuildInfo'
       components:
         additionalProperties:
           $ref: '#/definitions/domain.ComponentHealth'
@@ -640,6 +673,14 @@ definitions:
       path:
         example: /api/v1/users
         format: string
+        type: string
+      request_id:
+        description: |-
+          RequestID is the id the X-Request-ID response header carries, repeated
+          here so a client that only kept the body can still quote it. A 500
+          says nothing else; this is what an operator joins to the log.
+        example: 01a075b7-8dda-7bdb-94e2-8000a61c171c
+        format: uuid
         type: string
       status_code:
         example: 200
@@ -2175,8 +2216,10 @@ definitions:
         type: string
     type: object
   payload.UpdateUserRequest:
-    description: Request payload for updating an existing user account (all fields
-      optional)
+    description: 'Request payload for updating an existing user account (all fields
+      optional). A password is never set this way: POST /users/{user_id}/password/reset
+      emails the account holder a reset link, so taking over an account needs its
+      mailbox, not a grant on PUT /users.'
     properties:
       disabled:
         description: Set to true to disable the account, false to enable
@@ -2205,13 +2248,6 @@ definitions:
         description: Set account type (local vs federated)
         example: true
         type: boolean
-      password:
-        description: New password
-        example: NewSecureP@ssw0rd
-        format: password
-        maxLength: 72
-        minLength: 8
-        type: string
     type: object
   payload.UserAuthzResponse:
     description: A user's effective permissions, by category
@@ -2300,6 +2336,11 @@ definitions:
     description: Version is the struct that holds the version information.
     properties:
       build_date:
+        description: |-
+          The build details are present only on the authenticated
+          /health/detailed answer. GET /version used to hand an anonymous caller
+          the commit, the branch and the Go version -- the same disclosure that
+          was removed from /health/status -- and it is exempt from rate limiting.
         example: "2021-01-01T00:00:00Z"
         format: string
         type: string
@@ -2819,6 +2860,14 @@ paths:
           description: IDP with this name or configuration already exists
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -2981,6 +3030,14 @@ paths:
           description: IDP name already exists
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -3024,6 +3081,14 @@ paths:
         "401":
           description: Invalid email or password. The same answer is given for an
             unknown address, a wrong password, and a disabled account
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -3078,6 +3143,14 @@ paths:
           description: Insufficient permissions
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -3116,6 +3189,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "400":
           description: Invalid request body or email format
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -3161,6 +3242,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "403":
           description: Insufficient permissions
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -3212,6 +3301,14 @@ paths:
           description: Insufficient permissions
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -3256,6 +3353,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "400":
           description: Invalid request body or validation error
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "500":
@@ -3335,6 +3440,14 @@ paths:
           description: Not authorized
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests
           schema:
@@ -3376,6 +3489,14 @@ paths:
           description: Invalid or expired token
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "500":
           description: Internal server error during email send
           schema:
@@ -3405,6 +3526,18 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "404":
           description: User not found
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "409":
+          description: Account already verified
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -3604,6 +3737,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "409":
           description: User already exists (duplicate email)
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -3890,6 +4031,14 @@ paths:
           description: Policy already exists
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -4044,6 +4193,14 @@ paths:
           description: Policy name already in use
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -4098,6 +4255,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "404":
           description: Policy not found
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -4225,6 +4390,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "404":
           description: Policy not found
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -4412,6 +4585,14 @@ paths:
           description: Project with name already exists
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -4566,6 +4747,14 @@ paths:
           description: Project name already in use
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -4634,6 +4823,10 @@ paths:
           description: Insufficient permissions
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "404":
+          description: Project not found, or the caller is not a member of it
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -4697,6 +4890,14 @@ paths:
         "409":
           description: Product with that name already exists in the project, or the
             project's product limit is reached
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -4866,6 +5067,14 @@ paths:
           description: Another product in the project already has that name
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -4909,6 +5118,10 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "403":
           description: Insufficient permissions
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "404":
+          description: Project not found, or the caller is not a member of it
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -4965,6 +5178,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "404":
           description: Project or user not found
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -5036,6 +5257,10 @@ paths:
           description: Insufficient permissions
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "404":
+          description: Project not found, or the caller is not a member of it
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -5094,6 +5319,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "409":
           description: One or more users are already linked to the project
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -5211,6 +5444,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "409":
           description: A rate limit with that name already exists
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -5368,6 +5609,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "409":
           description: A rate limit with that name already exists
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -5812,6 +6061,14 @@ paths:
           description: Role already exists
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -5970,6 +6227,14 @@ paths:
           description: Role with same name already exists
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -6024,6 +6289,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "404":
           description: Role not found
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -6157,6 +6430,14 @@ paths:
           description: Role not found
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -6212,6 +6493,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "404":
           description: Role not found
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -6339,6 +6628,14 @@ paths:
           description: Role not found
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -6454,6 +6751,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "409":
           description: User with email already exists
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -6610,6 +6915,14 @@ paths:
           description: Email already in use by another user
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -6676,6 +6989,57 @@ paths:
       tags:
       - Users
       - Authorization
+  /users/{user_id}/password/reset:
+    post:
+      description: Email the account holder a password-reset link. PUT /users/{user_id}
+        used to accept a new password outright, so a grant on it was a takeover of
+        any account; a reset link needs the mailbox as well. Answers 202 whether or
+        not the address can be reached, and says nothing about why.
+      operationId: 01a07662-d5ca-7c8f-aa04-0a29d6cad3bd
+      parameters:
+      - description: User unique identifier
+        format: uuid
+        in: path
+        name: user_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "202":
+          description: Reset email requested
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "400":
+          description: Invalid user ID format
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "401":
+          description: Missing or invalid authentication token
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "403":
+          description: Insufficient permissions
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "404":
+          description: User not found
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "429":
+          description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
+            the limiter's own store
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+      security:
+      - AccessToken: []
+      summary: Send password reset email
+      tags:
+      - Users
   /users/{user_id}/projects:
     delete:
       consumes:
@@ -6716,6 +7080,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "404":
           description: User not found
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -6847,6 +7219,14 @@ paths:
           description: One or more projects already linked to user
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
         "429":
           description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
             the limiter's own store
@@ -6906,6 +7286,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "409":
           description: Conflict
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":
@@ -7037,6 +7425,14 @@ paths:
             $ref: '#/definitions/payload.HTTPMessage'
         "409":
           description: Role already linked to user
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "413":
+          description: Request body larger than http.server.max.body.bytes
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "415":
+          description: Body not declared as application/json
           schema:
             $ref: '#/definitions/payload.HTTPMessage'
         "429":

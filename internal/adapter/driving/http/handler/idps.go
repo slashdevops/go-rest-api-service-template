@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -158,7 +157,7 @@ func (ref *IDPsHandler) getByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -182,7 +181,7 @@ func (ref *IDPsHandler) getByID(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -207,6 +206,8 @@ func (ref *IDPsHandler) getByID(w http.ResponseWriter, r *http.Request) {
 //	@Failure		401		{object}	payload.HTTPMessage			"Missing or invalid authentication token"
 //	@Failure		403		{object}	payload.HTTPMessage			"Insufficient permissions"
 //	@Failure		409		{object}	payload.HTTPMessage			"IDP with this name or configuration already exists"
+//	@Failure		413		{object}	payload.HTTPMessage			"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage			"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage			"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage			"Internal server error"
 //	@Router			/auth/idps [post]
@@ -217,9 +218,9 @@ func (ref *IDPsHandler) create(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 
 	var req payload.CreateIDPRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -227,7 +228,7 @@ func (ref *IDPsHandler) create(w http.ResponseWriter, r *http.Request) {
 	req.ID, err = domain.EnsureUUIDV7(req.ID)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -286,14 +287,14 @@ func (ref *IDPsHandler) create(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	slog.Debug("handler.IDPs.create", "idp.name", input.Name)
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s/%s", r.Header.Get("Origin"), r.RequestURI, input.ID.String()))
+	respond.SetLocation(w, r, input.ID.String())
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, domain.IDPsIDPCreatedSuccessfully,
 		attribute.String("idp.id", input.ID.String()),
@@ -318,6 +319,8 @@ func (ref *IDPsHandler) create(w http.ResponseWriter, r *http.Request) {
 //	@Failure		403		{object}	payload.HTTPMessage			"Insufficient permissions"
 //	@Failure		404		{object}	payload.HTTPMessage			"IDP not found"
 //	@Failure		409		{object}	payload.HTTPMessage			"IDP name already exists"
+//	@Failure		413		{object}	payload.HTTPMessage			"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage			"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage			"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage			"Internal server error"
 //	@Router			/auth/idps/{idp_id} [put]
@@ -335,9 +338,9 @@ func (ref *IDPsHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.UpdateIDPRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -396,12 +399,12 @@ func (ref *IDPsHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s", r.Header.Get("Host"), r.URL.Path))
+	respond.SetLocation(w, r)
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, domain.IDPsIDPUpdatedSuccessfully,
 		attribute.String("idp.id", input.ID.String()))
@@ -472,7 +475,7 @@ func (ref *IDPsHandler) deleteByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -575,7 +578,7 @@ func (ref *IDPsHandler) list(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 

@@ -515,6 +515,101 @@ the `http.Server` — the exact regression that let this ship unbounded. The ful
 reasoning, with the request-lifecycle diagram, is in
 [`docs/architecture/http-server-timeouts.md`](../docs/architecture/http-server-timeouts.md).
 
+## Response hygiene and request bounds
+
+Every request through the API prefix passes one common chain, and its order
+is the contract: `Recovery`, `SecurityHeaders`, the transport middlewares,
+`MaxBody`, `RequireJSONBody`, the pre-auth rate limiter, then CORS.
+`TestEveryRequestIsRecoveredBoundedAndHeadered` reads `server.go` and fails
+if the first four move or CORS gets ahead of the limiter. Four rules, each
+the fix for something measured on 2026-09-06:
+
+- **`Recovery` is outermost and it is wired.** It was defined and documented
+  as outermost for as long as the package existed, and no chain contained
+  it: a handler panic closed the connection with no body and no structured
+  log. A middleware that exists in the package and nowhere in `server.go` is
+  the shape to look for.
+- **Every response carries the security headers, set before the handler
+  runs.** `nosniff`, `no-store`, a `default-src 'none'` CSP,
+  `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`, CORP
+  `same-origin`, and HSTS when TLS terminates here or
+  `http.server.hsts.enabled` says a proxy does. The swagger UI is the one
+  page on this server; it keeps the headers that never break a page and
+  loses `no-store` and the CSP. Do not add a second page without deciding
+  which set it gets.
+- **A body is bounded before anything reads it.** `http.server.max.body.bytes`
+  (1 MiB) on every route, `http.server.max.body.bytes.ingest` (32 MiB) on the
+  embedding ingest route, and `domain.MaxEmbeddingChunksPerRequest` (1 000)
+  on the work inside it. There was no bound: a 200 MiB body to `/auth/login`
+  took the process from 52 MiB to 674 MiB RSS before the 400. A declared
+  length over the bound is 413 without reading a byte; an undeclared one is
+  cut by `http.MaxBytesReader`. Do not "fix" a large legitimate upload by
+  raising the global number; give the route the large bound.
+- **A body must be declared `application/json`** or it is 415. The
+  integration helper sets the header on every body it sends; it never did,
+  which is why this check and the helper landed together. A body-taking
+  operation documents 413 and 415 in its Swagger block (middleware-supplied,
+  like 401 and 429).
+
+**`gosec` and `govet` are part of `make lint`.** A finding is fixed or
+excluded with its reason in `.golangci.yaml`, never silenced inline without
+one; `//nolint:gosec // bounded by DatabaseConfig.Validate` is the shape. Test
+files are excluded from gosec because fixtures carry keys on purpose. The
+image runs as `nonroot`; Dependabot bumps weekly in one grouped PR.
+
+**Verification and reset links are spent on the first click**, through the
+revoked-token store under their own token type; the reset token is consumed
+before the password changes. **The seeded administrator's password stops the
+service from starting** unless `authn.seed.admin.password.allowed` says it is
+a development stack; the dev stack and the integration container say so.
+**Unknown JSON fields are refused** (`decodeJSONBody`), and the frontend's
+contract test is what keeps a dropped field from surviving in a client.
+**Outbound requests are dialled through `safedial.Policy`**, after DNS, on
+the resolved address: link-local always refused, loopback and private
+refused unless `http.client.allow.private.addresses`, which the dev stack
+sets for its local Ollama. Do not validate the URL's host at write time
+instead; a name resolves wherever it likes later.
+
+**A grant names a route; membership names a project.** OPA expands the `*`
+in `/projects/*/…` to any uuid and cannot know membership, so
+`middleware.RequireProjectMembership` asks the database once per
+project-scoped request, keyed on the `project_id` path value, AFTER
+`CheckAuthz` (no grant is 403; wrong project is 404, the same as a missing
+project). An administrator bypasses and is logged as one. A new
+project-scoped route needs nothing; a new path wildcard that is not
+`project_id` gets no check, so name it `project_id` or add one.
+
+**A password is never set through `PUT /users/{id}`**; `POST
+/users/{id}/password/reset` emails a link instead, so a takeover needs the
+mailbox. **`GET /version` answers only the version**; the build details are
+on the authenticated `/health/detailed`. **`/swagger/` is off unless
+`http.server.swagger.enabled`**, and the dev stack sets it.
+
+**A 500 says `internal server error` and nothing else; a decode failure says
+`failed to decode request body`.** `respond.WriteInternalError` logs the cause
+under the request id; `respond.WriteDecodeError` maps a body cut by the size
+bound to 413 and everything else to one 400. 218 handler sites used to write
+`err.Error()` into a 500 and 49 forwarded the JSON decoder's text.
+`TestNoHandlerForwardsALibraryErrorString` reads the package and fails on
+either coming back. An error a client must tell apart gets a **type** in
+`domain` (`IDPUnreachableError` → 503), never a `strings.Contains` on the
+message. `X-Request-ID` is minted per request, never taken from the caller,
+and repeated in every error body as `request_id`.
+
+**`Location` is built by `respond.SetLocation`, never from a request header.**
+It used to be `Origin` + `RequestURI`: `POST /roles` with
+`Origin: http://evil.example` answered `Location: http://evil.example/...`.
+With `http.server.public.url` unset the value is a path reference, which is
+what a client resolves against the request it made.
+
+**CORS goes after the limiter.** It answers preflights itself, so ahead of
+the limiter every `OPTIONS` was an unmetered request. A preflight that is
+rate-limited answers 429 without CORS headers, which the browser treats as a
+refusal.
+
+The full design, with the chain diagram and the measurements, is in
+[`docs/architecture/security.md`](../docs/architecture/security.md).
+
 ## SQL rules (repository layer)
 
 - **Always use `$n` placeholders for values.** Never `fmt.Sprintf` a value into a
@@ -1480,6 +1575,7 @@ Two things about these workflows are load-bearing and should not be removed:
 - [`docs/architecture/rate-limiting.md`](../docs/architecture/rate-limiting.md) — the rule model, the two limiters, and the breaker
 - [`docs/architecture/resource-limits.md`](../docs/architecture/resource-limits.md) — scopes, three-priority resolution, the counter signature
 - [`docs/architecture/authentication.md`](../docs/architecture/authentication.md) — tokens, rotation, revocation, throttling
+- [`docs/architecture/security.md`](../docs/architecture/security.md) — the common chain and its order, the response headers, the body and content-type bounds, and Location from configuration
 - [`docs/architecture/identity-providers.md`](../docs/architecture/identity-providers.md) — sign-in through Google, GitHub, Entra ID and Okta: kind on the type, issuer per instance, identity by subject, the frontend callback, PKCE and the verified ID token
 - [`docs/architecture/database-migrations.md`](../docs/architecture/database-migrations.md) — the file set and the rules that keep it applyable
 - [`docs/architecture/health-probes.md`](../docs/architecture/health-probes.md) — which endpoint answers which question

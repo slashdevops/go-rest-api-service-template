@@ -101,8 +101,8 @@ func (a *App) initDatabase(ctx context.Context) error {
 	}
 
 	// Set connection pool parameters
-	dbCfg.MaxConns = int32(a.configs.Database.MaxConns.Value)
-	dbCfg.MinConns = int32(a.configs.Database.MinConns.Value)
+	dbCfg.MaxConns = int32(a.configs.Database.MaxConns.Value) //nolint:gosec // bounded by DatabaseConfig.Validate
+	dbCfg.MinConns = int32(a.configs.Database.MinConns.Value) //nolint:gosec // bounded by DatabaseConfig.Validate
 	dbCfg.MaxConnLifetime = a.configs.Database.ConnMaxLifetime.Value
 	dbCfg.MaxConnIdleTime = a.configs.Database.ConnMaxIdleTime.Value
 

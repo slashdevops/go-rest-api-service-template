@@ -15,6 +15,7 @@ import (
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/respond"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
 	"github.com/slashdevops/go-rest-api-service-template/internal/o11y"
+	"github.com/slashdevops/go-rest-api-service-template/internal/version"
 )
 
 //go:generate go tool mockgen -package=mocks -destination=../../../../../mocks/handler/health.go -source=health.go HealthService
@@ -246,6 +247,18 @@ func (ref *HealthHandler) getDetailedHealth(w http.ResponseWriter, r *http.Reque
 		slog.Error("detailed health check failed", "error", e)
 		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, healthCheckFailedMessage)
 		return
+	}
+
+	// The build is stamped here, at the transport, from the binary's own
+	// metadata; the use case has no business knowing a git commit.
+	outResponse.Build = domain.BuildInfo{
+		Version:       version.Version,
+		BuildDate:     version.BuildDate,
+		GitCommit:     version.GitCommit,
+		GitBranch:     version.GitBranch,
+		GoVersion:     version.GoVersion,
+		GoVersionArch: version.GoVersionArch,
+		GoVersionOS:   version.GoVersionOS,
 	}
 
 	statusCode := httpStatusForHealth(outResponse.Status)

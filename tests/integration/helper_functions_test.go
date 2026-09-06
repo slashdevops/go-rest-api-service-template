@@ -176,6 +176,11 @@ func sendHTTPRequest(t *testing.T, ctx context.Context, endpoint *apiEndpoint, b
 
 	// obligatory headers
 	req.Header.Set("Accept", "application/json")
+	// The API refuses a body that is not declared as JSON (415), and every
+	// body this helper sends is JSON.
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 
 	// optional headers
 	if len(headers) > 0 {

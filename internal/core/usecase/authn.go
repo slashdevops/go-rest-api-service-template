@@ -544,6 +544,13 @@ func (ref *AuthnService) VerifyUser(ctx context.Context, jwtToken string) error 
 		return o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
 	}
 
+	// Single-use. The link is spent on its first click; a second one is
+	// refused as an invalid token, not reported as "already verified", and a
+	// store fault refuses rather than admits. It used to work until expiry.
+	if err := ref.spendSingleUseToken(ctx, claims, userID, domain.TokenTypeEmailVerification, time.Unix(int64(exp), 0)); err != nil {
+		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
 	user, err := ref.userService.GetByID(ctx, userID)
 	if err != nil {
 		// grateful answer when user not found, because security reason
@@ -1057,6 +1064,13 @@ func (ref *AuthnService) ResetPassword(ctx context.Context, input *domain.ResetP
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
 
+	// Single-use, and spent BEFORE the password changes: a token that was
+	// consumed and then failed to apply costs one more link; a password that
+	// changed and then failed to record the token is a link that still works.
+	if err := ref.consumeSingleUseToken(ctx, input.TokenID, input.UserID, domain.TokenTypePasswordReset, input.TokenExpiresAt); err != nil {
+		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
 	// update user password
 	uuInput := &domain.UpdateUserInput{
 		ID: input.UserID,
@@ -1353,4 +1367,49 @@ func claimString(claims map[string]any, name string) string {
 	value, _ := claims[name].(string)
 
 	return value
+}
+
+// spendSingleUseToken reads the jti out of verified claims and consumes it.
+func (ref *AuthnService) spendSingleUseToken(ctx context.Context, claims map[string]any, userID uuid.UUID, tokenType domain.TokenType, expiresAt time.Time) error {
+	jtiStr, _ := claims["jti"].(string)
+
+	jti, err := uuid.Parse(jtiStr)
+	if err != nil {
+		return &domain.InvalidJWTError{Message: "jti claim is missing"}
+	}
+
+	return ref.consumeSingleUseToken(ctx, jti, userID, tokenType, expiresAt)
+}
+
+// consumeSingleUseToken records a verification or reset token as spent and
+// refuses it when it already was. The revoked-token store is the same one
+// logout and rotation use, keyed by token type; every lookup there carries
+// expires_at > NOW(), so the row is dead weight once the token would have
+// expired anyway and the sweeper removes it.
+//
+// Fail closed: with no store, or a store that cannot answer, the token is
+// refused. A single-use token that cannot be recorded as used is one that
+// would work twice.
+func (ref *AuthnService) consumeSingleUseToken(ctx context.Context, jti, userID uuid.UUID, tokenType domain.TokenType, expiresAt time.Time) error {
+	if ref.revokedTokens == nil {
+		return &domain.InvalidAuthnServiceError{Message: "single-use tokens need a revoked-token store"}
+	}
+
+	if jti == uuid.Nil() {
+		return &domain.InvalidJWTError{Message: "jti claim is missing"}
+	}
+
+	firstUse, err := ref.revokedTokens.Consume(ctx, jti, userID, tokenType, expiresAt)
+	if err != nil {
+		return err
+	}
+
+	if !firstUse {
+		slog.Warn("service.Authn: single-use token presented again",
+			"token_type", tokenType.String(), "jti", jti.String(), "user.id", userID.String())
+
+		return &domain.InvalidJWTError{Message: "token already used"}
+	}
+
+	return nil
 }

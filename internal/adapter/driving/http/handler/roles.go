@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -161,7 +160,7 @@ func (ref *RolesHandler) getByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -177,7 +176,7 @@ func (ref *RolesHandler) getByID(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -201,6 +200,8 @@ func (ref *RolesHandler) getByID(w http.ResponseWriter, r *http.Request) {
 //	@Failure		401		{object}	payload.HTTPMessage			"Missing or invalid authentication token"
 //	@Failure		403		{object}	payload.HTTPMessage			"Insufficient permissions"
 //	@Failure		409		{object}	payload.HTTPMessage			"Role already exists"
+//	@Failure		413		{object}	payload.HTTPMessage			"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage			"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage			"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage			"Internal server error"
 //	@Router			/roles [post]
@@ -211,9 +212,9 @@ func (ref *RolesHandler) create(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 
 	var req payload.CreateRoleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -221,7 +222,7 @@ func (ref *RolesHandler) create(w http.ResponseWriter, r *http.Request) {
 	req.ID, err = domain.EnsureUUIDV7(req.ID)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -255,7 +256,7 @@ func (ref *RolesHandler) create(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -263,7 +264,7 @@ func (ref *RolesHandler) create(w http.ResponseWriter, r *http.Request) {
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "Role created", attribute.String("role.id", input.ID.String()))
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s/%s", r.Header.Get("Origin"), r.RequestURI, input.ID.String()))
+	respond.SetLocation(w, r, input.ID.String())
 	respond.WriteJSONMessage(w, r, http.StatusCreated, domain.RolesRoleCreatedSuccessfully)
 }
 
@@ -283,6 +284,8 @@ func (ref *RolesHandler) create(w http.ResponseWriter, r *http.Request) {
 //	@Failure		403		{object}	payload.HTTPMessage			"Insufficient permissions"
 //	@Failure		404		{object}	payload.HTTPMessage			"Role not found"
 //	@Failure		409		{object}	payload.HTTPMessage			"Role with same name already exists"
+//	@Failure		413		{object}	payload.HTTPMessage			"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage			"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage			"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage			"Internal server error"
 //	@Router			/roles/{role_id} [put]
@@ -300,9 +303,9 @@ func (ref *RolesHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.UpdateRoleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -355,7 +358,7 @@ func (ref *RolesHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -364,7 +367,7 @@ func (ref *RolesHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 		attribute.String("role.id", input.ID.String()))
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s", r.Header.Get("Origin"), r.RequestURI))
+	respond.SetLocation(w, r)
 	respond.WriteJSONMessage(w, r, http.StatusOK, domain.RolesRoleUpdatedSuccessfully)
 }
 
@@ -433,7 +436,7 @@ func (ref *RolesHandler) deleteByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -529,7 +532,7 @@ func (ref *RolesHandler) list(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -553,6 +556,8 @@ func (ref *RolesHandler) list(w http.ResponseWriter, r *http.Request) {
 //	@Failure		401		{object}	payload.HTTPMessage				"Missing or invalid authentication token"
 //	@Failure		403		{object}	payload.HTTPMessage				"Insufficient permissions"
 //	@Failure		404		{object}	payload.HTTPMessage				"Role not found"
+//	@Failure		413		{object}	payload.HTTPMessage				"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage				"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage				"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage				"Internal server error"
 //	@Router			/roles/{role_id}/users [post]
@@ -570,9 +575,9 @@ func (ref *RolesHandler) linkUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.LinkUsersToRoleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -605,7 +610,7 @@ func (ref *RolesHandler) linkUsers(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -631,6 +636,8 @@ func (ref *RolesHandler) linkUsers(w http.ResponseWriter, r *http.Request) {
 //	@Failure		401		{object}	payload.HTTPMessage					"Missing or invalid authentication token"
 //	@Failure		403		{object}	payload.HTTPMessage					"Insufficient permissions"
 //	@Failure		404		{object}	payload.HTTPMessage					"Role not found"
+//	@Failure		413		{object}	payload.HTTPMessage					"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage					"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage					"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage					"Internal server error"
 //	@Router			/roles/{role_id}/users [delete]
@@ -648,9 +655,9 @@ func (ref *RolesHandler) unlinkUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.UnlinkUsersFromRoleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -683,7 +690,7 @@ func (ref *RolesHandler) unlinkUsers(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -709,6 +716,8 @@ func (ref *RolesHandler) unlinkUsers(w http.ResponseWriter, r *http.Request) {
 //	@Failure		401		{object}	payload.HTTPMessage					"Missing or invalid authentication token"
 //	@Failure		403		{object}	payload.HTTPMessage					"Insufficient permissions"
 //	@Failure		404		{object}	payload.HTTPMessage					"Role not found"
+//	@Failure		413		{object}	payload.HTTPMessage					"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage					"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage					"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage					"Internal server error"
 //	@Router			/roles/{role_id}/policies [post]
@@ -726,9 +735,9 @@ func (ref *RolesHandler) linkPolicies(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.LinkPoliciesToRoleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -761,7 +770,7 @@ func (ref *RolesHandler) linkPolicies(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -787,6 +796,8 @@ func (ref *RolesHandler) linkPolicies(w http.ResponseWriter, r *http.Request) {
 //	@Failure		401		{object}	payload.HTTPMessage						"Missing or invalid authentication token"
 //	@Failure		403		{object}	payload.HTTPMessage						"Insufficient permissions"
 //	@Failure		404		{object}	payload.HTTPMessage						"Role not found"
+//	@Failure		413		{object}	payload.HTTPMessage						"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage						"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage						"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage						"Internal server error"
 //	@Router			/roles/{role_id}/policies [delete]
@@ -804,9 +815,9 @@ func (ref *RolesHandler) unlinkPolicies(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req payload.UnlinkPoliciesFromRoleRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -839,7 +850,7 @@ func (ref *RolesHandler) unlinkPolicies(w http.ResponseWriter, r *http.Request) 
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -943,7 +954,7 @@ func (ref *RolesHandler) listByUserID(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -1046,7 +1057,7 @@ func (ref *RolesHandler) listByPolicyID(w http.ResponseWriter, r *http.Request) 
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 

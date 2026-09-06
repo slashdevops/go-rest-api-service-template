@@ -1,0 +1,24 @@
+# Automated dependency PRs. Weekly, grouped, so a routine bump is one PR to
+# review rather than ten. The weekly govulncheck in security-scan.yaml is the
+# other half: it finds an advisory against a dependency nobody touched, this
+# is what moves it.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      go-dependencies:
+        patterns: ["*"]
+    # go get -u has broken the build once through a transitive bump (see
+    # go.mod's exclude of gobwas/glob); a grouped PR still runs the full gate.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      actions:
+        patterns: ["*"]

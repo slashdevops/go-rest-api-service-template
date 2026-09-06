@@ -100,19 +100,16 @@ func (ref *VersionHandler) get(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 
+	// Only the version. The commit, branch and Go version identify the build
+	// against published advisories and belong on the authenticated
+	// /health/detailed answer, which /health/status already learned.
 	outResponse := payload.Version{
-		Version:       version.Version,
-		BuildDate:     version.BuildDate,
-		GitCommit:     version.GitCommit,
-		GitBranch:     version.GitBranch,
-		GoVersion:     version.GoVersion,
-		GoVersionArch: version.GoVersionArch,
-		GoVersionOS:   version.GoVersionOS,
+		Version: version.Version,
 	}
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 }

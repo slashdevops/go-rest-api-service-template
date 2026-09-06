@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -154,7 +153,7 @@ func (ref *PoliciesHandler) getByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -177,7 +176,7 @@ func (ref *PoliciesHandler) getByID(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, ourResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -201,6 +200,8 @@ func (ref *PoliciesHandler) getByID(w http.ResponseWriter, r *http.Request) {
 //	@Failure		403		{object}	payload.HTTPMessage			"Insufficient permissions"
 //	@Failure		404		{object}	payload.HTTPMessage			"One or more referenced resources not found"
 //	@Failure		409		{object}	payload.HTTPMessage			"Policy already exists"
+//	@Failure		413		{object}	payload.HTTPMessage			"Request body larger than http.server.max.body.bytes"
+//	@Failure		415		{object}	payload.HTTPMessage			"Body not declared as application/json"
 //	@Failure		429		{object}	payload.HTTPMessage			"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500		{object}	payload.HTTPMessage			"Internal server error"
 //	@Router			/policies [post]
@@ -211,9 +212,9 @@ func (ref *PoliciesHandler) create(w http.ResponseWriter, r *http.Request) {
 	defer span.End()
 
 	var req payload.CreatePolicyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -221,7 +222,7 @@ func (ref *PoliciesHandler) create(w http.ResponseWriter, r *http.Request) {
 	req.ID, err = domain.EnsureUUIDV7(req.ID)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -263,7 +264,7 @@ func (ref *PoliciesHandler) create(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -272,7 +273,7 @@ func (ref *PoliciesHandler) create(w http.ResponseWriter, r *http.Request) {
 		attribute.String("policy.id", input.ID.String()))
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s/%s", r.Header.Get("Origin"), r.RequestURI, input.ID.String()))
+	respond.SetLocation(w, r, input.ID.String())
 	respond.WriteJSONMessage(w, r, http.StatusCreated, domain.PoliciesPolicyCreatedSuccessfully)
 }
 
@@ -292,6 +293,8 @@ func (ref *PoliciesHandler) create(w http.ResponseWriter, r *http.Request) {
 //	@Failure		403			{object}	payload.HTTPMessage			"System policies cannot be modified"
 //	@Failure		404			{object}	payload.HTTPMessage			"Policy not found"
 //	@Failure		409			{object}	payload.HTTPMessage			"Policy name already in use"
+//	@Failure		413			{object}	payload.HTTPMessage			"Request body larger than http.server.max.body.bytes"
+//	@Failure		415			{object}	payload.HTTPMessage			"Body not declared as application/json"
 //	@Failure		429			{object}	payload.HTTPMessage			"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500			{object}	payload.HTTPMessage			"Internal server error"
 //	@Router			/policies/{policy_id} [put]
@@ -309,9 +312,9 @@ func (ref *PoliciesHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.UpdatePolicyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -359,7 +362,7 @@ func (ref *PoliciesHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -368,7 +371,7 @@ func (ref *PoliciesHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 		attribute.String("policy.id", input.ID.String()))
 
 	// Location header is required for RESTful APIs
-	w.Header().Set("Location", fmt.Sprintf("%s%s", r.Header.Get("Origin"), r.RequestURI))
+	respond.SetLocation(w, r)
 	respond.WriteJSONMessage(w, r, http.StatusOK, domain.PoliciesPolicyUpdatedSuccessfully)
 }
 
@@ -429,7 +432,7 @@ func (ref *PoliciesHandler) deleteByID(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -530,7 +533,7 @@ func (ref *PoliciesHandler) list(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -554,6 +557,8 @@ func (ref *PoliciesHandler) list(w http.ResponseWriter, r *http.Request) {
 //	@Failure		401			{object}	payload.HTTPMessage					"Missing or invalid authentication token"
 //	@Failure		403			{object}	payload.HTTPMessage					"Insufficient permissions"
 //	@Failure		404			{object}	payload.HTTPMessage					"Policy not found"
+//	@Failure		413			{object}	payload.HTTPMessage					"Request body larger than http.server.max.body.bytes"
+//	@Failure		415			{object}	payload.HTTPMessage					"Body not declared as application/json"
 //	@Failure		429			{object}	payload.HTTPMessage					"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500			{object}	payload.HTTPMessage					"Internal server error"
 //	@Router			/policies/{policy_id}/roles [post]
@@ -571,9 +576,9 @@ func (ref *PoliciesHandler) linkRoles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req payload.LinkRolesToPolicyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -589,7 +594,9 @@ func (ref *PoliciesHandler) linkRoles(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := ref.service.LinkRoles(ctx, input); err != nil {
-		if _, ok := errors.AsType[*domain.PolicyNotFoundError](err); ok {
+		_, isPolicyMissing := errors.AsType[*domain.PolicyNotFoundError](err)
+		_, isRoleMissing := errors.AsType[*domain.RoleNotFoundError](err)
+		if isPolicyMissing || isRoleMissing {
 			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 			respond.WriteJSONMessage(w, r, http.StatusNotFound, e.Error())
 			return
@@ -606,7 +613,7 @@ func (ref *PoliciesHandler) linkRoles(w http.ResponseWriter, r *http.Request) {
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -615,7 +622,7 @@ func (ref *PoliciesHandler) linkRoles(w http.ResponseWriter, r *http.Request) {
 		attribute.String("policy.id", policyID.String()))
 
 	// Location header is not needed for this endpoint
-	w.Header().Set("Location", fmt.Sprintf("%s/%s", r.URL.Path, policyID.String()))
+	respond.SetLocation(w, r, policyID.String())
 	respond.WriteJSONMessage(w, r, http.StatusOK, domain.PoliciesRolesLinkedSuccessfully)
 }
 
@@ -634,6 +641,8 @@ func (ref *PoliciesHandler) linkRoles(w http.ResponseWriter, r *http.Request) {
 //	@Failure		401			{object}	payload.HTTPMessage						"Missing or invalid authentication token"
 //	@Failure		403			{object}	payload.HTTPMessage						"Insufficient permissions"
 //	@Failure		404			{object}	payload.HTTPMessage						"Policy not found"
+//	@Failure		413			{object}	payload.HTTPMessage						"Request body larger than http.server.max.body.bytes"
+//	@Failure		415			{object}	payload.HTTPMessage						"Body not declared as application/json"
 //	@Failure		429			{object}	payload.HTTPMessage						"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
 //	@Failure		500			{object}	payload.HTTPMessage						"Internal server error"
 //	@Router			/policies/{policy_id}/roles [delete]
@@ -651,9 +660,9 @@ func (ref *PoliciesHandler) unlinkRoles(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var req payload.UnlinkRolesFromPolicyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(r, &req); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		respond.WriteDecodeError(w, r, e)
 		return
 	}
 
@@ -686,7 +695,7 @@ func (ref *PoliciesHandler) unlinkRoles(w http.ResponseWriter, r *http.Request) 
 		}
 
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 
@@ -695,7 +704,7 @@ func (ref *PoliciesHandler) unlinkRoles(w http.ResponseWriter, r *http.Request) 
 		attribute.String("policy.id", policyID.String()))
 
 	// Location header is not needed for this endpoint
-	w.Header().Set("Location", fmt.Sprintf("%s/%s", r.URL.Path, policyID.String()))
+	respond.SetLocation(w, r, policyID.String())
 	respond.WriteJSONMessage(w, r, http.StatusOK, domain.PoliciesRolesUnlinkedSuccessfully)
 }
 
@@ -804,7 +813,7 @@ func (ref *PoliciesHandler) listByRoleID(w http.ResponseWriter, r *http.Request)
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 		return
 	}
 

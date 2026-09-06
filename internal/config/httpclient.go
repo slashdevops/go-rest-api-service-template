@@ -30,6 +30,14 @@ const (
 	DefaultHTTPClientTLSHandshakeTimeout   = 10 * time.Second
 	DefaultHTTPClientExpectContinueTimeout = 1 * time.Second
 	DefaultHTTPClientDisableKeepAlives     = false
+
+	// DefaultHTTPClientAllowPrivateAddresses is false: an outbound request to
+	// a loopback or private address is refused. The URLs this client dials
+	// are supplied by operators (LLM engines, identity providers), so without
+	// the guard a grant on "create engine" reaches inside the perimeter. The
+	// dev stack and an on-premises deployment set it to true; link-local
+	// (cloud metadata) is refused whatever this says.
+	DefaultHTTPClientAllowPrivateAddresses = false
 	DefaultHTTPClientTimeout               = 120 * time.Second
 	DefaultHTTPClientMaxRetries            = 10
 	DefaultHTTPClientRetryStrategy         = "jitter"
@@ -43,6 +51,7 @@ type HTTPClientConfig struct {
 	TLSHandshakeTimeout   Field[time.Duration]
 	ExpectContinueTimeout Field[time.Duration]
 	DisableKeepAlives     Field[bool]
+	AllowPrivateAddresses Field[bool]
 	Timeout               Field[time.Duration]
 	MaxRetries            Field[int]
 }
@@ -54,6 +63,7 @@ func NewHTTPClientConfig() *HTTPClientConfig {
 		IdleConnTimeout:       NewField("http.client.idle.conn.timeout", "HTTP_CLIENT_IDLE_CONN_TIMEOUT", "Idle connection timeout", DefaultHTTPClientIdleConnTimeout),
 		TLSHandshakeTimeout:   NewField("http.client.tls.handshake.timeout", "HTTP_CLIENT_TLS_HANDSHAKE_TIMEOUT", "TLS handshake timeout", DefaultHTTPClientTLSHandshakeTimeout),
 		ExpectContinueTimeout: NewField("http.client.expect.continue.timeout", "HTTP_CLIENT_EXPECT_CONTINUE_TIMEOUT", "Expect continue timeout", DefaultHTTPClientExpectContinueTimeout),
+		AllowPrivateAddresses: NewField("http.client.allow.private.addresses", "HTTP_CLIENT_ALLOW_PRIVATE_ADDRESSES", "Let outbound requests (LLM engines, identity providers) reach loopback and private addresses. Off by default; link-local is refused regardless", DefaultHTTPClientAllowPrivateAddresses),
 		DisableKeepAlives:     NewField("http.client.disable.keep.alives", "HTTP_CLIENT_DISABLE_KEEP_ALIVES", "Disable keep-alives", DefaultHTTPClientDisableKeepAlives),
 		Timeout:               NewField("http.client.timeout", "HTTP_CLIENT_TIMEOUT", "Timeout for HTTP requests", DefaultHTTPClientTimeout),
 		MaxRetries:            NewField("http.client.max.retries", "HTTP_CLIENT_MAX_RETRIES", "Maximum number of retries for HTTP requests", DefaultHTTPClientMaxRetries),
@@ -68,6 +78,7 @@ func (c *HTTPClientConfig) ParseEnvVars() {
 	c.TLSHandshakeTimeout.Value = GetEnv(c.TLSHandshakeTimeout.EnVarName, c.TLSHandshakeTimeout.Value)
 	c.ExpectContinueTimeout.Value = GetEnv(c.ExpectContinueTimeout.EnVarName, c.ExpectContinueTimeout.Value)
 	c.DisableKeepAlives.Value = GetEnv(c.DisableKeepAlives.EnVarName, c.DisableKeepAlives.Value)
+	c.AllowPrivateAddresses.Value = GetEnv(c.AllowPrivateAddresses.EnVarName, c.AllowPrivateAddresses.Value)
 	c.Timeout.Value = GetEnv(c.Timeout.EnVarName, c.Timeout.Value)
 	c.MaxRetries.Value = GetEnv(c.MaxRetries.EnVarName, c.MaxRetries.Value)
 	c.RetryStrategy.Value = GetEnv(c.RetryStrategy.EnVarName, c.RetryStrategy.Value)

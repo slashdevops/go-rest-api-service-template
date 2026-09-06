@@ -274,7 +274,19 @@ func (e *InvalidUUIDError) Error() string {
 	return base.Error()
 }
 
-// InvalidAuthnServiceError represents an invalid authentication service error
+// IDPUnreachableError is an identity provider that did not answer: discovery,
+// the token exchange or the user-info call failed at the transport. It is its
+// own type because the handler answers it with 503, and it used to be told
+// apart from every other authn failure by searching the message for the
+// words "not reachable".
+type IDPUnreachableError struct {
+	Message string
+}
+
+func (e *IDPUnreachableError) Error() string {
+	return "identity provider unreachable: " + e.Message
+}
+
 type InvalidAuthnServiceError struct {
 	Message string
 }

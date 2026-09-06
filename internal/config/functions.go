@@ -95,7 +95,7 @@ func (f *FileVar) String() string {
 
 // Set is called once, in command line order, for each flag present.
 func (f *FileVar) Set(value string) error {
-	file, err := os.OpenFile(value, f.Flag, 0o644)
+	file, err := os.OpenFile(value, f.Flag, 0o600)
 	if err != nil {
 		return err
 	}

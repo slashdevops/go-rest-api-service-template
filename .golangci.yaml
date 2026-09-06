@@ -4,6 +4,8 @@ linters:
   # https://golangci-lint.run/usage/linters/#enabled-by-default
   enable:
     - errcheck
+    - gosec
+    - govet
     - ineffassign
     - staticcheck
     - unused
@@ -14,7 +16,6 @@ linters:
     # Enable presets.
     # https://golangci-lint.run/usage/linters
     # Default: []
-    - govet
     - godot
     - wsl
     - testpackage
@@ -71,3 +72,27 @@ linters:
         - fmt.Fprintf
         - (*strings.Builder).WriteString
         - github.com/slashdevops/go-rest-api-service-template/internal/o11y.RecordError
+  exclusions:
+    rules:
+      # G101 matches on the NAME of a constant ("token", "key", "secret"),
+      # not on its value; here every hit is a field name, a header name or a
+      # constraint name. The one hardcoded credential in this repository is
+      # the seeded administrator's hash in internal/app/seededadmin.go, kept
+      # on purpose so the service can refuse to start with it in place.
+      - linters: [gosec]
+        text: G101
+      # Key, certificate and env files are opened from paths the operator
+      # supplies through flags; that is what the paths are for.
+      - path: internal/(app|config)/
+        linters: [gosec]
+        text: G304
+      # Test files carry fixture keys and captured credentials on purpose, and
+      # open testdata by a variable path. None of it ships.
+      - path: _test\.go
+        linters: [gosec]
+      # The repository layer builds SQL with html/template and defeats its
+      # escaping with template.HTML: a documented wart (CLAUDE.md, "SQL rules"),
+      # not markup. Values still go through placeholders.
+      - path: internal/adapter/driven/repositorypg/
+        linters: [gosec]
+        text: G203

@@ -194,7 +194,7 @@ func (ref *AuthnIDPsHandler) start(w http.ResponseWriter, r *http.Request, actio
 		userID, err = callerFromContext(r)
 		if err != nil {
 			e := o11y.RecordError(ctx, span, startedAt, err, ref.metrics, attrs)
-			respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+			respond.WriteInternalError(w, r, e)
 
 			return
 		}
@@ -212,7 +212,7 @@ func (ref *AuthnIDPsHandler) start(w http.ResponseWriter, r *http.Request, actio
 	if eventType == domain.IDPEventTypeRegister {
 		if err := respond.WriteJSONData(w, http.StatusOK, payload.IDPRegisterResponse(out)); err != nil {
 			e := o11y.RecordError(ctx, span, startedAt, err, ref.metrics, attrs)
-			respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+			respond.WriteInternalError(w, r, e)
 		}
 
 		return
@@ -220,7 +220,7 @@ func (ref *AuthnIDPsHandler) start(w http.ResponseWriter, r *http.Request, actio
 
 	if err := respond.WriteJSONData(w, http.StatusOK, out); err != nil {
 		e := o11y.RecordError(ctx, span, startedAt, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -299,7 +299,7 @@ func (ref *AuthnIDPsHandler) callback(w http.ResponseWriter, r *http.Request) {
 		typedResources, err := payload.NewAuthzPermissions(out.Login.Resources)
 		if err != nil {
 			e := o11y.RecordError(ctx, span, startedAt, err, ref.metrics, attrs)
-			respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+			respond.WriteInternalError(w, r, e)
 
 			return
 		}
@@ -317,7 +317,7 @@ func (ref *AuthnIDPsHandler) callback(w http.ResponseWriter, r *http.Request) {
 
 	if err := respond.WriteJSONData(w, http.StatusOK, resp); err != nil {
 		e := o11y.RecordError(ctx, span, startedAt, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -348,7 +348,7 @@ func (ref *AuthnIDPsHandler) listIdentities(w http.ResponseWriter, r *http.Reque
 	userID, err := callerFromContext(r)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, startedAt, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -356,7 +356,7 @@ func (ref *AuthnIDPsHandler) listIdentities(w http.ResponseWriter, r *http.Reque
 	items, err := ref.service.ListIdentities(ctx, userID)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, startedAt, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -370,7 +370,7 @@ func (ref *AuthnIDPsHandler) listIdentities(w http.ResponseWriter, r *http.Reque
 
 	if err := respond.WriteJSONData(w, http.StatusOK, resp); err != nil {
 		e := o11y.RecordError(ctx, span, startedAt, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -412,7 +412,7 @@ func (ref *AuthnIDPsHandler) unlinkIdentity(w http.ResponseWriter, r *http.Reque
 	userID, err := callerFromContext(r)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, startedAt, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -428,7 +428,7 @@ func (ref *AuthnIDPsHandler) unlinkIdentity(w http.ResponseWriter, r *http.Reque
 		case isType[*domain.ValidationErrors](err), isType[*domain.InvalidInputError](err):
 			respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
 		default:
-			respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+			respond.WriteInternalError(w, r, e)
 		}
 
 		return
@@ -457,7 +457,7 @@ func (ref *AuthnIDPsHandler) availableIDPs(w http.ResponseWriter, r *http.Reques
 	out, err := ref.idpsService.GetAvailableIDPs(ctx)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, startedAt, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -481,7 +481,7 @@ func (ref *AuthnIDPsHandler) availableIDPs(w http.ResponseWriter, r *http.Reques
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, startedAt, err, ref.metrics, attrs)
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 
 		return
 	}
@@ -502,7 +502,7 @@ func (ref *AuthnIDPsHandler) writeStartError(w http.ResponseWriter, r *http.Requ
 	case isType[*domain.ValidationErrors](err), isType[*domain.InvalidInputError](err), isType[*domain.InvalidIdentityProvidersError](err):
 		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
 	default:
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 	}
 }
 
@@ -521,15 +521,12 @@ func (ref *AuthnIDPsHandler) writeCallbackError(w http.ResponseWriter, r *http.R
 		respond.WriteJSONMessage(w, r, http.StatusConflict, e.Error())
 	case isType[*domain.IDPIdentityNotLinkedError](err), isType[*domain.InvalidCredentialsError](err):
 		respond.WriteJSONMessage(w, r, http.StatusUnauthorized, e.Error())
+	case isType[*domain.IDPUnreachableError](err):
+		respond.WriteJSONMessage(w, r, http.StatusServiceUnavailable, e.Error())
 	case isType[*domain.InvalidAuthnServiceError](err):
-		if strings.Contains(err.Error(), "not reachable") {
-			respond.WriteJSONMessage(w, r, http.StatusServiceUnavailable, e.Error())
-
-			return
-		}
 
 		respond.WriteJSONMessage(w, r, http.StatusUnauthorized, e.Error())
 	default:
-		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, e.Error())
+		respond.WriteInternalError(w, r, e)
 	}
 }

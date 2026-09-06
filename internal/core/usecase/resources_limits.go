@@ -180,7 +180,7 @@ func (ref *ResourcesLimitsService) List(ctx context.Context, input *domain.ListR
 
 	if input == nil {
 		errorValue := &domain.InvalidInputError{Message: "input is required"}
-		o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
+		_ = o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
 		return nil, errorValue
 	}
 
