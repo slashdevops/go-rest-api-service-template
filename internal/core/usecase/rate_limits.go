@@ -246,6 +246,14 @@ func (ref *RateLimitsService) List(ctx context.Context, input *domain.SelectRate
 	return out, nil
 }
 
+// Enforcing reports whether rate limiting is switched on at all.
+//
+// It is not the same question as "are there rules". With ratelimit.enabled=false
+// there is no mirror, so the rules in the database are real, listable, editable
+// -- and enforcing nothing. A caller that shows a rule without showing this
+// tells an operator a limit is in place that is not.
+func (ref *RateLimitsService) Enforcing() bool { return ref.ruleSet != nil }
+
 // Effective answers which rules apply to a (method, endpoint) pair.
 //
 // This is the endpoint that makes a precedence ladder usable by someone who has
@@ -267,14 +275,6 @@ func (ref *RateLimitsService) List(ctx context.Context, input *domain.SelectRate
 // a mirror that has never loaded -- filtered the same way the mirror filters, so
 // the fallback cannot report a rule the mirror would have dropped either. The
 // span records which of the two answered.
-// Enforcing reports whether rate limiting is switched on at all.
-//
-// It is not the same question as "are there rules". With ratelimit.enabled=false
-// there is no mirror, so the rules in the database are real, listable, editable
-// -- and enforcing nothing. A caller that shows a rule without showing this
-// tells an operator a limit is in place that is not.
-func (ref *RateLimitsService) Enforcing() bool { return ref.ruleSet != nil }
-
 func (ref *RateLimitsService) Effective(ctx context.Context, req domain.RateLimitRequest) ([]domain.RateLimitMatch, error) {
 	start := time.Now()
 	ctx, span, attrs := o11y.SetupTrace(ctx, ref.ot.Traces.Tracer, ref.metricsMetadata, "Effective")
