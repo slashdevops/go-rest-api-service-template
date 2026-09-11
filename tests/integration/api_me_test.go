@@ -1619,8 +1619,19 @@ func TestMeUpdate(t *testing.T) {
 				expectedErrorMsg: "",
 			},
 			{
-				name:             "Password with only uppercase and lowercase (short)",
-				password:         "AbcdEfgh", // Only upper+lower = score 2 (fails)
+				name: "Password with only uppercase and lowercase (short)",
+				// Only upper+lower and under 12 characters, so no length bonus:
+				// score 2, below the minimum of 3. Both halves matter -- a
+				// 12-character upper+lower password scores 3 and is accepted,
+				// which is what the sibling case above covers.
+				//
+				// It must not be a password the blocklist already rejects, or
+				// the blocklist answers first and this case stops testing the
+				// rule it is named for. "AbcdEfgh" was exactly that: it
+				// lowercases to "abcdefgh", which was added to the common-password
+				// list, so this case asserted the character-class message and got
+				// the blocklist's.
+				password:         "QwrtPlkj",
 				shouldSucceed:    false,
 				expectedErrorMsg: "password must contain",
 			},
