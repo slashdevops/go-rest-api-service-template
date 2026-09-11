@@ -1,6 +1,6 @@
 {
   "uid": "go-rest-api-service-template-obs",
-  "title": "go-rest-api-service-template \u00b7 Observability",
+  "title": "go-rest-api-service-template · Observability",
   "tags": [
     "go-rest-api-service-template",
     "red",
@@ -82,7 +82,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "\ud83d\udea6 Golden Signals \u2014 HTTP (handler layer)",
+      "title": "🚦 Golden Signals — HTTP (handler layer)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -730,7 +730,7 @@
     },
     {
       "type": "row",
-      "title": "\ud83c\udfaf RED by endpoint",
+      "title": "🎯 RED by endpoint",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -743,7 +743,7 @@
     },
     {
       "type": "table",
-      "title": "Endpoints \u2014 RED (rate \u00b7 errors \u00b7 latency)",
+      "title": "Endpoints — RED (rate · errors · latency)",
       "description": "Per handler endpoint (domain.action): request rate, error %, p95/p99 latency. Sort by any column.",
       "datasource": {
         "type": "prometheus",
@@ -1090,7 +1090,7 @@
     },
     {
       "type": "row",
-      "title": "\ud83e\uddf1 Layer breakdown (handler \u2192 service \u2192 repository)",
+      "title": "🧱 Layer breakdown (handler → service → repository)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1355,7 +1355,7 @@
     },
     {
       "type": "row",
-      "title": "\ud83e\uddf5 Traces (Tempo)",
+      "title": "🧵 Traces (Tempo)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1476,13 +1476,119 @@
     },
     {
       "type": "row",
-      "title": "\ud83d\uddc4\ufe0f Database (repository layer)",
+      "title": "🪵 Logs (Loki)",
       "collapsed": false,
+      "id": 32,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
         "y": 50
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "Log volume by severity",
+      "description": "Records reaching Loki, by severity. TRACE never appears here even when the service runs at -log.level=ctrace: that level carries SQL arguments and LLM payloads and is stdout-only by design (o11y.ExportedLogFloor). A sudden flat line means the exporter is failing, not that the service went quiet -- check the telemetry component of /health/detailed.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "id": 33,
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 51
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "expr": "sum by (severity_text) (count_over_time({service_name=\"go-rest-api-service-template\"} [$__auto]))",
+          "queryType": "range",
+          "legendFormat": "{{severity_text}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 70
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "logs",
+      "title": "Warnings and errors",
+      "description": "Every record at WARN or above. Each line carries its attributes as structured metadata, so a field can be filtered on without a regex over the message.",
+      "datasource": {
+        "type": "loki",
+        "uid": "loki"
+      },
+      "id": 34,
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 51
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "loki",
+            "uid": "loki"
+          },
+          "refId": "A",
+          "expr": "{service_name=\"go-rest-api-service-template\"} | severity_number >= 13",
+          "queryType": "range"
+        }
+      ],
+      "options": {
+        "showTime": true,
+        "showLabels": false,
+        "showCommonLabels": false,
+        "wrapLogMessage": true,
+        "prettifyLogMessage": false,
+        "enableLogDetails": true,
+        "dedupStrategy": "none",
+        "sortOrder": "Descending"
+      },
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      }
+    },
+    {
+      "type": "row",
+      "title": "🗄️ Database (repository layer)",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 60
       },
       "id": 22,
       "panels": []
@@ -1500,7 +1606,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 51
+        "y": 61
       },
       "fieldConfig": {
         "defaults": {
@@ -1574,7 +1680,7 @@
     {
       "type": "timeseries",
       "title": "DB p95 latency by domain",
-      "description": "p95 repository latency per domain \u2014 surfaces slow queries.",
+      "description": "p95 repository latency per domain — surfaces slow queries.",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -1584,7 +1690,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 51
+        "y": 61
       },
       "fieldConfig": {
         "defaults": {
@@ -1668,7 +1774,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 51
+        "y": 61
       },
       "fieldConfig": {
         "defaults": {
@@ -1741,13 +1847,13 @@
     },
     {
       "type": "row",
-      "title": "\ud83d\udd78\ufe0f Service graph & span metrics (trace-derived)",
+      "title": "🕸️ Service graph & span metrics (trace-derived)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 59
+        "y": 69
       },
       "id": 26,
       "panels": []
@@ -1765,7 +1871,7 @@
         "h": 9,
         "w": 8,
         "x": 0,
-        "y": 60
+        "y": 70
       },
       "targets": [
         {
@@ -1792,7 +1898,7 @@
         "h": 9,
         "w": 8,
         "x": 8,
-        "y": 60
+        "y": 70
       },
       "fieldConfig": {
         "defaults": {
@@ -1876,7 +1982,7 @@
         "h": 9,
         "w": 8,
         "x": 16,
-        "y": 60
+        "y": 70
       },
       "fieldConfig": {
         "defaults": {
@@ -1949,13 +2055,13 @@
     },
     {
       "type": "row",
-      "title": "\u2139\ufe0f Service metadata",
+      "title": "ℹ️ Service metadata",
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 69
+        "y": 79
       },
       "id": 30,
       "panels": []
@@ -1973,7 +2079,7 @@
         "h": 5,
         "w": 24,
         "x": 0,
-        "y": 70
+        "y": 80
       },
       "targets": [
         {

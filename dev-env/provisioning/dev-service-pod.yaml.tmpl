@@ -148,6 +148,22 @@ spec:
           name: tempo
         - mountPath: /mnt/config/tempo-local-config.yaml:Z
           name: tempo-config
+    - name: loki
+      # Pinned for the same reason Tempo is: :latest is a moving target, and a
+      # log store that silently changes its schema or its OTLP behaviour breaks
+      # the one signal whose failure is hardest to notice.
+      image: docker.io/grafana/loki:3.7.7
+      args:
+        - --config.file=/mnt/config/loki-local-config.yaml
+      ports:
+        - containerPort: 3100
+          hostPort: 3100
+          protocol: TCP
+      volumeMounts:
+        - mountPath: /loki:Z
+          name: loki
+        - mountPath: /mnt/config/loki-local-config.yaml:Z
+          name: loki-config
     - name: prometheus
       # image: docker.io/prom/prometheus:v3.5.0
       image: docker.io/prom/prometheus:latest
@@ -227,6 +243,14 @@ spec:
     - name: tempo-config
       hostPath:
         path: ${HOME}/tmp/${PROJECT_NAME}/dev-env/tempo-local-config.yaml
+        type: File
+    - name: loki
+      hostPath:
+        path: ${HOME}/tmp/${PROJECT_NAME}/loki-volume-host
+        type: DirectoryOrCreate
+    - name: loki-config
+      hostPath:
+        path: ${HOME}/tmp/${PROJECT_NAME}/dev-env/loki-local-config.yaml
         type: File
     - name: prometheus
       hostPath:

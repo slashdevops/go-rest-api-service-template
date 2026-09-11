@@ -8,7 +8,7 @@ The whole loop, in the order it is normally needed. Both repos matter: an API
 change is usually a two-repo change, and the frontend is where a layout or
 copy problem is actually visible.
 
-## The core dev environment (Postgres, Valkey, Prometheus, Grafana, Tempo, Mailpit)
+## The core dev environment (Postgres, Valkey, Prometheus, Grafana, Tempo, Loki, Mailpit)
 
 ```bash
 make dev-certs       # JWT pair, AES key and dev TLS CA under certs/; creates only
@@ -107,3 +107,68 @@ once: it pulled `gobwas/glob` past what OPA supports and nothing compiled.
 run `for t in unit integration eval; do go vet -tags=$t ./... ; done` after any
 dependency change.
 
+## Where the three signals go
+
+Each signal has its own exporter setting, and each can be off independently.
+Losing any of them costs visibility and never service: the `telemetry`
+component of `/health/detailed` goes `degraded`, the overall status stays
+`healthy`, and every request still succeeds.
+
+| Signal | Setting | Default | Dev stack | Typical production |
+| --- | --- | --- | --- | --- |
+| traces | `opentelemetry.trace.exporter` | `console` | `otlp-http` → Tempo `:4318` | `otlp-http` → a collector |
+| metrics | `opentelemetry.metric.exporter` | `console` | `otlp-http` → Prometheus `:9090` | `otlp-http` or `prometheus` |
+| logs | `opentelemetry.log.exporter` | **`noop`** | `otlp-http` → Loki `:3100` | `otlp-http` → Loki or a collector |
+
+**Logs are the one that defaults to off, and that is not a gap.** Every record
+still reaches `log.output` exactly as it always has; `noop` means only that
+nothing is *also* shipped to a log store. It is what every deployment did
+before the setting existed, so an upgrade changes nothing until you ask it to.
+
+```bash
+# ship logs to a Loki
+./build/go-rest-api-service-template \
+  -opentelemetry.log.exporter=otlp-http \
+  -opentelemetry.log.endpoint=loki.internal \
+  -opentelemetry.log.port=3100
+
+# ship them to an OpenTelemetry Collector instead: same exporter, different path
+./build/go-rest-api-service-template \
+  -opentelemetry.log.exporter=otlp-http \
+  -opentelemetry.log.endpoint=otel-collector.internal \
+  -opentelemetry.log.port=4318 \
+  -opentelemetry.log.path=/v1/logs
+```
+
+Two things to know before turning it on in production:
+
+- **`-log.level=ctrace` is safe to leave alone**, because TRACE records are
+  never exported whatever the configuration. That level carries SQL statements
+  with their arguments and outbound LLM request bodies; the exporter's floor is
+  `DEBUG` and it is a constant, not a setting.
+- **The connection is not encrypted.** Every OTLP exporter here dials with
+  `WithInsecure()`, logs included. On an untrusted network, put a collector on
+  the same host and let it do the TLS.
+
+What a failing exporter looks like:
+
+```console
+$ curl -s localhost:8080/api/v1/health/detailed -H "Authorization: Bearer $TOKEN" | jq .components.telemetry
+{
+  "status": "degraded",
+  "message": "the telemetry exporter is failing; traces, metrics and logs from this replica are not reaching their collectors",
+  "details": {
+    "log_collector": "localhost:3100",
+    "log_exporter": "otlp-http",
+    "export_errors": "1",
+    "last_export_error": "Post \"http://localhost:3100/otlp/v1/logs\": EOF"
+  }
+}
+```
+
+`telemetry_export_errors_total` carries the same count as a metric, so it can
+be alerted on. It is worth having for one case in particular: when only the
+*log* collector is down, every dashboard keeps working and that counter is the
+only thing that says so.
+
+Full mechanism: [observability.md](../architecture/observability.md).

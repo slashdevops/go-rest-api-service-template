@@ -260,6 +260,11 @@ Read it alongside [Adding a new entity](./adding-an-entity.md).
 - [HTTP server timeouts](./http-server-timeouts.md) — which bound covers which
   span of a request, why `ReadHeaderTimeout` is on by default, and why
   `ReadTimeout` / `WriteTimeout` are deliberately off.
+- [Observability](./observability.md) — the three signals and how a log line
+  finds its trace: why logs are a second sink rather than a replacement, why
+  TRACE never leaves the process, where the identifying attributes live, the
+  startup order the composed logger depends on, and what happens when an
+  export fails.
 - [Health endpoints and probes](./health-probes.md) — which of the three health
   endpoints is the liveness target, which is the readiness target, why pointing
   liveness at a dependency check turns an outage into a restart loop, and which

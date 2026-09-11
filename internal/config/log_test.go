@@ -2,8 +2,11 @@ package config
 
 import (
 	"errors"
+	"log/slog"
 	"os"
 	"testing"
+
+	"github.com/slashdevops/go-rest-api-service-template/pkg/cslog"
 )
 
 func TestNewLogConfig(t *testing.T) {
@@ -70,5 +73,65 @@ func TestValidate_Log(t *testing.T) {
 	err = config.Validate()
 	if invalidErr, ok := errors.AsType[*InvalidConfigurationError](err); err == nil || !ok || invalidErr.Field != "log.format" {
 		t.Errorf("Expected InvalidConfigurationError with field 'log.format', got %v", err)
+	}
+}
+
+// SlogLevel is consulted twice -- by the standard handler and by the minimum
+// severity the log pipeline enforces on its exporter -- so a level it gets
+// wrong is wrong in two places at once.
+func TestSlogLevel(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  slog.Level
+	}{
+		{"debug", "debug", slog.LevelDebug},
+		{"info", "info", slog.LevelInfo},
+		{"warn", "warn", slog.LevelWarn},
+		{"error", "error", slog.LevelError},
+
+		// Validate rewrites "ctrace" and "cfatal" to these before anything
+		// reads them, which is why SlogLevel matches on the level strings and
+		// not on the words an operator types.
+		{"trace_after_validate", cslog.LogLevelTrace.String(), cslog.LogLevelTrace},
+		{"fatal_after_validate", cslog.LogLevelFatal.String(), cslog.LogLevelFatal},
+
+		{"unknown_falls_back_to_info", "verbose", slog.LevelInfo},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := NewLogConfig()
+			c.Level.Value = tt.value
+
+			if got := c.SlogLevel(); got != tt.want {
+				t.Errorf("SlogLevel() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// The hidden levels survive a round trip through Validate, which is the only
+// path an operator's "ctrace" actually takes.
+func TestSlogLevelAfterValidate(t *testing.T) {
+	for _, tt := range []struct {
+		typed string
+		want  slog.Level
+	}{
+		{"ctrace", cslog.LogLevelTrace},
+		{"cfatal", cslog.LogLevelFatal},
+	} {
+		t.Run(tt.typed, func(t *testing.T) {
+			c := NewLogConfig()
+			c.Level.Value = tt.typed
+
+			if err := c.Validate(); err != nil {
+				t.Fatalf("Validate() = %v, want nil: %q is accepted but undocumented", err, tt.typed)
+			}
+
+			if got := c.SlogLevel(); got != tt.want {
+				t.Errorf("SlogLevel() after Validate = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

@@ -2,11 +2,13 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/payload"
@@ -589,6 +591,7 @@ func telemetryErrorWindow(conf *config.OpenTelemetryConfig) time.Duration {
 	window := max(
 		2*conf.TraceExporterBatchTimeout.Value,
 		2*conf.MetricInterval.Value,
+		2*conf.LogExporterBatchTimeout.Value,
 		time.Minute,
 	)
 
@@ -633,10 +636,12 @@ func (a *App) checkTelemetryHealth(ctx context.Context) ComponentHealth {
 
 	traces := a.configs.Telemetry.TraceExporter.Value
 	metrics := a.configs.Telemetry.MetricExporter.Value
+	logs := a.configs.Telemetry.LogExporter.Value
 
 	details := map[string]any{
 		"trace_exporter":  traces,
 		"metric_exporter": metrics,
+		"log_exporter":    logs,
 	}
 
 	// Reach for the collector, when there is one to reach for.
@@ -680,6 +685,35 @@ func (a *App) checkTelemetryHealth(ctx context.Context) ComponentHealth {
 		details["collector"] = address
 	}
 
+	// The log collector is dialled separately because it is a separate
+	// process at a separate address: traces reach Tempo on 4318 and logs reach
+	// Loki on 3100. Skipped when the two addresses agree, which is what a
+	// deployment putting one OpenTelemetry Collector in front of both looks
+	// like -- dialling it twice would say nothing new and double the probe's
+	// cost.
+	if logs == config.ExporterOTLPHTTP {
+		address := net.JoinHostPort(
+			a.configs.Telemetry.LogEndpoint.Value,
+			strconv.Itoa(a.configs.Telemetry.LogPort.Value),
+		)
+
+		if address != details["collector"] {
+			details["log_collector"] = address
+
+			elapsed, err := a.dialProbe(ctx, address)
+
+			// The slower of the two dials, so the number is the worst a
+			// caller would wait, not an average that hides one of them.
+			if responseTime == nil || elapsed > *responseTime {
+				responseTime = &elapsed
+			}
+
+			if err != nil {
+				collectorErr = errors.Join(collectorErr, err)
+			}
+		}
+	}
+
 	if a.telemetry.Errors != nil {
 		count, last, lastErr := a.telemetry.Errors.Snapshot()
 		if count > 0 {
@@ -691,8 +725,8 @@ func (a *App) checkTelemetryHealth(ctx context.Context) ComponentHealth {
 				return ComponentHealth{
 					Name:   "telemetry",
 					Status: ComponentStatusDegraded,
-					Message: "the telemetry exporter is failing; traces and metrics " +
-						"from this replica are not reaching the collector",
+					Message: "the telemetry exporter is failing; traces, metrics and logs " +
+						"from this replica are not reaching their collectors",
 					LastChecked:  time.Now(),
 					ResponseTime: responseTime,
 					Details:      details,
@@ -717,21 +751,21 @@ func (a *App) checkTelemetryHealth(ctx context.Context) ComponentHealth {
 			Name:   "telemetry",
 			Status: ComponentStatusDegraded,
 			Message: "the telemetry collector is not accepting connections; " +
-				"traces and metrics from this replica will be dropped",
+				"traces, metrics and logs from this replica will be dropped",
 			LastChecked:  time.Now(),
 			ResponseTime: responseTime,
 			Details:      details,
 		}
 	}
 
-	// Both off. Not a fault, but "active" would be false.
-	if traces == config.ExporterNoop && metrics == config.ExporterNoop {
+	// All off. Not a fault, but "active" would be false.
+	if traces == config.ExporterNoop && metrics == config.ExporterNoop && logs == config.ExporterNoop {
 		return ComponentHealth{
 			Name:   "telemetry",
 			Status: ComponentStatusHealthy,
-			Message: "telemetry is disabled; opentelemetry.trace.exporter and " +
-				"opentelemetry.metric.exporter are both " + config.ExporterNoop +
-				", so nothing is exported",
+			Message: "telemetry is disabled; opentelemetry.trace.exporter, " +
+				"opentelemetry.metric.exporter and opentelemetry.log.exporter are all " +
+				config.ExporterNoop + ", so nothing is exported",
 			LastChecked:  time.Now(),
 			ResponseTime: responseTime,
 			Details:      details,
@@ -739,10 +773,13 @@ func (a *App) checkTelemetryHealth(ctx context.Context) ComponentHealth {
 	}
 
 	message := "telemetry exporting"
-	if traces == config.ExporterNoop || metrics == config.ExporterNoop {
-		// Half on is a real and easily-unnoticed configuration: one pipeline
-		// feeding dashboards while the other silently produces nothing.
-		message = "telemetry partially exporting; one exporter is " + config.ExporterNoop
+	if traces == config.ExporterNoop || metrics == config.ExporterNoop || logs == config.ExporterNoop {
+		// Some off is a real and easily-unnoticed configuration: one pipeline
+		// feeding dashboards while another silently produces nothing. Logs are
+		// the common case -- opentelemetry.log.exporter defaults to noop, and
+		// on that setting the records still reach log.output, so the wording
+		// says which signal is missing rather than implying it is lost.
+		message = "telemetry partially exporting; " + noopExportersPhrase(traces, metrics, logs)
 	}
 
 	return ComponentHealth{
@@ -753,6 +790,30 @@ func (a *App) checkTelemetryHealth(ctx context.Context) ComponentHealth {
 		ResponseTime: responseTime,
 		Details:      details,
 	}
+}
+
+// noopExportersPhrase names the pipelines that are switched off, so an
+// operator reading /health/detailed is told which signal is missing instead of
+// being told that one of three is.
+func noopExportersPhrase(traces, metrics, logs string) string {
+	var off []string
+
+	if traces == config.ExporterNoop {
+		off = append(off, "traces")
+	}
+
+	if metrics == config.ExporterNoop {
+		off = append(off, "metrics")
+	}
+
+	if logs == config.ExporterNoop {
+		// Worth spelling out: unlike the other two, this does not mean the
+		// signal is gone. The standard logger still writes every record to
+		// log.output; it is only the export to a collector that is off.
+		off = append(off, "logs (written to log.output only)")
+	}
+
+	return strings.Join(off, " and ") + " are not exported"
 }
 
 // checkDatabaseHealth checks if the database is healthy by pinging it

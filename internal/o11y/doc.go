@@ -1,5 +1,5 @@
 // Package o11y provides a unified observability layer for the
-// application — distributed tracing, metrics, and structured error
+// application — distributed tracing, metrics, logs, and structured error
 // recording on top of [OpenTelemetry].
 //
 // # Why the name?
@@ -23,13 +23,18 @@
 //
 // # Architecture
 //
-// The package is organised around three pillars of observability:
+// The package is organised around the three OpenTelemetry signals, plus
+// the metadata that ties them together:
 //
 //   - Tracing — distributed-trace propagation using OpenTelemetry
 //     spans, so request flows can be followed across service
 //     boundaries.
 //   - Metrics — counter and histogram instruments measuring operation
 //     counts and latency distributions per layer, domain, and action.
+//   - Logs — records written through [log/slog] are ALSO emitted as
+//     OpenTelemetry log records, so a log line can be found from the
+//     trace it belongs to. See [OpenTelemetryLogger], and note that this
+//     is a second sink: the standard logger keeps writing to log.output.
 //   - Structured metadata — a [Metadata] type that encodes the
 //     application's three-level architecture (Layer / Domain / Action)
 //     into span names and metric attributes for consistent, queryable
@@ -38,9 +43,9 @@
 // # Core types
 //
 // [OpenTelemetry] is the top-level entry point. It composes an
-// [OpenTelemetryTracer] and an [OpenTelemetryMeter]; each is
-// independently configurable with pluggable exporters (console,
-// otlp-http, noop).
+// [OpenTelemetryTracer], an [OpenTelemetryMeter] and an
+// [OpenTelemetryLogger]; each is independently configurable with
+// pluggable exporters (console, otlp-http, noop).
 //
 // [Metadata] describes the calling context using three fields:
 //
@@ -97,6 +102,25 @@
 //   - "console"   — exports to stdout in a human-readable format.
 //   - "otlp-http" — exports via OTLP over HTTP with gzip compression
 //     (the production default).
+//
+// The three signals default differently, and the difference is the point:
+// traces and metrics default to "console" because without an exporter
+// there is nowhere at all to see them, while logs default to "noop"
+// because they already have somewhere to go. See
+// [github.com/slashdevops/go-rest-api-service-template/internal/config.DefaultLogExporter].
+//
+// # Logs are a second sink, and TRACE is not one of them
+//
+// Setting a log exporter never takes anything away from log.output. The
+// pipeline is composed onto the default logger as an additional handler,
+// so a collector that is down costs Grafana, not the local record.
+//
+// The one place the two sinks deliberately disagree is the bottom of the
+// scale: TRACE records reach stdout and are never exported, whatever the
+// configuration. That level carries SQL statements with their arguments
+// and outbound LLM request bodies; a retained, searchable store is the
+// wrong home for them, and there is no setting that changes it. See
+// [ExportedLogFloor].
 //
 // # Usage
 //

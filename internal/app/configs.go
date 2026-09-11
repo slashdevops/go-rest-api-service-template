@@ -244,6 +244,11 @@ func setupFlags(configs *Configs) {
 	flag.IntVar(&configs.Telemetry.MetricPort.Value, configs.Telemetry.MetricPort.FlagName, config.DefaultMetricPort, configs.Telemetry.MetricPort.FlagDescription)
 	flag.StringVar(&configs.Telemetry.MetricExporter.Value, configs.Telemetry.MetricExporter.FlagName, config.DefaultMetricExporter, configs.Telemetry.MetricExporter.FlagDescription)
 	flag.DurationVar(&configs.Telemetry.MetricInterval.Value, configs.Telemetry.MetricInterval.FlagName, config.DefaultMetricInterval, configs.Telemetry.MetricInterval.FlagDescription)
+	flag.StringVar(&configs.Telemetry.LogEndpoint.Value, configs.Telemetry.LogEndpoint.FlagName, config.DefaultLogEndpoint, configs.Telemetry.LogEndpoint.FlagDescription)
+	flag.IntVar(&configs.Telemetry.LogPort.Value, configs.Telemetry.LogPort.FlagName, config.DefaultLogPort, configs.Telemetry.LogPort.FlagDescription)
+	flag.StringVar(&configs.Telemetry.LogExporter.Value, configs.Telemetry.LogExporter.FlagName, config.DefaultLogExporter, configs.Telemetry.LogExporter.FlagDescription)
+	flag.StringVar(&configs.Telemetry.LogPath.Value, configs.Telemetry.LogPath.FlagName, config.DefaultLogPath, configs.Telemetry.LogPath.FlagDescription)
+	flag.DurationVar(&configs.Telemetry.LogExporterBatchTimeout.Value, configs.Telemetry.LogExporterBatchTimeout.FlagName, config.DefaultLogExporterBatchTimeout, configs.Telemetry.LogExporterBatchTimeout.FlagDescription)
 
 	// Authentication configuration values
 	flag.StringVar(&configs.Authn.Issuer.Value, configs.Authn.Issuer.FlagName, config.DefaultAuthnIssuer, configs.Authn.Issuer.FlagDescription)
@@ -351,28 +356,9 @@ func handleSpecialFlags(configs *Configs) error {
 
 // setupLogger configures the global logger based on the given LogConfig
 func setupLogger(logConfig *config.LogConfig) {
-	var logLevel slog.Level
-
-	switch logConfig.Level.Value {
-	case "debug":
-		logLevel = slog.LevelDebug
-	case "info":
-		logLevel = slog.LevelInfo
-	case "warn":
-		logLevel = slog.LevelWarn
-	case "error":
-		logLevel = slog.LevelError
-	case cslog.LogLevelTrace.String():
-		logLevel = cslog.LogLevelTrace
-	case cslog.LogLevelFatal.String():
-		logLevel = cslog.LogLevelFatal
-	default:
-		logLevel = slog.LevelInfo
-	}
-
 	// Create logger options
 	opts := &slog.HandlerOptions{
-		Level:     logLevel,
+		Level:     logConfig.SlogLevel(),
 		AddSource: logConfig.AddSource.Value,
 		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
 			if a.Key == slog.LevelKey {
@@ -400,7 +386,14 @@ func setupLogger(logConfig *config.LogConfig) {
 		handler = slog.NewTextHandler(logConfig.Output.Value, opts)
 	}
 
-	// Set the default logger
+	// Set the default logger.
+	//
+	// application and version are attached HERE, to this handler, and not to
+	// the logger that [App.initTelemetry] later composes from it. On the
+	// OpenTelemetry side the same two facts are resource attributes
+	// (service.name, service.version) carried once per batch; repeating them
+	// on every record would pay for them per line and give a Loki query two
+	// spellings of the same thing to choose between.
 	logger := slog.New(handler)
 	logger = logger.With(
 		slog.String("application", appName),

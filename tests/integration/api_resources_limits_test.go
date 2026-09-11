@@ -62,7 +62,7 @@ func newTestOpenTelemetry(t *testing.T) *o11y.OpenTelemetry {
 	otConf.TraceExporter.Value = "noop"
 	otConf.MetricExporter.Value = "noop"
 
-	ot, err := o11y.New(t.Context(), otConf)
+	ot, err := o11y.New(t.Context(), otConf, config.NewLogConfig())
 	require.NoError(t, err, "Failed to build OpenTelemetry for the test")
 	require.NoError(t, ot.Start(), "Failed to start OpenTelemetry for the test")
 	t.Cleanup(ot.Shutdown)

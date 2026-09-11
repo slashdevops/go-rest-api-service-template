@@ -165,3 +165,133 @@ func TestValidate_opentelemetry(t *testing.T) {
 	}
 	config.TracePort.Value = DefaultTracePort
 }
+
+func newValidLogTelemetryConfig() *OpenTelemetryConfig {
+	c := NewOpenTelemetryConfig("test-app", "0.0.0-test")
+	c.LogExporter.Value = ExporterOTLPHTTP
+
+	return c
+}
+
+func TestNewOpenTelemetryConfigLogDefaults(t *testing.T) {
+	c := NewOpenTelemetryConfig("test-app", "0.0.0-test")
+
+	// noop is the one default that differs from the other two signals, and it
+	// is what makes this setting invisible to an existing deployment: the
+	// standard logger keeps writing to log.output and nothing is exported.
+	if c.LogExporter.Value != DefaultLogExporter {
+		t.Errorf("LogExporter = %q, want %q", c.LogExporter.Value, DefaultLogExporter)
+	}
+	if c.LogExporter.Value != ExporterNoop {
+		t.Errorf("the log exporter must default to %q so an upgrade changes nothing, got %q", ExporterNoop, c.LogExporter.Value)
+	}
+	if c.LogEndpoint.Value != DefaultLogEndpoint {
+		t.Errorf("LogEndpoint = %q, want %q", c.LogEndpoint.Value, DefaultLogEndpoint)
+	}
+	if c.LogPort.Value != DefaultLogPort {
+		t.Errorf("LogPort = %d, want %d", c.LogPort.Value, DefaultLogPort)
+	}
+	if c.LogPath.Value != DefaultLogPath {
+		t.Errorf("LogPath = %q, want %q", c.LogPath.Value, DefaultLogPath)
+	}
+	if c.LogExporterBatchTimeout.Value != DefaultLogExporterBatchTimeout {
+		t.Errorf("LogExporterBatchTimeout = %v, want %v", c.LogExporterBatchTimeout.Value, DefaultLogExporterBatchTimeout)
+	}
+}
+
+func TestValidateLogExporter(t *testing.T) {
+	for _, exporter := range []string{"noop", "console", "otlp-http"} {
+		t.Run("accepts_"+exporter, func(t *testing.T) {
+			c := NewOpenTelemetryConfig("test-app", "0.0.0-test")
+			c.LogExporter.Value = exporter
+
+			if err := c.Validate(); err != nil {
+				t.Errorf("Validate() = %v, want nil for exporter %q", err, exporter)
+			}
+		})
+	}
+
+	t.Run("refuses_unknown", func(t *testing.T) {
+		c := NewOpenTelemetryConfig("test-app", "0.0.0-test")
+		c.LogExporter.Value = "loki"
+
+		err := c.Validate()
+		if err == nil {
+			t.Fatal("Validate() = nil, want an error for an unknown exporter")
+		}
+
+		var invalid *InvalidConfigurationError
+		if !errors.As(err, &invalid) {
+			t.Fatalf("Validate() = %T, want *InvalidConfigurationError", err)
+		}
+
+		// The error has to name the setting to change, not the value's
+		// neighbour: this is the setting that selects the behaviour.
+		if invalid.Field != "opentelemetry.log.exporter" {
+			t.Errorf("Field = %q, want opentelemetry.log.exporter", invalid.Field)
+		}
+	})
+}
+
+// Port, path and batch timeout are only read when something is dialled, so
+// only otlp-http validates them. Refusing to start over a value that will
+// never be read would send an operator to fix a setting with no effect.
+func TestValidateLogSettingsOnlyApplyToOTLP(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*OpenTelemetryConfig)
+	}{
+		{"empty_endpoint", func(c *OpenTelemetryConfig) { c.LogEndpoint.Value = "" }},
+		{"port_zero", func(c *OpenTelemetryConfig) { c.LogPort.Value = 0 }},
+		{"port_too_high", func(c *OpenTelemetryConfig) { c.LogPort.Value = 65536 }},
+		{"path_without_leading_slash", func(c *OpenTelemetryConfig) { c.LogPath.Value = "otlp/v1/logs" }},
+		{"batch_timeout_too_small", func(c *OpenTelemetryConfig) { c.LogExporterBatchTimeout.Value = time.Millisecond }},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name+"_refused_on_otlp", func(t *testing.T) {
+			c := newValidLogTelemetryConfig()
+			tt.mutate(c)
+
+			if err := c.Validate(); err == nil {
+				t.Error("Validate() = nil, want an error")
+			}
+		})
+
+		t.Run(tt.name+"_ignored_on_noop", func(t *testing.T) {
+			c := NewOpenTelemetryConfig("test-app", "0.0.0-test")
+			tt.mutate(c)
+
+			if err := c.Validate(); err != nil {
+				t.Errorf("Validate() = %v, want nil: the value is never read with the noop exporter", err)
+			}
+		})
+	}
+}
+
+func TestParseEnvVarsLogs(t *testing.T) {
+	t.Setenv("OPENTELEMETRY_LOG_ENDPOINT", "loki.example.com")
+	t.Setenv("OPENTELEMETRY_LOG_PORT", "3200")
+	t.Setenv("OPENTELEMETRY_LOG_EXPORTER", "otlp-http")
+	t.Setenv("OPENTELEMETRY_LOG_PATH", "/v1/logs")
+	t.Setenv("OPENTELEMETRY_LOG_EXPORTER_BATCH_TIMEOUT", "9s")
+
+	c := NewOpenTelemetryConfig("test-app", "0.0.0-test")
+	c.ParseEnvVars()
+
+	if c.LogEndpoint.Value != "loki.example.com" {
+		t.Errorf("LogEndpoint = %q", c.LogEndpoint.Value)
+	}
+	if c.LogPort.Value != 3200 {
+		t.Errorf("LogPort = %d", c.LogPort.Value)
+	}
+	if c.LogExporter.Value != "otlp-http" {
+		t.Errorf("LogExporter = %q", c.LogExporter.Value)
+	}
+	if c.LogPath.Value != "/v1/logs" {
+		t.Errorf("LogPath = %q", c.LogPath.Value)
+	}
+	if c.LogExporterBatchTimeout.Value != 9*time.Second {
+		t.Errorf("LogExporterBatchTimeout = %v", c.LogExporterBatchTimeout.Value)
+	}
+}

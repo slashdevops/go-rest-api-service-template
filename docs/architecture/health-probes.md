@@ -123,7 +123,7 @@ same kind of thing. Three do I/O; the rest assert that a startup phase ran.
 | `cache`           | Valkey `PING`, `cache.max.query.timeout`    | ms           | no — fail-open         |
 | `ratelimit_store` | Valkey `PING` on the cache's client, `ratelimit.store.timeout` | ms | degraded only |
 | `mail_service`    | TCP connect to the transport, 3s budget     | ms           | no                     |
-| `telemetry`       | TCP connect to the OTLP collector, plus the SDK's recorded export failures | ms | no |
+| `telemetry`       | TCP connect to each OTLP collector (traces, and logs when it is a different address), plus the SDK's recorded export failures | ms | no |
 | `runtime`         | `runtime.ReadMemStats`                      | µs           | no                     |
 | `http_server`     | structural — the phase completed            | **ns**       | no                     |
 | `repositories`    | structural                                  | **ns**       | no                     |
@@ -168,6 +168,7 @@ question this component exists to ask.
 | Signal | Sees | Blind to |
 | --- | --- | --- |
 | TCP connect to `opentelemetry.trace.endpoint:port` | nothing listening, **without needing traffic** | anything that accepts and then fails |
+| TCP connect to `opentelemetry.log.endpoint:port` | the same, for the log collector | the same |
 | `ExportErrors` from `otel.SetErrorHandler` | a collector that accepts and rejects payloads | everything, until something has been sent |
 
 The dial closes a real gap: with no traffic there is nothing to export, so a
@@ -183,6 +184,22 @@ flowed. A port forwarder, proxy or sidecar in production behaves the same way.
 
 Nothing is dialled when the exporter is `noop` — there is no host, and timing a
 connection the service never makes would be a fabricated number.
+
+**Logs are dialled separately from traces**, because they are separate
+processes at separate addresses: Loki on 3100, Tempo on 4318. A probe that only
+dialled the trace endpoint would report a healthy telemetry component while
+every log line was being dropped. The second dial is skipped when the two
+addresses agree — one OpenTelemetry Collector in front of both signals — since
+dialling it twice says nothing new and doubles what the probe costs. The
+reported `response_time` is then the slower of the two, so the number is the
+worst a caller would wait rather than an average that hides one of them.
+
+`log_exporter` is always in the details, and when the exporter is `noop` the
+message says so **and** says the records still reach `log.output`. Unlike the
+other two signals, a disabled log exporter does not mean the signal is gone; a
+message implying it was would send an operator looking for a fault that is not
+there. The component is only called `disabled` when all three exporters are
+`noop`. See [observability.md](./observability.md).
 
 ### `runtime` is timed; the four structural components are not
 

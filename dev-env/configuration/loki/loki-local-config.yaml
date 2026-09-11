@@ -1,0 +1,101 @@
+# Loki for the development pod: one process, local disk, short retention.
+#
+# Every non-default setting below is commented with why it is here. The service
+# posts OTLP directly to this instance -- no collector, no promtail, no agent --
+# the same way it posts traces to Tempo and metrics to Prometheus. See
+# docs/architecture/observability.md.
+
+# No multi-tenancy in development, so no X-Scope-OrgID header is required on
+# either write or read. A tenant id would have to be set in three places (the
+# exporter, the Grafana datasource, and every curl) to buy nothing here.
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: info
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    # v13 + tsdb is REQUIRED for structured metadata, and structured metadata is
+    # how OTLP log attributes are stored. On an older schema the OTLP endpoint
+    # answers 400 and the only place the message appears is the exporter's own
+    # error -- which this service surfaces through /health/detailed, because
+    # nothing is logged on the Loki side.
+    - from: 2024-01-01
+      store: tsdb
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+limits_config:
+  # The OTLP write path refuses to store attributes without this.
+  allow_structured_metadata: true
+
+  # A development stack is restarted and rebuilt constantly, and a container
+  # that has been down for an hour comes back with a clock that has moved.
+  # Without a window, every line it buffered is rejected as too old and the
+  # first thing an operator sees after a restart is a gap.
+  reject_old_samples: false
+
+  retention_period: 24h
+
+  # The service runs at ctrace in development (.air.toml, run.sh), which is a
+  # line per SQL statement. The defaults are sized for a production tenant and
+  # a single developer hammering the API trips them.
+  ingestion_rate_mb: 32
+  ingestion_burst_size_mb: 64
+
+  # Structured metadata is where every log attribute lands, and this service
+  # writes wide records: layer, domain, action, request id, status, duration.
+  max_structured_metadata_size: 128kb
+  max_structured_metadata_entries_count: 256
+
+  # OTLP resource attributes become Loki LABELS, and a label is an index: one
+  # stream per distinct combination. The default promotion list is exactly the
+  # right set here -- service.name, service.namespace, service.instance.id,
+  # deployment.environment.name and a few more, all bounded by the deployment.
+  # NOTHING request-scoped may be added: app.action, a user id or a request id
+  # would each multiply the stream count without making a single query
+  # possible that a structured-metadata filter cannot already answer.
+  otlp_config:
+    resource_attributes:
+      ignore_defaults: false
+
+compactor:
+  working_directory: /loki/compactor
+  # Retention only happens if the compactor is told to do it; retention_period
+  # alone deletes nothing, and the volume grows until the disk is full.
+  retention_enabled: true
+  delete_request_store: filesystem
+
+ingester:
+  # Flush quickly so a line is queryable seconds after it is written. A
+  # developer who has to wait five minutes to see the log of the request they
+  # just made will not use the log store at all.
+  chunk_idle_period: 1m
+  max_chunk_age: 5m
+
+# The ruler and the analytics reporter are both off: there is no alerting from
+# logs in this stack (Prometheus rules are the alerting path, see
+# dev-env/configuration/prometheus/alerts.yaml), and a development container
+# must not phone home.
+ruler:
+  enable_api: false
+
+analytics:
+  reporting_enabled: false

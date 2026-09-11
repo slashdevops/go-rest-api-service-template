@@ -15,12 +15,49 @@ datasources:
         - name: trace_id
           datasourceUid: tempo
 
+  - name: Logs
+    type: loki
+    uid: loki
+    orgId: 1
+    url: http://go-rest-api-service-template-loki:3100
+    jsonData:
+      # Turn the trace_id carried on every exported record into a link to the
+      # trace. The id arrives as structured metadata, which Grafana surfaces as
+      # a field on the line, so this needs no regex over the message text.
+      derivedFields:
+        - name: trace_id
+          matcherType: label
+          matcherRegex: trace_id
+          datasourceUid: tempo
+          # $$ escapes the $: Grafana expands $VAR in a provisioning file before
+          # the datasource is created, so a single $ leaves url empty and the
+          # link silently does nothing. There is no error -- the field is
+          # simply not clickable.
+          url: '$${__value.raw}'
+          urlDisplayLabel: 'View trace'
+
   - name: Traces
     type: tempo
     uid: tempo
     orgId: 1
     url: http://go-rest-api-service-template-tempo:3200
     jsonData:
+      # The other direction: "Logs for this span" in the trace view.
+      #
+      # The tag maps the OTEL attribute name to the Loki LABEL name. Loki
+      # rewrites dots to underscores when it promotes a resource attribute, so
+      # service.name is service_name in a query -- a stream selector built from
+      # the raw attribute name matches nothing, silently, with an empty panel
+      # and no error.
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: '-5m'
+        spanEndTimeShift: '5m'
+        filterByTraceID: true
+        filterBySpanID: false
+        tags:
+          - key: 'service.name'
+            value: 'service_name'
       # Render the service graph (from the Tempo metrics-generator) via Prometheus.
       serviceMap:
         datasourceUid: prometheus

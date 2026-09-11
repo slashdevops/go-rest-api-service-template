@@ -42,7 +42,7 @@ func newRolesTestHandler(t *testing.T, svc *mocks.MockRoles) *RolesHandler {
 	conf.TraceExporter.Value = config.ExporterNoop
 	conf.MetricExporter.Value = config.ExporterNoop
 
-	ot, err := o11y.New(t.Context(), conf)
+	ot, err := o11y.New(t.Context(), conf, config.NewLogConfig())
 	if err != nil {
 		t.Fatalf("o11y.New: %v", err)
 	}
