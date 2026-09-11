@@ -245,6 +245,9 @@ make dev-certs         # JWT pair, AES key, dev TLS CA and server pair under cer
                        # invalidates every token, a new AES key every stored secret)
 make start-dev-env     # Postgres, Valkey, Prometheus, Grafana, Tempo, Loki, Mailpit.
                        # DESTROYS the database — it is how a migration change is picked up
+make dev-env-clock-sync # AFTER THE LAPTOP SLEEPS, before air or an integration run: every
+                       # backend lives in the podman VM and its clock freezes during sleep;
+                       # Loki and Prometheus then refuse everything as "from the future"
 make stop-dev-env      # stop, keep volumes
 make rm-dev-env        # remove entirely
 air                    # build + run with live reload (flags from .air.toml)

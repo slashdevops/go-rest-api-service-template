@@ -107,6 +107,37 @@ once: it pulled `gobwas/glob` past what OPA supports and nothing compiled.
 run `for t in unit integration eval; do go vet -tags=$t ./... ; done` after any
 dependency change.
 
+## After the laptop sleeps: `make dev-env-clock-sync`
+
+Every backend in the dev stack — Postgres, Valkey, Prometheus, Loki, Tempo —
+runs inside the podman virtual machine, and **the VM's clock does not move
+while the host is asleep.** Close the lid for an afternoon and the VM wakes up
+that far behind. chrony in the VM does correct it, but only at its next NTP
+poll, which after a resume can be many minutes away.
+
+Until then, everything the service sends is stamped with the host's clock and
+judged by the VM's:
+
+| Backend | What it does with data from "the future" |
+| --- | --- |
+| Loki | refuses it: `entry has timestamp too new` — now tolerated up to 24h by `creation_grace_period` |
+| Prometheus | refuses it: `out of bounds: timestamp is too far in the future` — **no setting changes this**; the samples are gone |
+| Postgres | `NOW()` is wrong by the skew, so anything the service or the integration tests compare against `time.Now()` — token lifetimes, rotation grace, throttle windows — misbehaves |
+| Grafana | asks each backend for "the last hour" in *browser* time, which for Loki is entirely in its future: panels come back empty even for data it holds |
+
+Measured in the core service: a VM 1h50m behind refused an entire integration
+run — 261 log entries and five minutes of metrics — and the only symptoms were
+empty dashboards and a test failure that could not be reproduced once the
+clock had caught up. This stack is the same pod, so it fails the same way.
+
+```bash
+make dev-env-clock-check   # reports the skew; non-zero exit when it is over 5s
+make dev-env-clock-sync    # steps the VM's clock to the host's, then re-checks
+```
+
+`start-dev-env` runs the sync itself, so a fresh stack always starts in step.
+Run it by hand after a sleep — before `air`, and before any integration run.
+
 ## Where the three signals go
 
 Each signal has its own exporter setting, and each can be off independently.
