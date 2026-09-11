@@ -151,6 +151,68 @@ func TestLoggerConsumersAreWiredAfterTelemetry(t *testing.T) {
 	}
 }
 
+// The standard sink must carry the trace too, or the correlation exists in
+// Loki and not in `kubectl logs` -- which is where an operator looks first,
+// and the only place that works before a log store exists.
+func TestStdoutRecordsCarryTheTrace(t *testing.T) {
+	var out bytes.Buffer
+
+	handler := &traceAttrsHandler{Handler: slog.NewJSONHandler(&out, nil)}
+	logger := slog.New(handler)
+
+	tp := sdkTrace.NewTracerProvider()
+	t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+
+	ctx, span := tp.Tracer("test").Start(t.Context(), "op")
+	logger.InfoContext(ctx, "inside a span")
+	span.End()
+
+	logger.InfoContext(t.Context(), "outside any span")
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want 2:\n%s", len(lines), out.String())
+	}
+
+	wantTrace := span.SpanContext().TraceID().String()
+	if !strings.Contains(lines[0], wantTrace) {
+		t.Errorf("the record written inside a span has no trace id:\n%s", lines[0])
+	}
+
+	if !strings.Contains(lines[0], `"span_id"`) {
+		t.Errorf("the record written inside a span has no span id:\n%s", lines[0])
+	}
+
+	// A line with no span must not gain an invalid, all-zero id: that reads as
+	// a real trace and links to nothing.
+	if strings.Contains(lines[1], "trace_id") {
+		t.Errorf("a record written outside any span gained a trace id:\n%s", lines[1])
+	}
+}
+
+// The cache client and the outbound HTTP client both capture
+// slog.Default().With(...) at wiring time. If With dropped the wrapper their
+// records would silently lose their trace ids, which is exactly the kind of
+// failure nothing else would catch.
+func TestTraceAttrsSurviveWith(t *testing.T) {
+	var out bytes.Buffer
+
+	logger := slog.New(&traceAttrsHandler{Handler: slog.NewJSONHandler(&out, nil)}).
+		With("component", "cache").
+		WithGroup("detail")
+
+	tp := sdkTrace.NewTracerProvider()
+	t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+
+	ctx, span := tp.Tracer("test").Start(t.Context(), "op")
+	logger.InfoContext(ctx, "a derived logger still correlates")
+	span.End()
+
+	if !strings.Contains(out.String(), span.SpanContext().TraceID().String()) {
+		t.Errorf("the trace id was lost by With/WithGroup:\n%s", out.String())
+	}
+}
+
 // The operation reaches every log record without any call site saying so.
 //
 // app_layer, app_domain and app_action are on the span and the metric. On a log
