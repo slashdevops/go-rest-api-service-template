@@ -544,7 +544,7 @@ func (ref *AuthnHandler) logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.DebugContext(r.Context(), "user logged out", "userID", userID)
+	slog.DebugContext(r.Context(), "user logged out", "user_id", userID)
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, domain.AuthnUserLoggedOutSuccessfully)
 

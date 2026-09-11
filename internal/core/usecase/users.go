@@ -229,7 +229,7 @@ func (ref *UsersService) GetByEmail(ctx context.Context, email string) (*domain.
 	}
 
 	if ref.cacheService == nil {
-		slog.DebugContext(ctx, "usecase.Users.GetByEmail", "cache", "disabled")
+		slog.DebugContext(ctx, "cache lookup", "cache", "disabled")
 
 		// Through the same fetcher, so the value a caller receives does not
 		// depend on whether caching happens to be enabled.
@@ -243,7 +243,7 @@ func (ref *UsersService) GetByEmail(ctx context.Context, email string) (*domain.
 			ID:   email,
 		}
 
-		slog.DebugContext(ctx, "usecase.Users.GetByEmail", "cache", "enabled", "user_email", email)
+		slog.DebugContext(ctx, "cache lookup", "cache", "enabled")
 		out, err = cache.GetTyped[*domain.User](ctx, ref.cacheService, cacheKey, userFetcher)
 		if err != nil {
 			return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
@@ -487,10 +487,10 @@ func (ref *UsersService) LinkRoles(ctx context.Context, input *domain.LinkRolesT
 		}
 
 		for _, cacheKey := range cacheKeys {
-			slog.DebugContext(ctx, "usecase.Users.LinkRoles", "what", "invalidate cache", "cache_type", cacheKey.Type, "id", cacheKey.ID)
+			slog.DebugContext(ctx, "usecase.Users.LinkRoles", "what", "invalidate cache", "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-				slog.WarnContext(ctx, "usecase.Users.LinkRoles", "what", "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "id", cacheKey.ID)
+				slog.WarnContext(ctx, "usecase.Users.LinkRoles", "what", "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 			}
 		}
 	}
@@ -542,10 +542,10 @@ func (ref *UsersService) UnlinkRoles(ctx context.Context, input *domain.UnlinkRo
 		}
 
 		for _, cacheKey := range cacheKeys {
-			slog.DebugContext(ctx, "usecase.Users.UnlinkRoles", "what", "invalidate cache", "cache_type", cacheKey.Type, "id", cacheKey.ID)
+			slog.DebugContext(ctx, "usecase.Users.UnlinkRoles", "what", "invalidate cache", "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-				slog.WarnContext(ctx, "usecase.Users.UnlinkRoles", "what", "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "id", cacheKey.ID)
+				slog.WarnContext(ctx, "usecase.Users.UnlinkRoles", "what", "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 			}
 		}
 	}
@@ -588,10 +588,10 @@ func (ref *UsersService) LinkProjects(ctx context.Context, input *domain.LinkPro
 		}
 
 		for _, cacheKey := range cacheKeys {
-			slog.DebugContext(ctx, "usecase.Users.LinkProjects", "what", "invalidate cache", "cache_type", cacheKey.Type, "id", cacheKey.ID)
+			slog.DebugContext(ctx, "usecase.Users.LinkProjects", "what", "invalidate cache", "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-				slog.WarnContext(ctx, "usecase.Users.LinkProjects", "what", "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "id", cacheKey.ID)
+				slog.WarnContext(ctx, "usecase.Users.LinkProjects", "what", "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 			}
 		}
 	}
@@ -634,10 +634,10 @@ func (ref *UsersService) UnlinkProjects(ctx context.Context, input *domain.Unlin
 		}
 
 		for _, cacheKey := range cacheKeys {
-			slog.DebugContext(ctx, "usecase.Users.UnlinkProjects", "what", "invalidate cache", "cache_type", cacheKey.Type, "id", cacheKey.ID)
+			slog.DebugContext(ctx, "usecase.Users.UnlinkProjects", "what", "invalidate cache", "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-				slog.WarnContext(ctx, "usecase.Users.UnlinkProjects", "what", "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "id", cacheKey.ID)
+				slog.WarnContext(ctx, "usecase.Users.UnlinkProjects", "what", "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 			}
 		}
 	}

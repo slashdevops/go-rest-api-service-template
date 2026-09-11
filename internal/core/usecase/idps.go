@@ -298,7 +298,7 @@ func (ref *IDPsService) Create(ctx context.Context, input *domain.CreateIDPInput
 	if ref.cacheService != nil {
 		// Only the collection: this IdP has no cache entry of its own yet, and
 		// nothing can be depending on an id that did not exist a moment ago.
-		slog.DebugContext(ctx, "usecase.IDPs.Create", "what", "invalidate cache", "id", idpCollection().String())
+		slog.DebugContext(ctx, "usecase.IDPs.Create", "what", "invalidate cache", "cache_key", idpCollection().String())
 
 		if err := ref.cacheService.Invalidate(ctx, idpCollection()); err != nil {
 			slog.WarnContext(ctx, "usecase.IDPs.Create", "what", "failed to invalidate cache",

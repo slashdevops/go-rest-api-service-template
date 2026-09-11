@@ -382,9 +382,9 @@ func (a *App) initAuthServices(
 	// that never actually got retired.
 	if verifyKeyIDs := tokenSigner.VerifyKeyIDs(); len(verifyKeyIDs) > 1 {
 		slog.Warn("more than one JWT verification key is trusted; a signing key rotation is in progress and should be completed",
-			"signingKeyID", tokenSigner.SigningKeyID(), "verifyKeyIDs", verifyKeyIDs)
+			"signing_key_id", tokenSigner.SigningKeyID(), "verify_key_ids", verifyKeyIDs)
 	} else {
-		slog.Info("JWT signing key loaded", "signingKeyID", tokenSigner.SigningKeyID())
+		slog.Info("JWT signing key loaded", "signing_key_id", tokenSigner.SigningKeyID())
 	}
 
 	// Held for the HTTP middleware, which verifies through this same signer.
@@ -484,7 +484,7 @@ func (a *App) initAuthServices(
 			"grace", a.configs.Authn.RefreshTokenRotationGrace.Value)
 	} else {
 		slog.Warn("refresh token rotation disabled; a stolen refresh token stays usable for its whole life and its reuse cannot be detected",
-			"refreshTokenLifetime", "a runtime setting: GET /auth/token_lifetimes")
+			"refresh_token_lifetime", "a runtime setting: GET /auth/token_lifetimes")
 	}
 
 	// Before the authn service, which takes it as a dependency: a logout has to

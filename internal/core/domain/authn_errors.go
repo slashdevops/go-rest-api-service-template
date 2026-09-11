@@ -76,7 +76,7 @@ func (e *UserAlreadyVerifiedError) Error() string {
 		base.Value = e.Email
 	}
 	if e.UserID != "" {
-		base.Field = "userID"
+		base.Field = "user_id"
 		base.Value = e.UserID
 	}
 	if e.Message != "" {

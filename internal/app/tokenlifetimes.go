@@ -103,8 +103,11 @@ func (a *App) startTokenLifetimesMirror(ctx context.Context) error {
 	current := a.services.TokenLifetimesMirror.Current()
 
 	slog.Info("token lifetimes loaded",
-		"access_token", current.AccessTokenDuration,
-		"refresh_token", current.RefreshTokenDuration,
+		// Named for what they hold. These are LIFETIMES, and a key called
+		// access_token whose value is "5m" is confusing on its own terms and
+		// makes any search for a leaked token return this line.
+		"access_token_lifetime", current.AccessTokenDuration,
+		"refresh_token_lifetime", current.RefreshTokenDuration,
 		"reload_interval", a.configs.Authn.TokenLifetimesReloadInterval.Value,
 		"change_signal", a.tokenLifetimesNotifier != nil,
 		"edit", "PUT /auth/token_lifetimes",

@@ -45,8 +45,9 @@ func (a *App) checkSeededAdmin(ctx context.Context) error {
 	}
 
 	if a.configs.Authn.SeedAdminPasswordAllowed.Value {
-		slog.Warn("the seeded administrator still has the seeded password; authn.seed.admin.password.allowed keeps the service running. Never outside development",
-			"email", seededAdminEmail)
+		// The address is not logged: the message already says which account,
+		// and an "email" key is the thing a leak review greps for.
+		slog.Warn("the seeded administrator still has the seeded password; authn.seed.admin.password.allowed keeps the service running. Never outside development")
 
 		return nil
 	}

@@ -209,7 +209,7 @@ func (ref *ResourcesLimitsService) CheckUsage(ctx context.Context, scope domain.
 		return nil, err
 	}
 
-	slog.DebugContext(ctx, "usecase.ResourcesLimits.CheckUsage", "scopeType", scope.Type, "scopeID", scope.ID, "resourceType", resourceType, "usage", check.Usage, "softLimit", check.SoftLimit, "hardLimit", check.HardLimit)
+	slog.DebugContext(ctx, "usecase.ResourcesLimits.CheckUsage", "scope_type", scope.Type, "scope_id", scope.ID, "resource_type", resourceType, "usage", check.Usage, "soft_limit", check.SoftLimit, "hard_limit", check.HardLimit)
 
 	// Verify whenever a counter exists, not merely when it is above zero. The
 	// old `Usage > 0` condition skipped verification for exactly the value an
@@ -376,7 +376,7 @@ func (ref *ResourcesLimitsService) ReserveUsage(ctx context.Context, scope domai
 	}
 
 	slog.DebugContext(ctx, "usecase.ResourcesLimits.ReserveUsage",
-		"scopeType", scope.Type, "scopeID", scope.ID, "resourceType", resourceType, "usage", newUsage)
+		"scope_type", scope.Type, "scope_id", scope.ID, "resource_type", resourceType, "usage", newUsage)
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "usecase.ResourcesLimits.ReserveUsage")
 

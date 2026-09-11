@@ -180,7 +180,7 @@ func (ref *RolesService) UpdateByID(ctx context.Context, input *domain.UpdateRol
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Roles.UpdateByID", "what", "removing cache", "id", fmt.Sprintf("role:%s", input.ID.String()))
+		slog.DebugContext(ctx, "usecase.Roles.UpdateByID", "what", "removing cache", "cache_key", fmt.Sprintf("role:%s", input.ID.String()))
 
 		cacheKey := cache.Identifier{
 			Type: "role",
@@ -218,7 +218,7 @@ func (ref *RolesService) DeleteByID(ctx context.Context, input *domain.DeleteRol
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Roles.DeleteByID", "what", "removing cache", "id", fmt.Sprintf("role:%s", input.ID.String()))
+		slog.DebugContext(ctx, "usecase.Roles.DeleteByID", "what", "removing cache", "cache_key", fmt.Sprintf("role:%s", input.ID.String()))
 
 		cacheKey := cache.Identifier{
 			Type: "role",
@@ -289,7 +289,7 @@ func (ref *RolesService) LinkUsers(ctx context.Context, input *domain.LinkUsersT
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Roles.LinkUsers", "what", "removing cache", "id", fmt.Sprintf("role:%s", input.RoleID.String()))
+		slog.DebugContext(ctx, "usecase.Roles.LinkUsers", "what", "removing cache", "cache_key", fmt.Sprintf("role:%s", input.RoleID.String()))
 
 		cacheKeys := []cache.Identifier{
 			{
@@ -311,7 +311,7 @@ func (ref *RolesService) LinkUsers(ctx context.Context, input *domain.LinkUsersT
 		}
 
 		for _, cacheKey := range cacheKeys {
-			slog.DebugContext(ctx, "usecase.Roles.LinkUsers", "what", "removing cache", "id", cacheKey.String())
+			slog.DebugContext(ctx, "usecase.Roles.LinkUsers", "what", "removing cache", "cache_key", cacheKey.String())
 
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
 				slog.WarnContext(ctx, "usecase.Roles.LinkUsers", "what", "failed to invalidate cache", slog.Any("error", err), "role_id", input.RoleID.String())
@@ -348,7 +348,7 @@ func (ref *RolesService) UnlinkUsers(ctx context.Context, input *domain.UnlinkUs
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Roles.UnlinkUsers", "what", "removing cache", "id", fmt.Sprintf("role:%s", input.RoleID.String()))
+		slog.DebugContext(ctx, "usecase.Roles.UnlinkUsers", "what", "removing cache", "cache_key", fmt.Sprintf("role:%s", input.RoleID.String()))
 
 		cacheKeys := []cache.Identifier{
 			{
@@ -369,10 +369,10 @@ func (ref *RolesService) UnlinkUsers(ctx context.Context, input *domain.UnlinkUs
 		}
 
 		for _, cacheKey := range cacheKeys {
-			slog.DebugContext(ctx, "usecase.Roles.UnlinkUsers", "what", "removing cache", "id", cacheKey.String())
+			slog.DebugContext(ctx, "usecase.Roles.UnlinkUsers", "what", "removing cache", "cache_key", cacheKey.String())
 
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-				slog.WarnContext(ctx, "usecase.Roles.UnlinkUsers", "what", "failed to invalidate cache", slog.Any("error", err), "id", cacheKey.String())
+				slog.WarnContext(ctx, "usecase.Roles.UnlinkUsers", "what", "failed to invalidate cache", slog.Any("error", err), "cache_key", cacheKey.String())
 			}
 		}
 	}
@@ -409,7 +409,7 @@ func (ref *RolesService) LinkPolicies(ctx context.Context, input *domain.LinkPol
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Roles.LinkPolicies", "what", "removing cache", "id", fmt.Sprintf("role:%s", input.RoleID.String()))
+		slog.DebugContext(ctx, "usecase.Roles.LinkPolicies", "what", "removing cache", "cache_key", fmt.Sprintf("role:%s", input.RoleID.String()))
 
 		cacheKey := cache.Identifier{
 			Type: "role",
@@ -421,7 +421,7 @@ func (ref *RolesService) LinkPolicies(ctx context.Context, input *domain.LinkPol
 		}
 
 		for _, policyID := range input.PolicyIDs {
-			slog.DebugContext(ctx, "usecase.Roles.LinkPolicies", "what", "removing cache", "id", fmt.Sprintf("policy:%s", policyID.String()))
+			slog.DebugContext(ctx, "usecase.Roles.LinkPolicies", "what", "removing cache", "cache_key", fmt.Sprintf("policy:%s", policyID.String()))
 
 			policyCacheKey := cache.Identifier{
 				Type: "policy",
@@ -462,7 +462,7 @@ func (ref *RolesService) UnlinkPolicies(ctx context.Context, input *domain.Unlin
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Roles.UnlinkPolicies", "what", "removing cache", "id", fmt.Sprintf("role:%s", input.RoleID.String()))
+		slog.DebugContext(ctx, "usecase.Roles.UnlinkPolicies", "what", "removing cache", "cache_key", fmt.Sprintf("role:%s", input.RoleID.String()))
 
 		cacheKey := cache.Identifier{
 			Type: "role",

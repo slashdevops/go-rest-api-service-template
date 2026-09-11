@@ -150,7 +150,7 @@ func (ref *ResourcesHandler) getByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Resources.getByID", "id", outResponse.ID.String())
+	slog.DebugContext(r.Context(), "handler.Resources.getByID", "resource_id", outResponse.ID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "Resources found",
 		attribute.String("resource.id", outResponse.ID.String()))
 }

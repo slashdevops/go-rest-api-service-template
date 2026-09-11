@@ -370,6 +370,35 @@ and why each matters:
 The response writer counts the bytes and returns an already-wrapped writer as
 it is, so `Tracing` and `Logging` share one wrapper instead of stacking two.
 
+## What the key rules caught
+
+The two rules above are tests rather than review habits because the failure
+they prevent is silent and permanent: nothing breaks, the line simply exists in
+a store that is retained and searchable by everyone who can read it. Each was
+written after finding real lines.
+
+**One SQL statement was logged at DEBUG, not TRACE.** 80 other SQL logs in the
+same package already used `cslog.Trace`; this one was the outlier, and being
+the outlier is why nobody noticed. DEBUG is above the export floor, so it
+shipped — and it is `repository.Users.Insert`, which interpolates its
+arguments: the user's e-mail address and their **bcrypt password hash**. The
+TRACE floor was doing its job; this call was simply on the wrong side of it.
+
+**Three WARN lines in the re-verification path carried the address** of every
+account that asked to be re-verified. They now log `user_id`, and the one case
+with no account to identify logs a reason instead.
+
+**Two keys were named for something other than what they held.**
+`"access_token"` and `"refresh_token"` on the startup line hold *durations*.
+Besides being confusing on their own terms, they make any search for a leaked
+token return that line. They are `access_token_lifetime` and
+`refresh_token_lifetime` now.
+
+**Twelve keys were camelCase**, including
+a whole sentence used as an attribute key
+(`"skipping languageID because it is the same as the embedding language"`, with
+the id as its value).
+
 ## Rules for writing a log line
 
 1. **Take `ctx`.** `slog.InfoContext(ctx, …)`, `cslog.Trace(ctx, …)`. The
@@ -379,14 +408,19 @@ it is, so `Tracing` and `Logging` share one wrapper instead of stacking two.
    `TestNoContextlessSlogInTheRequestPath` enforces it.
 2. **No e-mail, token, password, secret or prompt text above TRACE.** Log ids.
    TRACE is the level that may carry SQL and payloads, and TRACE is the level
-   that never leaves the process.
-3. **The message says what happened; the operation travels as attributes.**
+   that never leaves the process. `TestNoSensitiveKeysAboveTrace` enforces it
+   from a blocklist of keys; see above for what it caught.
+3. **Keys are lower_snake_case and entity-qualified**: `user_id`, not `userID`
+   or a bare `id`. `TestLogKeysAreSnakeCase` enforces the spelling. A store
+   holding both `userID` and `user_id` can be queried for neither — a filter on
+   one silently misses the other's lines, and nothing reports the miss.
+4. **The message says what happened; the operation travels as attributes.**
    `app.layer`, `app.domain` and `app.action` are flat attributes, never a
    `slog.Group`. Grouped, they reach a log store as `context_app_layer` — a
    name nobody guesses, and one that differs from the `app_layer` the metrics
    and the span carry, so the same fact could not be filtered the same way in
    all three.
-4. **`ExportErrors.Handle` never logs.**
+5. **`ExportErrors.Handle` never logs.**
 
 ## The dev stack
 
