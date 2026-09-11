@@ -258,3 +258,116 @@ func TestRequestLogSaysUnmatchedWhenNothingRouted(t *testing.T) {
 		t.Errorf("route = %q, want \"unmatched\"", got)
 	}
 }
+
+// The access log could not say who a request was from. The identity the
+// authentication middleware verifies lives on a request further DOWN the
+// chain, and a context never flows back up, so the line written above it could
+// not reach the value -- the same structural problem that kept the trace id
+// off the line.
+func TestTheAccessLogCarriesTheSubject(t *testing.T) {
+	tracer, _ := recorder(t)
+
+	captured := attrCapturingHandler{attrs: map[string]string{}}
+
+	previous := slog.Default()
+	slog.SetDefault(slog.New(captured))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	// Stands in for the authentication middleware: it learns the subject and
+	// records it on the way down.
+	authenticate := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			SetSubject(r.Context(), "019822af-b448-73fb-89a1-447e8f8d1cde", "access")
+			SetSubjectProject(r.Context(), "019822af-0000-7000-8000-000000000000", true)
+			next.ServeHTTP(w, r)
+		})
+	}
+
+	handler := RequestID(OtelTextMapPropagation(Tracing(tracer, nil)(
+		Logging(nil)(authenticate(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusOK)
+		}))))))
+
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/users", nil))
+
+	if got := captured.attrs["user_id"]; got != "019822af-b448-73fb-89a1-447e8f8d1cde" {
+		t.Errorf("user_id = %q, want the sub claim", got)
+	}
+
+	if got := captured.attrs["token_type"]; got != "access" {
+		t.Errorf("token_type = %q", got)
+	}
+
+	if got := captured.attrs["project_id"]; got != "019822af-0000-7000-8000-000000000000" {
+		t.Errorf("project_id = %q, want the tenant boundary", got)
+	}
+
+	if got := captured.attrs["project_admin"]; got != "true" {
+		t.Errorf("project_admin = %q, want true", got)
+	}
+}
+
+// An anonymous request contributes nothing, rather than a line padded with
+// empty strings that read as "the empty user".
+func TestAnAnonymousRequestAddsNoSubjectFields(t *testing.T) {
+	tracer, _ := recorder(t)
+
+	captured := attrCapturingHandler{attrs: map[string]string{}}
+
+	previous := slog.Default()
+	slog.SetDefault(slog.New(captured))
+	t.Cleanup(func() { slog.SetDefault(previous) })
+
+	chain(t, tracer, http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/version", nil))
+
+	for _, key := range []string{"user_id", "token_type", "project_id", "project_admin"} {
+		if _, present := captured.attrs[key]; present {
+			t.Errorf("an anonymous request should not carry %q, got %q", key, captured.attrs[key])
+		}
+	}
+}
+
+// The span wants the subject for the same reason the log line does: a trace
+// view that cannot say whose request it was sends the reader back to the logs
+// for something the span already knew.
+func TestTheServerSpanCarriesTheSubject(t *testing.T) {
+	tracer, sr := recorder(t)
+
+	authenticate := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			SetSubject(r.Context(), "019822af-b448-73fb-89a1-447e8f8d1cde", "access")
+			next.ServeHTTP(w, r)
+		})
+	}
+
+	handler := Tracing(tracer, nil)(Logging(nil)(authenticate(
+		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))))
+
+	handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/users", nil))
+
+	spans := sr.Ended()
+	if len(spans) != 1 {
+		t.Fatalf("got %d spans, want 1", len(spans))
+	}
+
+	var found bool
+
+	for _, kv := range spans[0].Attributes() {
+		if string(kv.Key) == "user.id" && kv.Value.Emit() == "019822af-b448-73fb-89a1-447e8f8d1cde" {
+			found = true
+		}
+	}
+
+	if !found {
+		t.Error("the server span does not carry user.id")
+	}
+}
+
+// SetSubject is called from middleware, which tests drive without the holder
+// above them. It must not panic there.
+func TestSetSubjectWithoutAHolderIsSafe(t *testing.T) {
+	SetSubject(context.Background(), "someone", "access")
+	SetSubjectProject(context.Background(), "a-project", true)
+}

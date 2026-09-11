@@ -77,6 +77,12 @@ func Tracing(tracer trace.Tracer, clientIP *ClientIPResolver) Middleware {
 				span.SetAttributes(attribute.String("request.id", id))
 			}
 
+			// Installed here, above everything that fills it: the
+			// authentication and membership middlewares write through the
+			// pointer as the chain descends, and Logging reads it on the way
+			// back out. See [WithSubject].
+			ctx = WithSubject(ctx)
+
 			wrapped := newWrappedResponseWriter(w)
 
 			routed := r.WithContext(ctx)
@@ -87,6 +93,20 @@ func Tracing(tracer trace.Tracer, clientIP *ClientIPResolver) Middleware {
 			if route := routed.Pattern; route != "" {
 				span.SetName(route)
 				span.SetAttributes(semconv.HTTPRoute(route))
+			}
+
+			// Who the request turned out to be from, now that the chain has
+			// decided. A trace view that cannot answer "whose request was
+			// this" sends the reader back to the logs for something the span
+			// already knew.
+			if subject := subjectFrom(ctx); subject != nil {
+				if subject.userID != "" {
+					span.SetAttributes(semconv.UserID(subject.userID))
+				}
+
+				if subject.projectID != "" {
+					span.SetAttributes(attribute.String("project.id", subject.projectID))
+				}
 			}
 
 			span.SetAttributes(

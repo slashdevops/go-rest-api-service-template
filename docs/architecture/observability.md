@@ -366,9 +366,35 @@ and why each matters:
 | `client_ip` | resolved through the trusted-proxy policy. `RemoteAddr` behind a proxy is the proxy, logged identically for every caller |
 | `bytes` | a slow endpoint returning a megabyte and a slow endpoint returning nothing are different problems a duration cannot tell apart |
 | `trace_id` | via the context — the point of all of the above |
+| `user_id`, `token_type` | "who was doing this" is the first question after "what failed" |
+| `project_id`, `project_admin` | the tenant boundary. A slow or failing project was invisible, because nothing on the line said which one |
 
 The response writer counts the bytes and returns an already-wrapped writer as
 it is, so `Tracing` and `Logging` share one wrapper instead of stacking two.
+
+### The subject reaches the line the same way the route does
+
+The identity cannot simply be read where the line is written. The
+authentication middleware puts the claims on a **new** request and passes it
+down; the access log runs above it, holds the request it passed down, and never
+gains that value — a context flows down and never back up. It is the same
+structural problem that kept the trace id off the line.
+
+So `Tracing` installs one pointer in the context, above everything that fills
+it. The authentication and membership middlewares write through that pointer as
+the chain descends; the access log and the server span read it on the way back
+out. It is the pattern `otelhttp` uses for its labeler, and for the same
+reason.
+
+Both the writes and the read happen on the request's own goroutine — the writes
+as the chain descends, the read after `next.ServeHTTP` has returned — so no lock
+is needed. Nothing outside the middleware package can reach the pointer, which
+is what keeps that true.
+
+**The address is never recorded, only the `sub` claim.** An id identifies the
+account for an operator without putting a person's e-mail in a retained,
+searchable store. An anonymous request contributes no subject fields at all,
+rather than a line padded with empty strings that read as "the empty user".
 
 ## What the key rules caught
 
@@ -398,6 +424,30 @@ token return that line. They are `access_token_lifetime` and
 a whole sentence used as an attribute key
 (`"skipping languageID because it is the same as the embedding language"`, with
 the id as its value).
+
+## `error_type`, and why the message is not a key
+
+`operation_failed` carries `error_type` as well as the message. Counting
+failures needs something that does not change when the wording does: the
+message is free text, it is often a wrapped vendor string, and a dependency
+bump rewrites it — at which point a panel counting "how many times did *this*
+failure happen" silently starts counting two things, or nothing.
+
+It reports the type at the **bottom** of the wrap chain, because that is where
+the cause is. `fmt.Errorf("selecting the user: %w", pgx.ErrNoRows)` is a
+`*fmt.wrapError` all the way up, so reporting the outermost type would give one
+value for every distinct failure in the service.
+
+It is deliberately **not** a metric attribute. The set of error types is
+bounded by the code rather than by traffic, but it is large, and the metric
+already carries `successful=false` with the layer, domain and action — which is
+the question a metric should answer. "Which error" is a log question, and the
+log line is joined to the metric by the trace id.
+
+That is also why the HTTP status is not on `operation_failed`. Putting it there
+would mean plumbing the response writer into `internal/core`, which is the one
+thing the hexagon forbids; and the access log already carries `status` and
+shares a trace id with the failure, so the two are one click apart.
 
 ## Rules for writing a log line
 

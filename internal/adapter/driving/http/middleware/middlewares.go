@@ -143,7 +143,15 @@ func Logging(clientIP *ClientIPResolver) Middleware {
 				route = "unmatched"
 			}
 
-			slog.InfoContext(r.Context(), "request",
+			// The subject, when the request had one. "Who was doing this" is
+			// the first question after "what failed", and the access log could
+			// not answer it: the identity the authentication middleware
+			// verified lives on a request further down the chain, so it is
+			// carried back through the holder [WithSubject] installed above.
+			//
+			// An anonymous request contributes nothing here rather than a set
+			// of empty strings that read as "the empty user".
+			args := []any{
 				"request_id", respond.RequestIDFrom(r.Context()),
 				"method", r.Method,
 				"path", r.URL.Path,
@@ -153,7 +161,10 @@ func Logging(clientIP *ClientIPResolver) Middleware {
 				"duration_ms", time.Since(start).Milliseconds(),
 				"bytes", wrapped.written,
 				"user_agent", r.UserAgent(),
-			)
+			}
+			args = append(args, subjectOf(r).logAttrs()...)
+
+			slog.InfoContext(r.Context(), "request", args...)
 		})
 	}
 }
@@ -443,6 +454,19 @@ func checkToken(
 			// must act on the one that was actually verified.
 			ctx := context.WithValue(r.Context(), JwtClaims, claims)
 			ctx = context.WithValue(ctx, JwtToken, token)
+
+			// Record who this is, for the access log and the server span. The
+			// context above flows DOWN only; the holder is how the identity
+			// reaches the log line written above this middleware.
+			//
+			// The sub claim is a uuid and the address is not recorded: an id
+			// identifies the account for an operator without putting a
+			// person's e-mail in a retained, searchable store.
+			if sub, isString := claims["sub"].(string); isString {
+				tokenType, _ := claims["token_type"].(string)
+				SetSubject(ctx, sub, tokenType)
+			}
+
 			r = r.WithContext(ctx)
 
 			next.ServeHTTP(w, r)
