@@ -100,6 +100,11 @@ GO_ARCH        ?= arm64 amd64
 GO_FILES       := $(shell go list ./... | grep -v mocks | grep -v docs)
 GO_GRAPH_FILE  := $(BUILD_DIR)/go-mod-graph.txt
 
+# Pinned, like every other image this repository runs: an unpinned image
+# changes its mind between runs and turns a green gate red with no commit in
+# between.
+LOKI_IMAGE           ?= docker.io/grafana/loki:3.7.7
+
 CONTAINER_NAMESPACE  ?= $(PROJECT_NAMESPACE)
 CONTAINER_IMAGE_NAME ?= $(PROJECT_NAME)
 # linux ONLY. The release binaries ship for darwin too (GO_OS above), but a
@@ -403,6 +408,11 @@ check-alerts: ## Validate and unit-test the Prometheus alert rules
 	$(call exec_cmd, $(CONTAINER_ENGINE) run --rm -v $(CURDIR)/dev-env/configuration/prometheus:/rules:ro -w /rules --entrypoint promtool docker.io/prom/prometheus:latest check rules alerts.yaml)
 	$(call exec_cmd, $(CONTAINER_ENGINE) run --rm -v $(CURDIR)/dev-env/configuration/prometheus:/rules:ro -w /rules --entrypoint promtool docker.io/prom/prometheus:latest test rules alerts_test.yaml)
 
+.PHONY: check-loki-config
+check-loki-config: ## Validate the dev Loki configuration
+	@printf "👉 Checking the Loki configuration...\n"
+	$(call exec_cmd, $(CONTAINER_ENGINE) run --rm -v $(CURDIR)/dev-env/configuration/loki:/cfg:ro $(LOKI_IMAGE) -config.file=/cfg/loki-local-config.yaml -verify-config)
+
 .PHONY: arch-test
 arch-test: ## Run the hexagonal architecture test (forbids infra imports under internal/core/...)
 	@printf "👉 Running architecture test (hexagonal invariant)...\n"
@@ -548,6 +558,7 @@ start-dev-env: stop-dev-env dev-certs install-air install-swag install-goose ## 
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/db-volume-host )
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/tempo-volume-host )
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/prometheus-volume-host )
+		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/loki-volume-host )
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/grafana-configuration )
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/grafana-ds )
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/grafana-dashboard-config )
@@ -555,6 +566,7 @@ start-dev-env: stop-dev-env dev-certs install-air install-swag install-goose ## 
 		$(call exec_cmd, mkdir -p $(HOME)/tmp/$(PROJECT_NAME)/dev-env)
 		$(call exec_cmd, chmod 777 $(HOME)/tmp/$(PROJECT_NAME)/tempo-volume-host )
 		$(call exec_cmd, chmod 777 $(HOME)/tmp/$(PROJECT_NAME)/prometheus-volume-host )
+		$(call exec_cmd, chmod 777 $(HOME)/tmp/$(PROJECT_NAME)/loki-volume-host )
 
 		$(call exec_cmd, cp ./dev-env/configuration/grafana/configuration/grafana.ini $(HOME)/tmp/$(PROJECT_NAME)/grafana-configuration/grafana.ini)
 		$(call exec_cmd, cp ./dev-env/configuration/grafana/datasource/grafana-ds.yaml $(HOME)/tmp/$(PROJECT_NAME)/grafana-ds/grafana-ds.yaml)
@@ -563,6 +575,7 @@ start-dev-env: stop-dev-env dev-certs install-air install-swag install-goose ## 
 		$(call exec_cmd, cp ./dev-env/configuration/prometheus/prometheus.yaml $(HOME)/tmp/$(PROJECT_NAME)/dev-env/prometheus.yaml )
 		$(call exec_cmd, cp ./dev-env/configuration/prometheus/alerts.yaml $(HOME)/tmp/$(PROJECT_NAME)/dev-env/alerts.yaml )
 		$(call exec_cmd, cp ./dev-env/configuration/tempo/tempo-local-config.yaml $(HOME)/tmp/$(PROJECT_NAME)/dev-env/tempo-local-config.yaml )
+		$(call exec_cmd, cp ./dev-env/configuration/loki/loki-local-config.yaml $(HOME)/tmp/$(PROJECT_NAME)/dev-env/loki-local-config.yaml )
 
 		$(call exec_cmd, podman play kube ./dev-env/provisioning/dev-service-pod.yaml )
 	@printf "👉 Development environment is up. Data lives under $(HOME)/tmp/$(PROJECT_NAME). Next: air\n"

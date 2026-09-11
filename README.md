@@ -139,11 +139,13 @@ resource limit, and an integration test. Copy it; see
   ordered (refresh strictly longer than access), mirrored per replica with a
   Valkey change signal, and applied to the next token issued.
 
-**🔭 Observability.** OpenTelemetry traces and metrics throughout, with a
+**🔭 Observability.** OpenTelemetry traces, metrics and logs throughout, with a
 `Metadata{Layer, Domain, Action}` convention so every span and metric is named
 consistently across handler, use-case and repository. Grafana, Tempo and
-Prometheus in the dev stack, six dashboards, and Prometheus alert rules with
-their own unit tests (`make check-alerts`).
+Prometheus and Loki in the dev stack, six dashboards, and Prometheus alert
+rules with their own unit tests (`make check-alerts`). Logs reach Loki over
+OTLP as a SECOND sink -- `log.output` keeps every record -- and TRACE never
+leaves the process.
 
 **🛡️ Operations.** Three health endpoints with distinct jobs (liveness, detailed
 readiness, a thin public verdict), [documented
@@ -223,6 +225,7 @@ make docs-api-resources # regenerate the authz resource rows for migration 00008
 | 📏 [Resource limits](./docs/architecture/resource-limits.md) | scopes, resolution, the signature |
 | 🗄️ [Caching](./docs/architecture/caching.md) | what is cached, and what must never be |
 | 🧬 [Database migrations](./docs/architecture/database-migrations.md) | the file set and the rules |
+| 🔭 [Observability](./docs/architecture/observability.md) | the three OpenTelemetry signals, why a log exporter adds a sink instead of replacing `log.output`, and why TRACE never leaves the process |
 | 🩺 [Health probes](./docs/architecture/health-probes.md) | which endpoint answers which question |
 | ⏱️ [HTTP timeouts](./docs/architecture/http-server-timeouts.md) | which bound covers which span |
 | 🧮 [Repository SQL rules](./docs/architecture/repository-sql.md) | placeholders, sanitised identifiers, allow-listed operators |

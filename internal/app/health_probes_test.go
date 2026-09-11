@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,39 @@ func testApp(t *testing.T) *App {
 			Mail:      config.NewMailConfig(),
 		},
 	}
+}
+
+// closedPort returns a port nothing is listening on: a listener is opened to
+// claim one and closed immediately, so the number is real and free.
+func closedPort(t *testing.T) int {
+	t.Helper()
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatalf("split: %v", err)
+	}
+
+	if err := listener.Close(); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+
+	return mustAtoi(t, port)
+}
+
+func mustAtoi(t *testing.T, s string) int {
+	t.Helper()
+
+	n, err := strconv.Atoi(s)
+	if err != nil {
+		t.Fatalf("atoi(%q): %v", s, err)
+	}
+
+	return n
 }
 
 func TestTimeCheckMeasuresEveryComponent(t *testing.T) {
@@ -344,5 +378,127 @@ func TestTelemetryHealthWhenNotInitialized(t *testing.T) {
 
 	if got.Status != ComponentStatusUnknown {
 		t.Errorf("status = %q, want unknown", got.Status)
+	}
+}
+
+// The log collector is a SECOND address: traces reach Tempo on 4318 and logs
+// reach Loki on 3100. A probe that only dials the trace endpoint reports a
+// healthy telemetry component while every log line is being dropped.
+func TestTelemetryHealthReportsAnUnreachableLogCollector(t *testing.T) {
+	a := testApp(t)
+	a.telemetry = &o11y.OpenTelemetry{Errors: &o11y.ExportErrors{}}
+
+	// Traces are off, so the only thing dialled is the log endpoint.
+	a.configs.Telemetry.TraceExporter.Value = config.ExporterNoop
+	a.configs.Telemetry.MetricExporter.Value = config.ExporterNoop
+	a.configs.Telemetry.LogExporter.Value = config.ExporterOTLPHTTP
+	a.configs.Telemetry.LogEndpoint.Value = "127.0.0.1"
+	a.configs.Telemetry.LogPort.Value = closedPort(t)
+
+	got := a.checkTelemetryHealth(context.Background())
+
+	if got.Status != ComponentStatusDegraded {
+		t.Errorf("status = %q, want degraded when the log collector refuses connections", got.Status)
+	}
+
+	if got.Details["log_collector"] == nil {
+		t.Error("the details must name the log collector that was dialled")
+	}
+
+	if got.ResponseTime == nil {
+		t.Error("the log dial is a real measurement and must be reported")
+	}
+}
+
+// A deployment with one OpenTelemetry Collector in front of both signals gives
+// the same address twice. Dialling it twice says nothing new and doubles what
+// the probe costs, so the second dial is skipped.
+func TestTelemetryHealthDialsOneAddressOnce(t *testing.T) {
+	a := testApp(t)
+	a.telemetry = &o11y.OpenTelemetry{Errors: &o11y.ExportErrors{}}
+
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+
+	host, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatalf("split: %v", err)
+	}
+
+	a.configs.Telemetry.TraceExporter.Value = config.ExporterOTLPHTTP
+	a.configs.Telemetry.TraceEndpoint.Value = host
+	a.configs.Telemetry.TracePort.Value = mustAtoi(t, port)
+	a.configs.Telemetry.LogExporter.Value = config.ExporterOTLPHTTP
+	a.configs.Telemetry.LogEndpoint.Value = host
+	a.configs.Telemetry.LogPort.Value = mustAtoi(t, port)
+
+	got := a.checkTelemetryHealth(context.Background())
+
+	if got.Status != ComponentStatusHealthy {
+		t.Errorf("status = %q, want healthy", got.Status)
+	}
+
+	if _, ok := got.Details["log_collector"]; ok {
+		t.Error("the log collector must not be reported separately when it is the same address as the trace collector")
+	}
+}
+
+// Logs default to noop, and on that setting the records still reach
+// log.output. The message has to say which signal is missing and must not
+// imply the lines are lost.
+func TestTelemetryHealthSaysLogsAreStdoutOnly(t *testing.T) {
+	a := testApp(t)
+	a.telemetry = &o11y.OpenTelemetry{Errors: &o11y.ExportErrors{}}
+	a.configs.Telemetry.TraceExporter.Value = "console"
+	a.configs.Telemetry.MetricExporter.Value = "console"
+	a.configs.Telemetry.LogExporter.Value = config.ExporterNoop
+
+	got := a.checkTelemetryHealth(context.Background())
+
+	if got.Status != ComponentStatusHealthy {
+		t.Errorf("status = %q, want healthy", got.Status)
+	}
+
+	if !strings.Contains(got.Message, "logs") {
+		t.Errorf("message = %q, want it to name logs as the signal that is not exported", got.Message)
+	}
+
+	if !strings.Contains(got.Message, "log.output") {
+		t.Errorf("message = %q, want it to say the records still reach log.output", got.Message)
+	}
+
+	if got.Details["log_exporter"] != config.ExporterNoop {
+		t.Errorf("log_exporter detail = %v, want %q", got.Details["log_exporter"], config.ExporterNoop)
+	}
+}
+
+// All three off is the only configuration that may be called disabled.
+func TestTelemetryHealthNeedsAllThreeNoopToSayDisabled(t *testing.T) {
+	a := testApp(t)
+	a.telemetry = &o11y.OpenTelemetry{Errors: &o11y.ExportErrors{}}
+	a.configs.Telemetry.TraceExporter.Value = config.ExporterNoop
+	a.configs.Telemetry.MetricExporter.Value = config.ExporterNoop
+	a.configs.Telemetry.LogExporter.Value = "console"
+
+	got := a.checkTelemetryHealth(context.Background())
+
+	if strings.Contains(got.Message, "disabled") {
+		t.Errorf("message = %q, must not say disabled while the log exporter is on", got.Message)
+	}
+}
+
+// The window has to cover the log pipeline too, or a failing log exporter
+// looks recovered while it is still failing.
+func TestTelemetryErrorWindowCoversTheLogBatch(t *testing.T) {
+	conf := config.NewOpenTelemetryConfig("test-app", "0.0.0-test")
+	conf.TraceExporterBatchTimeout.Value = time.Second
+	conf.MetricInterval.Value = time.Second
+	conf.LogExporterBatchTimeout.Value = 10 * time.Minute
+
+	if got := telemetryErrorWindow(conf); got != 20*time.Minute {
+		t.Errorf("telemetryErrorWindow = %v, want 20m: the window is twice the slowest pipeline", got)
 	}
 }

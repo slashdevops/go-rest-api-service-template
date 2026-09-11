@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"os"
 	"slices"
 	"strings"
@@ -51,6 +52,35 @@ func NewLogConfig() *LogConfig {
 		Output:    NewField("log.output", "LOG_OUTPUT", "Log Output", DefaultLogOutput),
 		Debug:     NewField("debug", "DEBUG", "Debug mode. Short hand for log.level=debug", DefaultLogDebug),
 		AddSource: NewField("log.add.source", "LOG_ADD_SOURCE", "Add source file and line number to log output", DefaultLogAddSource),
+	}
+}
+
+// SlogLevel is Level.Value as a [slog.Level].
+//
+// It is a method rather than a switch at the one place that builds the handler
+// because two places need the answer: the standard logger, and the minimum
+// severity the OpenTelemetry log pipeline enforces on its own exporter. A
+// second copy of the switch is a second place to forget a level.
+//
+// Call it AFTER Validate: that is where "ctrace" and "cfatal" are rewritten to
+// the level strings this recognises. An unrecognised value is Info, which is
+// what the handler did before this existed.
+func (c *LogConfig) SlogLevel() slog.Level {
+	switch c.Level.Value {
+	case "debug":
+		return slog.LevelDebug
+	case "info":
+		return slog.LevelInfo
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	case cslog.LogLevelTrace.String():
+		return cslog.LogLevelTrace
+	case cslog.LogLevelFatal.String():
+		return cslog.LogLevelFatal
+	default:
+		return slog.LevelInfo
 	}
 }
 

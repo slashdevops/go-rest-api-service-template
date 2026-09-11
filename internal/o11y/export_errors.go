@@ -1,10 +1,13 @@
 package o11y
 
 import (
+	"context"
+	"math"
 	"sync"
 	"time"
 
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/metric"
 )
 
 // ExportErrors summarises what the OpenTelemetry SDK could not send.
@@ -33,10 +36,18 @@ import (
 // telemetry is failing and roughly since when; the individual failures are in
 // the log.
 //
-// It also does not distinguish traces from metrics. The SDK's error handler is
-// global and its errors carry no signal identifying which pipeline raised them,
-// so splitting the count would mean inventing an attribution the SDK does not
-// provide.
+// It also does not distinguish traces from metrics from logs. The SDK's error
+// handler is global and its errors carry no signal identifying which pipeline
+// raised them, so splitting the count would mean inventing an attribution the
+// SDK does not provide.
+//
+// # It must never log
+//
+// Since the log pipeline exports through the same handler, a slog call here
+// would be a loop: the line is emitted, the exporter fails on it, the SDK calls
+// Handle, Handle logs again. It would spin exactly when telemetry is already
+// broken, and the first symptom would be a pegged CPU rather than a degraded
+// health check. TestExportErrorsHandleDoesNotLog pins it.
 type ExportErrors struct {
 	last    time.Time
 	lastErr string
@@ -93,6 +104,51 @@ func (ref *ExportErrors) Failing(window time.Duration) bool {
 	}
 
 	return time.Since(ref.last) < window
+}
+
+// RegisterMetrics publishes the export-failure count as a metric.
+//
+// # Why a metric for something the health check already reports
+//
+// /health/detailed is pulled by an operator or a probe; this is scraped, so it
+// can be alerted on and it has history -- "exports started failing at 14:02" is
+// a question the health endpoint cannot answer.
+//
+// It is genuinely useful in exactly one situation, and that situation is the
+// common one: the metric pipeline is fine and the LOG collector is down. The
+// counter then rises in Prometheus while every dashboard keeps working, which
+// is the only way that outage announces itself. When the metric pipeline is
+// what broke, this is as silent as everything else -- which is what the health
+// check and its TCP probe are for.
+//
+// An ObservableCounter over the existing count rather than a Counter
+// incremented in Handle: Handle runs on the exporter's goroutine while a batch
+// is failing and must stay cheap, and the SDK reads a callback on its own
+// schedule instead.
+func (ref *ExportErrors) RegisterMetrics(meter metric.Meter) error {
+	_, err := meter.Int64ObservableCounter(
+		"telemetry_export_errors",
+		metric.WithDescription("Exports the OpenTelemetry SDK could not deliver, across the trace, metric and log pipelines"),
+		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+			count, _, _ := ref.Snapshot()
+
+			// The SDK counts in uint64 and the instrument is int64. The
+			// conversion cannot overflow in practice -- it would take more
+			// failed batches than a process can produce in its lifetime -- and
+			// a saturating cast is still cheaper to read than a panic.
+			if count > uint64(math.MaxInt64) {
+				o.Observe(math.MaxInt64)
+
+				return nil
+			}
+
+			o.Observe(int64(count))
+
+			return nil
+		}),
+	)
+
+	return err
 }
 
 // SetGlobalErrorHandler installs ref as the process-wide OpenTelemetry error

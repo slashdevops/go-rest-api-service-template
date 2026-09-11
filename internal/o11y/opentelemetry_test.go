@@ -22,9 +22,14 @@ func TestNew(t *testing.T) {
 		MetricPort:                config.NewField("", "", "", 4318),
 		MetricExporter:            config.NewField("", "", "", "noop"),
 		MetricInterval:            config.NewField("", "", "", 10*time.Second),
+		LogEndpoint:               config.NewField("", "", "", "localhost"),
+		LogPort:                   config.NewField("", "", "", 3100),
+		LogExporter:               config.NewField("", "", "", "noop"),
+		LogPath:                   config.NewField("", "", "", "/otlp/v1/logs"),
+		LogExporterBatchTimeout:   config.NewField("", "", "", 5*time.Second),
 	}
 
-	ot, err := New(context.Background(), conf)
+	ot, err := New(context.Background(), conf, config.NewLogConfig())
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}
@@ -39,6 +44,10 @@ func TestNew(t *testing.T) {
 
 	if ot.Metrics == nil {
 		t.Fatal("expected non-nil Metrics")
+	}
+
+	if ot.Logs == nil {
+		t.Fatal("expected non-nil Logs")
 	}
 }
 
@@ -56,9 +65,14 @@ func TestOpenTelemetry_Start_and_Shutdown(t *testing.T) {
 		MetricPort:                config.NewField("", "", "", 4318),
 		MetricExporter:            config.NewField("", "", "", "noop"),
 		MetricInterval:            config.NewField("", "", "", 10*time.Second),
+		LogEndpoint:               config.NewField("", "", "", "localhost"),
+		LogPort:                   config.NewField("", "", "", 3100),
+		LogExporter:               config.NewField("", "", "", "noop"),
+		LogPath:                   config.NewField("", "", "", "/otlp/v1/logs"),
+		LogExporterBatchTimeout:   config.NewField("", "", "", 5*time.Second),
 	}
 
-	ot, err := New(context.Background(), conf)
+	ot, err := New(context.Background(), conf, config.NewLogConfig())
 	if err != nil {
 		t.Fatalf("New() failed: %v", err)
 	}

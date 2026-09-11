@@ -18,7 +18,7 @@ func (a *App) initTelemetry(ctx context.Context) error {
 	slog.Info("initializing telemetry")
 
 	// Create OpenTelemetry instance
-	a.telemetry, err = o11y.New(ctx, a.configs.Telemetry)
+	a.telemetry, err = o11y.New(ctx, a.configs.Telemetry, a.configs.Log)
 	if err != nil {
 		return fmt.Errorf("error creating OpenTelemetry: %w", err)
 	}
@@ -28,8 +28,49 @@ func (a *App) initTelemetry(ctx context.Context) error {
 		return fmt.Errorf("error starting telemetry: %w", err)
 	}
 
+	a.composeLogger()
+
 	slog.Info("telemetry started successfully")
 	return nil
+}
+
+// composeLogger adds the OpenTelemetry pipeline as a SECOND sink on the default
+// logger, keeping the first.
+//
+// # Why compose rather than replace
+//
+// Everything already written to log.output must keep being written there. The
+// lines that come before this point -- a rejected flag, an unreadable .env, a
+// deployment still running the seeded administrator's password -- are emitted
+// when no exporter exists, and a container platform that collects stdout has to
+// keep working when the log collector does not. Losing telemetry must cost
+// visibility in Grafana, never the local record.
+//
+// # Why it reads the handler off the default logger
+//
+// slog.Default() at this point is what setupLogger installed, with the
+// application and version attributes already attached to ITS handler. Taking
+// the handler back out and wrapping it means those two attributes stay on the
+// standard-logger side and are not repeated on every exported record, where the
+// same facts are resource attributes. It also means this works unchanged when
+// configuration was supplied rather than loaded -- a test that builds an App
+// with its own logger keeps it.
+//
+// # The ordering this depends on
+//
+// Anything that captures slog.Default() for its own use must be wired AFTER
+// this runs, or it keeps a logger that writes to one sink. initTelemetry is the
+// first phase of AppBuilder.Build for that reason, and
+// TestLoggerConsumersAreWiredAfterTelemetry fails if a later phase moves above
+// it.
+func (a *App) composeLogger() {
+	if a.telemetry == nil || a.telemetry.Logs == nil || a.telemetry.Logs.Handler == nil {
+		return
+	}
+
+	slog.SetDefault(slog.New(
+		slog.NewMultiHandler(slog.Default().Handler(), a.telemetry.Logs.Handler),
+	))
 }
 
 // startPprofServer starts the pprof server for debugging if enabled.
@@ -54,8 +95,7 @@ func (a *App) initTelemetry(ctx context.Context) error {
 // `-http.server.pprof.enabled=true`. It listens on its own port (6060), not the
 // API port, so nothing here is reachable from the public listener.
 func (a *App) startPprofServer() {
-	pprofAddr := fmt.Sprintf(
-		"%s:%d",
+	pprofAddr := fmt.Sprintf("%s:%d",
 		a.configs.HTTPServer.PprofAddress.Value,
 		a.configs.HTTPServer.PprofPort.Value,
 	)

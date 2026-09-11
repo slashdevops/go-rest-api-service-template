@@ -27,7 +27,7 @@ What it ships:
 | **Authentication** | JWT access + refresh with rotation, revocation denylist, login throttle, OAuth/OIDC IdPs |
 | **Authorization** | RBAC through Open Policy Agent, with the resource catalogue generated from the OpenAPI spec |
 | **Limits** | Database-backed rate limiting, and soft/hard resource limits resolved by scope |
-| **Observability** | OpenTelemetry traces and metrics, Grafana/Tempo/Prometheus dev stack, alert rules with tests |
+| **Observability** | OpenTelemetry traces, metrics and logs, Grafana/Tempo/Prometheus/Loki dev stack, alert rules with tests |
 
 ### `products` is the worked example
 
@@ -72,7 +72,7 @@ Two things about it are worth reading before you copy it:
 - Containers: `podman`
 - API docs: Swagger/OpenAPI generated from handler annotations
 - IDs: UUID v7 everywhere — `go run cmd/uuidgen/main.go -n 1 -v 7` to mint one
-- Observability: OpenTelemetry, Prometheus, Grafana, Tempo (dev stack)
+- Observability: OpenTelemetry, Prometheus, Grafana, Tempo, Loki (dev stack)
 - Tests: `testing` + Testify; `go test -race`
 
 ## Project structure
@@ -161,6 +161,16 @@ differences, is in [`docs/development/go-127-baseline.md`](../docs/development/g
 Why each rule exists: [`docs/development/configuration-rules.md`](../docs/development/configuration-rules.md).
 The operator's view: [`docs/operations/running-the-service.md`](../docs/operations/running-the-service.md).
 
+## Observability
+
+Three OpenTelemetry signals. Traces and metrics go to Tempo and Prometheus;
+logs are the one with a second sink and one hard rule.
+
+- **A log exporter ADDS a sink, it never replaces `log.output`.** `slog` stays the API; `App.composeLogger` wraps the standard handler and the OTEL one in a `slog.NewMultiHandler`, so a collector that is down costs Grafana and not the local record. `opentelemetry.log.exporter` is `noop` (stdout only, the default and the pre-existing behaviour), `console` (see the OTLP record shape) or `otlp-http` (Loki, or a Collector — `opentelemetry.log.path` is why, Loki serves `/otlp/v1/logs` and a Collector `/v1/logs`).
+- **TRACE never leaves the process.** `o11y.ExportedLogFloor` raises the exporter's minimum to `DEBUG` whatever `log.level` says, because `ctrace` logs SQL with its arguments and outbound LLM bodies. It is a constant, not a flag: a flag can be raised, in production, by a typo. So `-log.level=ctrace` is unchanged on stdout and exports `DEBUG` and above.
+- **`application`/`version` belong to the standard handler only**; on the exported side they are resource attributes carried once per batch. **Anything capturing `slog.Default()` must be wired after `initTelemetry`** — `TestLoggerConsumersAreWiredAfterTelemetry` pins the order.
+→ [observability.md](../docs/architecture/observability.md)
+
 ## Security and authentication invariants
 
 Each line is a rule that was broken once and measured. The linked doc has the
@@ -224,7 +234,7 @@ mechanism, the diagram and the measurement.
 make dev-certs         # JWT pair, AES key, dev TLS CA and server pair under certs/;
                        # creates what is missing, NEVER overwrites (a new jwt.key
                        # invalidates every token, a new AES key every stored secret)
-make start-dev-env     # Postgres, Valkey, Prometheus, Grafana, Tempo, Mailpit.
+make start-dev-env     # Postgres, Valkey, Prometheus, Grafana, Tempo, Loki, Mailpit.
                        # DESTROYS the database — it is how a migration change is picked up
 make stop-dev-env      # stop, keep volumes
 make rm-dev-env        # remove entirely
@@ -285,6 +295,7 @@ load-bearing. → [`docs/development/ci-gates.md`](../docs/development/ci-gates.
 - [`docs/getting-started.md`](../docs/getting-started.md) — from an empty machine to a logged-in request
 - [`docs/architecture/README.md`](../docs/architecture/README.md) — hexagon overview, request flow, index of every design doc
 - [`docs/architecture/adding-an-entity.md`](../docs/architecture/adding-an-entity.md) — the recipe `products` follows
+- [`docs/architecture/observability.md`](../docs/architecture/observability.md) — the three signals, the log pipeline, and the TRACE floor
 - [`docs/architecture/security.md`](../docs/architecture/security.md), [`authentication.md`](../docs/architecture/authentication.md), [`authorization.md`](../docs/architecture/authorization.md), [`identity-providers.md`](../docs/architecture/identity-providers.md), [`token-lifetimes.md`](../docs/architecture/token-lifetimes.md), [`rate-limiting.md`](../docs/architecture/rate-limiting.md), [`resource-limits.md`](../docs/architecture/resource-limits.md), [`http-server-timeouts.md`](../docs/architecture/http-server-timeouts.md), [`caching.md`](../docs/architecture/caching.md), [`health-probes.md`](../docs/architecture/health-probes.md), [`database-migrations.md`](../docs/architecture/database-migrations.md), [`repository-sql.md`](../docs/architecture/repository-sql.md)
 - [`docs/development/`](../docs/development/) — Go 1.27 baseline, configuration rules, documentation and Swagger rules, CI gates, the dev stack in detail
 - [`docs/operations/running-the-service.md`](../docs/operations/running-the-service.md) — the pre-flight checklist
