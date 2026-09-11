@@ -143,7 +143,7 @@ func (ref *RolesRepository) Insert(ctx context.Context, input *domain.InsertRole
         VALUES ($1, $2, $3);
     `
 
-	cslog.Trace(ctx, "repository.Roles.Insert", "query", prettyPrint(query, input.ID.String(), input.Name, input.Description))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, input.ID.String(), input.Name, input.Description))
 
 	_, err := ref.db.Exec(ctx, query,
 		input.ID.String(),
@@ -222,7 +222,7 @@ func (ref *RolesRepository) UpdateByID(ctx context.Context, input *domain.Update
         WHERE id = $1;
         `
 
-	cslog.Trace(ctx, "repository.Roles.UpdateByID", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	result, err := ref.db.Exec(ctx, query, args...)
 	if err != nil {
@@ -261,7 +261,7 @@ func (ref *RolesRepository) DeleteByID(ctx context.Context, input *domain.Delete
         DELETE FROM roles WHERE id = $1;
     `
 
-	cslog.Trace(ctx, "repository.Roles.Delete", "query", prettyPrint(queryString))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(queryString))
 
 	result, err := ref.db.Exec(ctx, queryString, input.ID.String())
 	if err != nil {
@@ -272,7 +272,7 @@ func (ref *RolesRepository) DeleteByID(ctx context.Context, input *domain.Delete
 		// grateful return user was deleted, security reason, but log and record error
 		errorType := &domain.RoleNotFoundError{RoleID: input.ID.String()}
 		e := o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
-		slog.ErrorContext(ctx, "repository.Roles.DeleteByID", "error", e, "role.id", input.ID.String())
+		slog.ErrorContext(ctx, "operation failed", "error", e, "role.id", input.ID.String())
 
 		return nil
 	}
@@ -310,7 +310,7 @@ func (ref *RolesRepository) SelectByID(ctx context.Context, id uuid.UUID) (*doma
         GROUP BY rls.id;
     `
 
-	cslog.Trace(ctx, "repository.Roles.SelectByID", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	row := ref.db.QueryRow(ctx, query, id.String())
 
@@ -423,7 +423,7 @@ func (ref *RolesRepository) Select(ctx context.Context, input *domain.SelectRole
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.Roles.Select", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	// execute the query
 	rows, err := ref.db.Query(ctx, query)
@@ -620,7 +620,7 @@ func (ref *RolesRepository) SelectByPolicyID(ctx context.Context, policyID uuid.
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.Roles.SelectByPolicyID", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	// execute the query
 	rows, err := ref.db.Query(ctx, query, policyID.String())
@@ -654,7 +654,7 @@ func (ref *RolesRepository) SelectByPolicyID(ctx context.Context, policyID uuid.
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.WarnContext(ctx, "repository.Roles.SelectByPolicyID", "what", "no roles found")
+		slog.WarnContext(ctx, "no roles found")
 		return &domain.SelectRolesOutput{
 			Items:     make([]domain.Role, 0),
 			Paginator: domain.Paginator{},
@@ -819,7 +819,7 @@ func (ref *RolesRepository) SelectByUserID(ctx context.Context, userID uuid.UUID
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.Roles.SelectByUserID", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	// execute the query
 	rows, err := ref.db.Query(ctx, query, userID.String())
@@ -853,7 +853,7 @@ func (ref *RolesRepository) SelectByUserID(ctx context.Context, userID uuid.UUID
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.WarnContext(ctx, "repository.Roles.SelectByUserID", "what", "no roles found")
+		slog.WarnContext(ctx, "no roles found")
 		return &domain.SelectRolesOutput{
 			Items:     make([]domain.Role, 0),
 			Paginator: domain.Paginator{},
@@ -953,7 +953,7 @@ func (ref *RolesRepository) LinkUsers(ctx context.Context, input *domain.LinkUse
         DO UPDATE SET updated_at = NOW();
     `
 
-	cslog.Trace(ctx, "repository.Roles.LinkUsers", "query", prettyPrint(query, roleIDs, userIDs))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, roleIDs, userIDs))
 
 	// Pass the arrays as parameters
 	_, err := ref.db.Exec(ctx, query, roleIDs, userIDs)
@@ -995,7 +995,7 @@ func (ref *RolesRepository) UnlinkUsers(ctx context.Context, input *domain.Unlin
         WHERE roles_id = $1 AND users_id IN (SELECT unnest($2::uuid[]));
     `
 
-	cslog.Trace(ctx, "repository.Roles.UnlinkUsers", "query", prettyPrint(query, input.RoleID.String(), userIDs))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, input.RoleID.String(), userIDs))
 
 	// Execute the query with parameters.
 	// Ensure input.RoleID is converted to its string representation if it's a UUID type.
@@ -1041,7 +1041,7 @@ func (ref *RolesRepository) LinkPolicies(ctx context.Context, input *domain.Link
         DO UPDATE SET updated_at = NOW();
     `
 
-	cslog.Trace(ctx, "repository.Roles.LinkPolicies", "query", prettyPrint(query, roleIDs, policyIDs))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, roleIDs, policyIDs))
 
 	// Pass the arrays as parameters
 	_, err := ref.db.Exec(ctx, query, roleIDs, policyIDs)
@@ -1083,7 +1083,7 @@ func (ref *RolesRepository) UnlinkPolicies(ctx context.Context, input *domain.Un
         WHERE roles_id = $1  AND policies_id IN (SELECT unnest($2::uuid[]));
     `
 
-	cslog.Trace(ctx, "repository.Roles.UnlinkPolicies", "query", prettyPrint(query, input.RoleID.String(), policyIDs))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, input.RoleID.String(), policyIDs))
 
 	// Execute the query with parameters.
 	// Ensure input.RoleID is converted to its string representation if it's a UUID type.
@@ -1191,7 +1191,7 @@ func (ref *RolesRepository) buildScanFields(item *domain.Role, requestedFields s
 			scanFields = append(scanFields, &item.UpdatedAt)
 
 		default:
-			slog.Warn("repository.Roles.buildScanFields", "what", "field not found", "field", field)
+			slog.Warn("field not found while building the scan list", "field", field)
 		}
 	}
 

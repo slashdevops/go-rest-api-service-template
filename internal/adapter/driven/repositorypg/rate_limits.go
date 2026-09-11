@@ -165,7 +165,7 @@ func (ref *RateLimitsRepository) Insert(ctx context.Context, input *domain.Creat
 
 	defer func() {
 		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
-			slog.ErrorContext(ctx, "repository.RateLimits.Insert", "what", "rollback failed", "error", rbErr)
+			slog.ErrorContext(ctx, "rollback failed", "error", rbErr)
 		}
 	}()
 
@@ -174,7 +174,7 @@ func (ref *RateLimitsRepository) Insert(ctx context.Context, input *domain.Creat
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, COALESCE($10, TRUE));
     `
 
-	cslog.Trace(ctx, "repository.RateLimits.Insert", "query", prettyPrint(query, input.ID.String(), input.Name))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, input.ID.String(), input.Name))
 
 	if _, err := tx.Exec(ctx, query,
 		input.ID,
@@ -235,7 +235,7 @@ func (ref *RateLimitsRepository) UpdateByID(ctx context.Context, input *domain.U
 
 	defer func() {
 		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
-			slog.ErrorContext(ctx, "repository.RateLimits.UpdateByID", "what", "rollback failed", "error", rbErr)
+			slog.ErrorContext(ctx, "rollback failed", "error", rbErr)
 		}
 	}()
 
@@ -254,7 +254,7 @@ func (ref *RateLimitsRepository) UpdateByID(ctx context.Context, input *domain.U
         WHERE id = $1;
     `
 
-	cslog.Trace(ctx, "repository.RateLimits.UpdateByID", "query", prettyPrint(query, input.ID.String()))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, input.ID.String()))
 
 	tag, err := tx.Exec(ctx, query,
 		input.ID,
@@ -365,7 +365,7 @@ func (ref *RateLimitsRepository) SelectByID(ctx context.Context, id uuid.UUID) (
         WHERE id = $1;
     `
 
-	cslog.Trace(ctx, "repository.RateLimits.SelectByID", "query", prettyPrint(query, id.String()))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, id.String()))
 
 	var item domain.RateLimit
 
@@ -421,7 +421,7 @@ func (ref *RateLimitsRepository) SelectAll(ctx context.Context) ([]domain.RateLi
         ORDER BY serial_id;
     `
 
-	cslog.Trace(ctx, "repository.RateLimits.SelectAll", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	rows, err := ref.db.Query(ctx, query)
 	if err != nil {
@@ -595,7 +595,7 @@ func (ref *RateLimitsRepository) Select(ctx context.Context, input *domain.Selec
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.RateLimits.Select", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	rows, err := ref.db.Query(ctx, query)
 	if err != nil {
@@ -633,7 +633,7 @@ func (ref *RateLimitsRepository) Select(ctx context.Context, input *domain.Selec
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.WarnContext(ctx, "repository.RateLimits.Select", "what", "no rate limits found")
+		slog.WarnContext(ctx, "no rate limits found")
 
 		return &domain.SelectRateLimitsOutput{
 			Items:     make([]domain.RateLimit, 0),

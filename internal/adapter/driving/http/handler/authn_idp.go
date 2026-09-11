@@ -251,7 +251,7 @@ func (ref *AuthnIDPsHandler) callback(w http.ResponseWriter, r *http.Request) {
 	// cancelled, the app is misconfigured. Answered as a refusal in this
 	// service's words; the provider's description goes to the log.
 	if providerErr := q.Get("error"); providerErr != "" {
-		slog.InfoContext(r.Context(), "handler.AuthnIDPs.callback: the provider reported an error",
+		slog.InfoContext(r.Context(), "the provider reported an error",
 			"idp.id", idpID.String(), "error", providerErr, "description", q.Get("error_description"))
 
 		e := o11y.RecordError(ctx, span, startedAt, &domain.InvalidAuthnServiceError{Message: "the identity provider did not complete the sign-in"}, ref.metrics, attrs)

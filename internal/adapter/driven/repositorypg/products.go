@@ -251,7 +251,7 @@ func (ref *ProductsRepository) UpdateByIDByProjectID(ctx context.Context, input 
 
 	args := []any{input.ProjectID, input.UserID, input.ID, name, description}
 
-	cslog.Trace(ctx, "repository.Products.UpdateByIDByProjectID", "query", prettyPrint(query, args...))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, args...))
 
 	ct, err := ref.db.Exec(ctx, query, args...)
 	if err != nil {
@@ -355,7 +355,7 @@ func (ref *ProductsRepository) SelectByIDByProjectID(ctx context.Context, id, pr
         GROUP BY prd.id, prjs.id;
     `
 
-	cslog.Trace(ctx, "repository.Products.SelectByIDByProjectID", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	row := ref.db.QueryRow(ctx, query, projectID, userID, id)
 
@@ -487,7 +487,7 @@ func (ref *ProductsRepository) SelectByProjectID(ctx context.Context, projectID,
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.Products.SelectByProjectID", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	rows, err := ref.db.Query(ctx, query, projectID, userID)
 	if err != nil {
@@ -590,7 +590,7 @@ func (ref *ProductsRepository) Select(ctx context.Context, input *domain.SelectP
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.Products.Select", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	rows, err := ref.db.Query(ctx, query)
 	if err != nil {
@@ -754,7 +754,7 @@ func (ref *ProductsRepository) buildScanFields(item *domain.Product, project *[]
 		case "project":
 			scanFields = append(scanFields, project)
 		default:
-			slog.Warn("repository.Products.buildScanFields", "what", "field not found", "field", field)
+			slog.Warn("field not found while building the scan list", "field", field)
 		}
 	}
 

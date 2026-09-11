@@ -143,7 +143,7 @@ func (ref *IDPsService) GetByID(ctx context.Context, id uuid.UUID) (*domain.IDP,
 	}
 
 	if ref.cacheService == nil {
-		slog.DebugContext(ctx, "usecase.IDPs.GetByID", "cache", "disabled")
+		slog.DebugContext(ctx, "cache lookup", "cache", "disabled")
 		out, err = ref.repository.SelectByID(ctx, id)
 		if err != nil {
 			return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
@@ -154,7 +154,7 @@ func (ref *IDPsService) GetByID(ctx context.Context, id uuid.UUID) (*domain.IDP,
 			ID:   id.String(),
 		}
 
-		slog.DebugContext(ctx, "usecase.IDPs.GetByID", "cache", "enabled", "idp_id", id.String())
+		slog.DebugContext(ctx, "cache lookup", "cache", "enabled", "idp_id", id.String())
 		out, err = cache.GetTyped[*domain.IDP](ctx, ref.cacheService, cacheKey, idpFetcher)
 		if err != nil {
 			return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
@@ -208,7 +208,7 @@ func (ref *IDPsService) GetByName(ctx context.Context, name string) (*domain.IDP
 	}
 
 	if ref.cacheService == nil {
-		slog.DebugContext(ctx, "usecase.IDPs.GetByName", "cache", "disabled")
+		slog.DebugContext(ctx, "cache lookup", "cache", "disabled")
 		out, err = ref.repository.SelectByName(ctx, name)
 		if err != nil {
 			return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
@@ -219,7 +219,7 @@ func (ref *IDPsService) GetByName(ctx context.Context, name string) (*domain.IDP
 			ID:   name,
 		}
 
-		slog.DebugContext(ctx, "usecase.IDPs.GetByName", "cache", "enabled", "idp_name", name)
+		slog.DebugContext(ctx, "cache lookup", "cache", "enabled", "idp_name", name)
 		out, err = cache.GetTyped[*domain.IDP](ctx, ref.cacheService, cacheKey, idpFetcher)
 		if err != nil {
 			return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
@@ -298,10 +298,10 @@ func (ref *IDPsService) Create(ctx context.Context, input *domain.CreateIDPInput
 	if ref.cacheService != nil {
 		// Only the collection: this IdP has no cache entry of its own yet, and
 		// nothing can be depending on an id that did not exist a moment ago.
-		slog.DebugContext(ctx, "usecase.IDPs.Create", "what", "invalidate cache", "cache_key", idpCollection().String())
+		slog.DebugContext(ctx, "invalidate cache", "cache_key", idpCollection().String())
 
 		if err := ref.cacheService.Invalidate(ctx, idpCollection()); err != nil {
-			slog.WarnContext(ctx, "usecase.IDPs.Create", "what", "failed to invalidate cache",
+			slog.WarnContext(ctx, "failed to invalidate cache",
 				slog.Any("error", err), "idp_id", input.ID.String())
 		}
 	}
@@ -366,7 +366,7 @@ func (ref *IDPsService) UpdateByID(ctx context.Context, input *domain.UpdateIDPI
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.IDPs.UpdateByID", "what", "invalidate cache", "idp_id", input.ID.String())
+		slog.DebugContext(ctx, "invalidate cache", "idp_id", input.ID.String())
 
 		cacheKeys := []cache.Identifier{
 			{
@@ -378,7 +378,7 @@ func (ref *IDPsService) UpdateByID(ctx context.Context, input *domain.UpdateIDPI
 
 		for _, cacheKey := range cacheKeys {
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-				slog.WarnContext(ctx, "usecase.IDPs.UpdateByID", "what", "failed to invalidate cache",
+				slog.WarnContext(ctx, "failed to invalidate cache",
 					"key", cacheKey.String(), "idp_id", input.ID.String(), "error", err)
 			}
 		}
@@ -416,7 +416,7 @@ func (ref *IDPsService) DeleteByID(ctx context.Context, input *domain.DeleteIDPI
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.IDPs.DeleteByID", "what", "invalidate cache", "idp_id", input.ID.String())
+		slog.DebugContext(ctx, "invalidate cache", "idp_id", input.ID.String())
 
 		cacheKeys := []cache.Identifier{
 			{
@@ -428,7 +428,7 @@ func (ref *IDPsService) DeleteByID(ctx context.Context, input *domain.DeleteIDPI
 
 		for _, cacheKey := range cacheKeys {
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-				slog.WarnContext(ctx, "usecase.IDPs.DeleteByID", "what", "failed to invalidate cache",
+				slog.WarnContext(ctx, "failed to invalidate cache",
 					"key", cacheKey.String(), "idp_id", input.ID.String(), "error", err)
 			}
 		}
@@ -521,7 +521,7 @@ func (ref *IDPsService) GetAvailableIDPs(ctx context.Context) (*domain.SelectIDP
 	}
 
 	if ref.cacheService == nil {
-		slog.DebugContext(ctx, "usecase.IDPs.GetAvailableIDPs", "cache", "disabled")
+		slog.DebugContext(ctx, "cache lookup", "cache", "disabled")
 
 		out, err = ref.repository.Select(ctx, input)
 		if err != nil {
@@ -533,7 +533,7 @@ func (ref *IDPsService) GetAvailableIDPs(ctx context.Context) (*domain.SelectIDP
 			Type: "idps_available",
 			ID:   "all",
 		}
-		slog.DebugContext(ctx, "usecase.IDPs.GetAvailableIDPs", "cache", "enabled")
+		slog.DebugContext(ctx, "cache lookup", "cache", "enabled")
 		out, err = cache.GetTyped[*domain.ListIDPsOutput](ctx, ref.cacheService, cacheKey, idpsFetcher)
 		if err != nil {
 			return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)

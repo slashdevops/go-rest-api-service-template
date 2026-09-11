@@ -141,7 +141,7 @@ func (ref *PoliciesRepository) Insert(ctx context.Context, input *domain.CreateP
         VALUES ($1, $2, $3, $4, $5, $6);
     `
 
-	cslog.Trace(ctx, "repository.Policies.Insert", "query", prettyPrint(query, input.ID.String(), input.ResourceID.String(), input.Name, input.Description, input.AllowedAction, input.AllowedResource))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, input.ID.String(), input.ResourceID.String(), input.Name, input.Description, input.AllowedAction, input.AllowedResource))
 
 	_, err := ref.db.Exec(ctx, query,
 		input.ID,
@@ -215,7 +215,7 @@ func (ref *PoliciesRepository) UpdateByID(ctx context.Context, input *domain.Upd
         WHERE id = $1;
     `
 
-	cslog.Trace(ctx, "repository.Policies.UpdateByID", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	result, err := ref.db.Exec(ctx, query, args...)
 	if err != nil {
@@ -248,7 +248,7 @@ func (ref *PoliciesRepository) DeleteByID(ctx context.Context, input *domain.Del
         DELETE FROM policies WHERE id = $1;
     `
 
-	cslog.Trace(ctx, "repository.Policies.DeleteByID", "query", prettyPrint(query, input.ID.String()))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, input.ID.String()))
 
 	result, err := ref.db.Exec(ctx, query, input.ID)
 	if err != nil {
@@ -259,7 +259,7 @@ func (ref *PoliciesRepository) DeleteByID(ctx context.Context, input *domain.Del
 		// grateful return user was deleted, security reason, but log and record error
 		errorType := &domain.PolicyNotFoundError{Message: "policy not found"}
 		e := o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
-		slog.ErrorContext(ctx, "repository.Policies.DeleteByID", "error", e, "policy.id", input.ID.String())
+		slog.ErrorContext(ctx, "operation failed", "error", e, "policy.id", input.ID.String())
 
 		return nil
 	}
@@ -304,7 +304,7 @@ func (ref *PoliciesRepository) SelectByID(ctx context.Context, id uuid.UUID) (*d
         GROUP BY pol.id, res.id;
     `
 
-	cslog.Trace(ctx, "repository.Policies.SelectByID", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	row := ref.db.QueryRow(ctx, query, id)
 
@@ -439,7 +439,7 @@ func (ref *PoliciesRepository) Select(ctx context.Context, input *domain.SelectP
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.Policies.Select", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	// execute the query
 	rows, err := ref.db.Query(ctx, query)
@@ -486,7 +486,7 @@ func (ref *PoliciesRepository) Select(ctx context.Context, input *domain.SelectP
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.WarnContext(ctx, "repository.Policies.Select", "what", "no policies found")
+		slog.WarnContext(ctx, "no policies found")
 		return &domain.SelectPoliciesOutput{
 			Items:     make([]domain.Policy, 0),
 			Paginator: domain.Paginator{},
@@ -648,7 +648,7 @@ func (ref *PoliciesRepository) SelectByRoleID(ctx context.Context, roleID uuid.U
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.Policies.SelectByRoleID", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	// execute the query
 	rows, err := ref.db.Query(ctx, query, roleID)
@@ -696,7 +696,7 @@ func (ref *PoliciesRepository) SelectByRoleID(ctx context.Context, roleID uuid.U
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.WarnContext(ctx, "repository.Policies.SelectByRoleID", "what", "no policies found")
+		slog.WarnContext(ctx, "no policies found")
 		return &domain.SelectPoliciesOutput{
 			Items:     make([]domain.Policy, 0),
 			Paginator: domain.Paginator{},
@@ -805,7 +805,7 @@ func (ref *PoliciesRepository) LinkRoles(ctx context.Context, input *domain.Link
 		policiesRoles.String(),
 	)
 
-	cslog.Trace(ctx, "repository.Policies.LinkRoles", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	_, err := ref.db.Exec(ctx, query)
 	if err != nil {
@@ -862,7 +862,7 @@ func (ref *PoliciesRepository) UnlinkRoles(ctx context.Context, input *domain.Un
         WHERE policies_id = $1 AND roles_id IN (SELECT unnest($2::uuid[]));
     `
 
-	cslog.Trace(ctx, "repository.Policies.UnlinkRoles", "query",
+	cslog.Trace(ctx, "sql", "query",
 		prettyPrint(query, input.PolicyID.String(), roleIDs))
 
 	_, err := ref.db.Exec(ctx, query, input.PolicyID.String(), roleIDs)
@@ -990,7 +990,7 @@ func (ref *PoliciesRepository) buildScanFields(item *domain.Policy, resources *[
 			scanFields = append(scanFields, resources)
 
 		default:
-			slog.Warn("repository.Policies.buildScanFields", "what", "field not found", "field", field)
+			slog.Warn("field not found while building the scan list", "field", field)
 		}
 	}
 

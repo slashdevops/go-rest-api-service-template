@@ -174,7 +174,7 @@ func (ref *PoliciesService) DeleteByID(ctx context.Context, input *domain.Delete
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Policies.DeleteByID", "what", "invalidating cache", "policy_id", input.ID.String())
+		slog.DebugContext(ctx, "invalidating cache", "policy_id", input.ID.String())
 
 		cacheKey := cache.Identifier{
 			Type: "policy",
@@ -182,7 +182,7 @@ func (ref *PoliciesService) DeleteByID(ctx context.Context, input *domain.Delete
 		}
 
 		if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-			slog.WarnContext(ctx, "usecase.Policies.DeleteByID", "what", "failed to invalidate cache", "policy_id", input.ID.String(), "error", err)
+			slog.WarnContext(ctx, "failed to invalidate cache", "policy_id", input.ID.String(), "error", err)
 		}
 	}
 
@@ -249,7 +249,7 @@ func (ref *PoliciesService) UpdateByID(ctx context.Context, input *domain.Update
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Policies.UpdateByID", "what", "invalidating cache", "policy_id", input.ID.String())
+		slog.DebugContext(ctx, "invalidating cache", "policy_id", input.ID.String())
 
 		cacheKey := cache.Identifier{
 			Type: "policy",
@@ -257,7 +257,7 @@ func (ref *PoliciesService) UpdateByID(ctx context.Context, input *domain.Update
 		}
 
 		if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-			slog.WarnContext(ctx, "usecase.Policies.UpdateByID", "what", "failed to invalidate cache", "policy_id", input.ID.String(), "error", err)
+			slog.WarnContext(ctx, "failed to invalidate cache", "policy_id", input.ID.String(), "error", err)
 		}
 	}
 
@@ -289,7 +289,7 @@ func (ref *PoliciesService) GetByID(ctx context.Context, id uuid.UUID) (*domain.
 	}
 
 	if ref.cacheService == nil {
-		slog.DebugContext(ctx, "usecase.Policies.GetByID", "cache", "disabled")
+		slog.DebugContext(ctx, "cache lookup", "cache", "disabled")
 
 		out, err = ref.repository.SelectByID(ctx, id)
 		if err != nil {
@@ -302,7 +302,7 @@ func (ref *PoliciesService) GetByID(ctx context.Context, id uuid.UUID) (*domain.
 			ID:   id.String(),
 		}
 
-		slog.DebugContext(ctx, "usecase.Policies.GetByID", "cache", "enabled", "cache_key", cacheKey.String())
+		slog.DebugContext(ctx, "cache lookup", "cache", "enabled", "cache_key", cacheKey.String())
 		out, err = cache.GetTyped[*domain.Policy](ctx, ref.cacheService, cacheKey, policyFetcher)
 		if err != nil {
 			return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
@@ -362,7 +362,7 @@ func (ref *PoliciesService) LinkRoles(ctx context.Context, input *domain.LinkRol
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Policies.LinkRoles", "what", "invalidating cache", "policy_id", input.PolicyID.String())
+		slog.DebugContext(ctx, "invalidating cache", "policy_id", input.PolicyID.String())
 
 		cacheKey := cache.Identifier{
 			Type: "policy",
@@ -370,11 +370,11 @@ func (ref *PoliciesService) LinkRoles(ctx context.Context, input *domain.LinkRol
 		}
 
 		if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-			slog.WarnContext(ctx, "usecase.Policies.LinkRoles", "what", "failed to invalidate cache", "policy_id", input.PolicyID.String(), "error", err)
+			slog.WarnContext(ctx, "failed to invalidate cache", "policy_id", input.PolicyID.String(), "error", err)
 		}
 
 		for _, roleID := range input.RoleIDs {
-			slog.DebugContext(ctx, "usecase.Policies.LinkRoles", "what", "invalidating cache", "role_id", roleID.String())
+			slog.DebugContext(ctx, "invalidating cache", "role_id", roleID.String())
 
 			cacheKey := cache.Identifier{
 				Type: "role",
@@ -382,7 +382,7 @@ func (ref *PoliciesService) LinkRoles(ctx context.Context, input *domain.LinkRol
 			}
 
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-				slog.WarnContext(ctx, "usecase.Policies.LinkRoles", "what", "failed to invalidate cache", "role_id", roleID.String(), "error", err)
+				slog.WarnContext(ctx, "failed to invalidate cache", "role_id", roleID.String(), "error", err)
 			}
 		}
 	}
@@ -411,7 +411,7 @@ func (ref *PoliciesService) UnlinkRoles(ctx context.Context, input *domain.Unlin
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Policies.UnlinkRoles", "what", "invalidating cache", "policy_id", input.PolicyID.String())
+		slog.DebugContext(ctx, "invalidating cache", "policy_id", input.PolicyID.String())
 
 		cacheKey := cache.Identifier{
 			Type: "policy",
@@ -419,7 +419,7 @@ func (ref *PoliciesService) UnlinkRoles(ctx context.Context, input *domain.Unlin
 		}
 
 		if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-			slog.WarnContext(ctx, "usecase.Policies.UnlinkRoles", "what", "failed to invalidate cache", "policy_id", input.PolicyID.String(), "error", err)
+			slog.WarnContext(ctx, "failed to invalidate cache", "policy_id", input.PolicyID.String(), "error", err)
 		}
 
 		// The same keys LinkRoles invalidates. Unlink used to drop only the
@@ -428,7 +428,7 @@ func (ref *PoliciesService) UnlinkRoles(ctx context.Context, input *domain.Unlin
 		// grant could be served until the 12 h TTL.
 		for _, roleID := range input.RoleIDs {
 			if err := ref.cacheService.Invalidate(ctx, cache.Identifier{Type: "role", ID: roleID.String()}); err != nil {
-				slog.WarnContext(ctx, "usecase.Policies.UnlinkRoles", "what", "failed to invalidate cache", "role_id", roleID.String(), "error", err)
+				slog.WarnContext(ctx, "failed to invalidate cache", "role_id", roleID.String(), "error", err)
 			}
 		}
 	}

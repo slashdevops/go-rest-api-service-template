@@ -147,7 +147,7 @@ func (ref *ResourcesRepository) SelectByID(ctx context.Context, id uuid.UUID) (*
         WHERE id = $1;
     `
 
-	cslog.Trace(ctx, "repository.Resources.SelectByID", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	row := ref.db.QueryRow(ctx, query, id)
 
@@ -265,7 +265,7 @@ func (ref *ResourcesRepository) Select(ctx context.Context, input *domain.Select
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.Resources.Select", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	// execute the query
 	rows, err := ref.db.Query(ctx, query)
@@ -408,7 +408,7 @@ func (ref *ResourcesRepository) buildScanFields(item *domain.Resource, requested
 			scanFields = append(scanFields, &item.UpdatedAt)
 
 		default:
-			slog.Warn("repository.Resources.buildScanFields", "what", "field not found", "field", field)
+			slog.Warn("field not found while building the scan list", "field", field)
 		}
 	}
 

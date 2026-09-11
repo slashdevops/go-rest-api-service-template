@@ -317,7 +317,7 @@ func (ref *RateLimitsHandler) create(w http.ResponseWriter, r *http.Request) {
 	respond.SetLocation(w, r, input.ID.String())
 	respond.WriteJSONMessage(w, r, http.StatusCreated, domain.RateLimitsRateLimitCreatedSuccessfully)
 
-	slog.DebugContext(r.Context(), "handler.RateLimits.create: called", "rate_limit.id", input.ID.String())
+	slog.DebugContext(r.Context(), "called", "rate_limit.id", input.ID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "create rate limit",
 		attribute.String("rate_limit.id", input.ID.String()),
 		attribute.String("rate_limit.strategy", string(input.Strategy)),

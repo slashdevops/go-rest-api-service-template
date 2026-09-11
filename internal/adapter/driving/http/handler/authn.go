@@ -194,7 +194,7 @@ func (ref *AuthnHandler) loginUser(w http.ResponseWriter, r *http.Request) {
 	// offers no controls until the next read succeeds.
 	typedResources, err := payload.NewAuthzPermissions(out.Resources)
 	if err != nil {
-		slog.ErrorContext(r.Context(), "handler.Authn.login: unrecognised permission shape, sending an empty set",
+		slog.ErrorContext(r.Context(), "unrecognised permission shape, sending an empty set",
 			"user.id", out.UserID.String(), "error", err)
 	}
 

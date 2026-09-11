@@ -144,13 +144,13 @@ func (ref *ProjectsRepository) Insert(ctx context.Context, input *domain.InsertP
 		if txErr != nil {
 			if err := tx.Rollback(ctx); err != nil {
 				e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-				slog.ErrorContext(ctx, "repository.Projects.Insert", "error", e)
+				slog.ErrorContext(ctx, "operation failed", "error", e)
 			}
 		} else {
 			if err := tx.Commit(ctx); err != nil {
 				e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 				if e != nil {
-					slog.ErrorContext(ctx, "repository.Projects.Insert", "error", e)
+					slog.ErrorContext(ctx, "operation failed", "error", e)
 				}
 			}
 		}
@@ -266,7 +266,7 @@ func (ref *ProjectsRepository) UpdateByID(ctx context.Context, input *domain.Upd
         );
     `
 
-	cslog.Trace(ctx, "repository.Projects.UpdateByID", "query", prettyPrint(query, args...))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, args...))
 
 	result, err := ref.db.Exec(ctx, query, args...)
 	if err != nil {
@@ -547,7 +547,7 @@ func (ref *ProjectsRepository) SelectByUserID(ctx context.Context, input *domain
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.Projects.Select", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	// execute the query
 	rows, err := ref.db.Query(ctx, query, input.UserID)
@@ -581,7 +581,7 @@ func (ref *ProjectsRepository) SelectByUserID(ctx context.Context, input *domain
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.WarnContext(ctx, "repository.Projects.Select", "what", "no projects found")
+		slog.WarnContext(ctx, "no projects found")
 		return &domain.SelectProjectsOutput{
 			Items:     make([]domain.Project, 0),
 			Paginator: domain.Paginator{},
@@ -772,7 +772,7 @@ func (ref *ProjectsRepository) Select(ctx context.Context, input *domain.SelectP
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.WarnContext(ctx, "repository.Projects.Select", "what", "no projects found")
+		slog.WarnContext(ctx, "no projects found")
 		return &domain.SelectProjectsOutput{
 			Items:     make([]domain.Project, 0),
 			Paginator: domain.Paginator{},
@@ -867,7 +867,7 @@ func (ref *ProjectsRepository) LinkUsers(ctx context.Context, input *domain.Link
         DO UPDATE SET updated_at = NOW();
     `
 
-	cslog.Trace(ctx, "repository.Projects.LinkUsers", "query", prettyPrint(query, projectIDs, usersIDs))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, projectIDs, usersIDs))
 
 	_, err := ref.db.Exec(ctx, query, projectIDs, usersIDs)
 	if err != nil {
@@ -906,7 +906,7 @@ func (ref *ProjectsRepository) UnlinkUsers(ctx context.Context, input *domain.Un
       WHERE projects_id = $1 AND users_id IN (SELECT unnest($2::uuid[]));
     `
 
-	cslog.Trace(ctx, "repository.Projects.UnlinkUsers", "query", prettyPrint(query, input.ProjectID.String(), userIDs))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, input.ProjectID.String(), userIDs))
 
 	_, err := ref.db.Exec(ctx, query, input.ProjectID.String(), userIDs)
 	if err != nil {
@@ -1049,7 +1049,7 @@ func (ref *ProjectsRepository) buildScanFields(item *domain.Project, requestedFi
 			scanFields = append(scanFields, &item.UpdatedAt)
 
 		default:
-			slog.Warn("repository.Projects.buildScanFields", "what", "field not found", "field", field)
+			slog.Warn("field not found while building the scan list", "field", field)
 		}
 	}
 

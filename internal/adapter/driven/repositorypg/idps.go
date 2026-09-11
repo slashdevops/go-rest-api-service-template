@@ -246,7 +246,7 @@ func (ref *IDPsRepository) UpdateByID(ctx context.Context, input *domain.UpdateI
         WHERE id = $1;
     `
 
-	cslog.Trace(ctx, "repository.IDPs.UpdateByID", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	result, err := ref.db.Exec(ctx, query, args...)
 	if err != nil {
@@ -283,7 +283,7 @@ func (ref *IDPsRepository) DeleteByID(ctx context.Context, input *domain.DeleteI
         DELETE FROM idps WHERE id=$1;
     `
 
-	cslog.Trace(ctx, "repository.IDPs.DeleteByID", "query", prettyPrint(query, input.ID))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, input.ID))
 
 	result, err := ref.db.Exec(ctx, query, input.ID)
 	if err != nil {
@@ -295,7 +295,7 @@ func (ref *IDPsRepository) DeleteByID(ctx context.Context, input *domain.DeleteI
 		errorType := &domain.IDPNotFoundError{ID: input.ID}
 		e := o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
 		if e != nil {
-			slog.ErrorContext(ctx, "repository.IDPs.DeleteByID", "error", e)
+			slog.ErrorContext(ctx, "operation failed", "error", e)
 		}
 
 		return nil
@@ -339,7 +339,7 @@ func (ref *IDPsRepository) SelectByID(ctx context.Context, id uuid.UUID) (*domai
         WHERE idp.id=$1;
     `
 
-	cslog.Trace(ctx, "repository.IDPs.SelectByID", "query", prettyPrint(query, id))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, id))
 
 	row := ref.db.QueryRow(ctx, query, id)
 
@@ -408,7 +408,7 @@ func (ref *IDPsRepository) SelectByName(ctx context.Context, name string) (*doma
         WHERE idp.name=$1;
     `
 
-	cslog.Trace(ctx, "repository.IDPs.SelectByName", "query", prettyPrint(query, name))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, name))
 
 	row := ref.db.QueryRow(ctx, query, name)
 
@@ -538,7 +538,7 @@ func (ref *IDPsRepository) Select(ctx context.Context, input *domain.SelectIDPsI
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.IDPs.Select", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	// execute the query
 	rows, err := ref.db.Query(ctx, query)
@@ -753,7 +753,7 @@ func (ref *IDPsRepository) buildScanFields(item *domain.IDP, idpType *[]string, 
 			scanFields = append(scanFields, idpType)
 
 		default:
-			slog.Warn("repository.IDPs.buildScanFields", "what", "field not found", "field", field)
+			slog.Warn("field not found while building the scan list", "field", field)
 		}
 	}
 

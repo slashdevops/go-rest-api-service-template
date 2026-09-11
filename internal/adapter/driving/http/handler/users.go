@@ -1159,7 +1159,7 @@ func (ref *UsersHandler) selectAuthz(w http.ResponseWriter, r *http.Request) {
 	if typed, err := payload.NewUserAuthzResponse(outResponse); err == nil {
 		body = typed
 	} else {
-		slog.WarnContext(r.Context(), "handler.Users.selectAuthz: unrecognised permission shape, sending it untyped",
+		slog.WarnContext(r.Context(), "unrecognised permission shape, sending it untyped",
 			"user.id", userID.String(), "error", err)
 	}
 

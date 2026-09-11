@@ -143,7 +143,7 @@ func (ref *RevokedTokensRepository) Revoke(ctx context.Context, jti, userID uuid
         ON CONFLICT (jti) DO NOTHING;
     `
 
-	cslog.Trace(ctx, "repository.RevokedTokens.Revoke", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	if _, err := ref.db.Exec(ctx, query, jti, userID, tokenType.String(), expiresAt); err != nil {
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
@@ -185,7 +185,7 @@ func (ref *RevokedTokensRepository) Rotate(ctx context.Context, oldJTI, newJTI, 
         ON CONFLICT (jti) DO NOTHING;
     `
 
-	cslog.Trace(ctx, "repository.RevokedTokens.Rotate", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	if _, err := ref.db.Exec(ctx, query, oldJTI, userID, domain.TokenTypeRefresh.String(), expiresAt, newJTI); err != nil {
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
@@ -231,7 +231,7 @@ func (ref *RevokedTokensRepository) Consume(ctx context.Context, jti, userID uui
         RETURNING jti;
     `
 
-	cslog.Trace(ctx, "repository.RevokedTokens.Consume", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	var spent uuid.UUID
 	if err := ref.db.QueryRow(ctx, query, jti, userID, tokenType.String(), expiresAt).Scan(&spent); err != nil {
@@ -279,7 +279,7 @@ func (ref *RevokedTokensRepository) Get(ctx context.Context, jti uuid.UUID) (*do
         WHERE jti = $1 AND expires_at > NOW();
     `
 
-	cslog.Trace(ctx, "repository.RevokedTokens.Get", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	var record domain.TokenRevocation
 	if err := ref.db.QueryRow(ctx, query, jti).Scan(
@@ -353,7 +353,7 @@ func (ref *RevokedTokensRepository) RevokeChain(ctx context.Context, jti, userID
         RETURNING jti;
     `
 
-	cslog.Trace(ctx, "repository.RevokedTokens.RevokeChain", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	// The tip of a rotation chain is always a refresh token.
 	var tip uuid.UUID
@@ -387,7 +387,7 @@ func (ref *RevokedTokensRepository) DeleteExpired(ctx context.Context) (int64, e
         DELETE FROM revoked_tokens WHERE expires_at <= NOW();
     `
 
-	cslog.Trace(ctx, "repository.RevokedTokens.DeleteExpired", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	result, err := ref.db.Exec(ctx, query)
 	if err != nil {
@@ -427,7 +427,7 @@ func (ref *RevokedTokensRepository) SelectUnexpiredJTIs(ctx context.Context, tok
           AND expires_at > NOW();
     `
 
-	cslog.Trace(ctx, "repository.RevokedTokens.SelectUnexpiredJTIs", "query", prettyPrint(query, tokenType.String()))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, tokenType.String()))
 
 	rows, err := ref.db.Query(ctx, query, tokenType.String())
 	if err != nil {

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	sdkTrace "go.opentelemetry.io/otel/sdk/trace"
+
 	"github.com/slashdevops/go-rest-api-service-template/internal/config"
 	"github.com/slashdevops/go-rest-api-service-template/internal/o11y"
 )
@@ -145,6 +147,121 @@ func TestLoggerConsumersAreWiredAfterTelemetry(t *testing.T) {
 
 		if at < telemetryAt {
 			t.Errorf("%s runs before initTelemetry; anything capturing slog.Default() there keeps a logger with only the standard sink", phase)
+		}
+	}
+}
+
+// The operation reaches every log record without any call site saying so.
+//
+// app_layer, app_domain and app_action are on the span and the metric. On a log
+// record they were on exactly one line -- operation_failed -- because every
+// other call site would have had to pass them by hand, and 368 call sites
+// passing three attributes each is a rule nobody keeps. They ride the context
+// instead, put there by o11y.SetupTrace, and are added here once.
+func TestRecordsCarryTheOperationTheyWereWrittenIn(t *testing.T) {
+	var out bytes.Buffer
+
+	logger := slog.New(&operationAttrsHandler{Handler: slog.NewJSONHandler(&out, nil)})
+
+	tp := sdkTrace.NewTracerProvider()
+	t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+
+	meta := o11y.Metadata{Layer: o11y.LayerRepository, Domain: "Users"}
+
+	ctx, span, _ := o11y.SetupTrace(t.Context(), tp.Tracer("test"), meta, "SelectByID")
+	logger.InfoContext(ctx, "a line written inside the operation")
+	span.End()
+
+	line := out.String()
+
+	for key, want := range map[string]string{
+		o11y.AttrLayer:  o11y.LayerRepository,
+		o11y.AttrDomain: "Users",
+		o11y.AttrAction: "SelectByID",
+	} {
+		if !strings.Contains(line, `"`+key+`":"`+want+`"`) {
+			t.Errorf("record does not carry %s=%s:\n%s", key, want, line)
+		}
+	}
+}
+
+// A line written outside any instrumented operation -- during startup, say --
+// gets no operation attributes rather than three empty ones, which would read
+// as "the empty layer" and pollute every filter.
+func TestRecordsOutsideAnOperationCarryNoOperation(t *testing.T) {
+	var out bytes.Buffer
+
+	logger := slog.New(&operationAttrsHandler{Handler: slog.NewJSONHandler(&out, nil)})
+	logger.InfoContext(t.Context(), "a startup line")
+
+	if strings.Contains(out.String(), o11y.AttrLayer) {
+		t.Errorf("a line outside any operation gained an operation attribute:\n%s", out.String())
+	}
+}
+
+// The action is per-call and Metadata is passed by value, so two operations on
+// one shared Metadata must not report each other's action -- the same property
+// TestNoSharedMetadataActionWrite guards in the span.
+func TestTheOperationOnTheContextIsPerCall(t *testing.T) {
+	var out bytes.Buffer
+
+	logger := slog.New(&operationAttrsHandler{Handler: slog.NewJSONHandler(&out, nil)})
+
+	tp := sdkTrace.NewTracerProvider()
+	t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+
+	shared := o11y.Metadata{Layer: o11y.LayerUsecase, Domain: "Users"}
+
+	first, spanA, _ := o11y.SetupTrace(t.Context(), tp.Tracer("test"), shared, "GetByID")
+	second, spanB, _ := o11y.SetupTrace(t.Context(), tp.Tracer("test"), shared, "DeleteByID")
+
+	logger.InfoContext(first, "one")
+	logger.InfoContext(second, "two")
+
+	spanA.End()
+	spanB.End()
+
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("got %d lines, want 2", len(lines))
+	}
+
+	if !strings.Contains(lines[0], `"GetByID"`) {
+		t.Errorf("the first line lost its action:\n%s", lines[0])
+	}
+
+	if !strings.Contains(lines[1], `"DeleteByID"`) {
+		t.Errorf("the second line took the first's action:\n%s", lines[1])
+	}
+}
+
+// The operation must reach BOTH sinks, which is the thing the first version of
+// this got wrong: the wrapper sat on the standard handler only, so the
+// attributes went to stdout and never to the log store. The bridge supplying
+// trace_id on the exported side hid it -- the records looked correlated -- and
+// the gap showed up only when the live stack was asked how many exported lines
+// actually carried app_layer. The answer was 3 of 294.
+func TestBothSinksCarryTheOperation(t *testing.T) {
+	var stdout, exported bytes.Buffer
+
+	composed := slog.New(&operationAttrsHandler{
+		Handler: slog.NewMultiHandler(
+			&traceAttrsHandler{Handler: slog.NewJSONHandler(&stdout, nil)},
+			slog.NewJSONHandler(&exported, nil),
+		),
+	})
+
+	tp := sdkTrace.NewTracerProvider()
+	t.Cleanup(func() { _ = tp.Shutdown(t.Context()) })
+
+	ctx, span, _ := o11y.SetupTrace(t.Context(), tp.Tracer("test"),
+		o11y.Metadata{Layer: o11y.LayerRepository, Domain: "Users"}, "SelectByID")
+	composed.InfoContext(ctx, "a line inside an operation")
+	span.End()
+
+	for name, sink := range map[string]*bytes.Buffer{"stdout": &stdout, "exported": &exported} {
+		if !strings.Contains(sink.String(), `"`+o11y.AttrLayer+`":"`+o11y.LayerRepository+`"`) {
+			t.Errorf("the %s sink does not carry the operation:\n%s", name, sink.String())
 		}
 	}
 }

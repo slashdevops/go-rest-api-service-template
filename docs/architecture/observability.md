@@ -494,6 +494,59 @@ would mean plumbing the response writer into `internal/core`, which is the one
 thing the hexagon forbids; and the access log already carries `status` and
 shares a trace id with the failure, so the two are one click apart.
 
+## The operation reaches every record without a call site saying so
+
+`app.layer`, `app.domain` and `app.action` are on the span and on the metric.
+On a log record they were on exactly **one** line — `operation_failed` —
+because every other call site would have had to pass them by hand, and 368 call
+sites passing three attributes each is a rule nobody keeps.
+
+So the operation rides the context. `o11y.SetupTrace` already knows it and puts
+it there; `operationAttrsHandler` adds the three attributes to every record
+written while it is in scope. A log store can then filter by layer, domain and
+action the same way the metrics do: *every line this repository call wrote*
+becomes a query rather than a regex over message text.
+
+**It wraps the composed logger, not the standard handler.** That is the one
+thing the first version of this got wrong, and it is worth recording because
+the failure was invisible. `traceAttrsHandler` wraps the standard handler only,
+which is right for trace ids — the bridge puts those on the exported record
+itself. Nothing put the operation on the exported side, so the attributes went
+to stdout and never to the log store, and **the bridge supplying `trace_id`
+there hid it**: the records looked correlated. It showed up only on asking the
+live stack how many exported lines actually carried `app_layer`. The answer was
+3 of 294 when this was measured upstream.
+
+A line written outside any operation gets no attributes rather than three empty
+ones, which would read as "the empty layer" and pollute every filter. Most
+exported lines are in that category and correctly so: startup and shutdown, the
+access log (which carries `route`, `status`, `duration_ms`, `user_id` and
+`project_id` instead), a cache fetcher closure and its detached revalidation
+goroutine, which take their own context and genuinely run outside the request's
+operation.
+
+## The message says what happened
+
+A log line whose message is an identifier and whose content sits in an
+attribute is backwards: the message is the one field every viewer shows without
+being asked.
+
+224 messages named the operation. Now that the operation is on the record as
+attributes, naming it in the message is the same fact twice — once filterable,
+once not. They were rewritten in four groups:
+
+| Was | Now |
+| --- | --- |
+| `"usecase.Users.LinkRoles", "what", "invalidate cache"` | `"invalidate cache"` — the description was already there, in an attribute |
+| `"repository.Users.Insert", "query", …` | `"sql", "query", …` |
+| `"usecase.Users.GetByID", "cache", "enabled"` | `"cache lookup", "cache", "enabled"` |
+| `"usecase.AuthnIDPs: could not sign the state"` | `"could not sign the state"` — the prefix is now `app_layer` and `app_domain` |
+
+28 remain whose message is the operation and whose only content is attributes.
+They were left alone deliberately: writing prose for each is a judgement about
+what that particular line reports, and inventing it mechanically would produce
+sentences that restate an attribute.
+
 ## Rules for writing a log line
 
 1. **Take `ctx`.** `slog.InfoContext(ctx, …)`, `cslog.Trace(ctx, …)`. The

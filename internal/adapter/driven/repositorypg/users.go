@@ -144,12 +144,12 @@ func (ref *UsersRepository) Insert(ctx context.Context, input *domain.InsertUser
 		if txErr != nil {
 			if err := tx.Rollback(ctx); err != nil {
 				e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-				slog.ErrorContext(ctx, "repository.Users.Insert", "error", e)
+				slog.ErrorContext(ctx, "operation failed", "error", e)
 			}
 		} else {
 			if err := tx.Commit(ctx); err != nil {
 				e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-				slog.ErrorContext(ctx, "repository.Users.Insert", "error", e)
+				slog.ErrorContext(ctx, "operation failed", "error", e)
 			}
 		}
 	}()
@@ -160,7 +160,7 @@ func (ref *UsersRepository) Insert(ctx context.Context, input *domain.InsertUser
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
     `
 
-	cslog.Trace(ctx, "repository.Users.Insert", "query",
+	cslog.Trace(ctx, "sql", "query",
 		prettyPrint(query1,
 			input.ID,
 			input.FirstName,
@@ -204,7 +204,7 @@ func (ref *UsersRepository) Insert(ctx context.Context, input *domain.InsertUser
         ON CONFLICT (users_id, roles_id) DO NOTHING;
     `
 
-	cslog.Trace(ctx, "repository.Users.Insert", "query", prettyPrint(query2, input.ID.String()))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query2, input.ID.String()))
 	_, txErr = tx.Exec(ctx, query2, input.ID)
 	if txErr != nil {
 		return o11y.RecordError(ctx, span, start, txErr, ref.metrics, attrs)
@@ -290,7 +290,7 @@ func (ref *UsersRepository) UpdateByID(ctx context.Context, input *domain.Update
         WHERE id = $1;
     `
 
-	cslog.Trace(ctx, "repository.Users.UpdateByID", "query", prettyPrint(query, args...))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, args...))
 
 	result, err := ref.db.Exec(ctx, query, args...)
 	if err != nil {
@@ -328,7 +328,7 @@ func (ref *UsersRepository) DeleteByID(ctx context.Context, input *domain.Delete
         DELETE FROM users WHERE id = $1
     `
 
-	cslog.Trace(ctx, "repository.Users.DeleteByID", "query", prettyPrint(query, input.ID.String()))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, input.ID.String()))
 
 	result, err := ref.db.Exec(ctx, query, input.ID)
 	if err != nil {
@@ -340,7 +340,7 @@ func (ref *UsersRepository) DeleteByID(ctx context.Context, input *domain.Delete
 		errorType := &domain.UserNotFoundError{ID: input.ID}
 		e := o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
 		if e != nil {
-			slog.ErrorContext(ctx, "repository.Users.DeleteByID", "error", e)
+			slog.ErrorContext(ctx, "operation failed", "error", e)
 		}
 
 		return nil
@@ -381,7 +381,7 @@ func (ref *UsersRepository) SelectByID(ctx context.Context, id uuid.UUID) (*doma
         WHERE id = $1;
     `
 
-	cslog.Trace(ctx, "repository.Users.SelectByID", "query", prettyPrint(query, id.String()))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, id.String()))
 
 	row := ref.db.QueryRow(ctx, query, id)
 
@@ -451,7 +451,7 @@ func (ref *UsersRepository) SelectByEmail(ctx context.Context, email string) (*d
         WHERE email = $1;
     `
 
-	cslog.Trace(ctx, "repository.Users.SelectByEmail", "query", prettyPrint(query, email))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, email))
 
 	row := ref.db.QueryRow(ctx, query, email)
 
@@ -579,7 +579,7 @@ func (ref *UsersRepository) SelectByRoleID(ctx context.Context, roleID uuid.UUID
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.Users.SelectByRoleID", "query", prettyPrint(query, roleID.String()))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, roleID.String()))
 
 	// execute the query
 	rows, err := ref.db.Query(ctx, query, roleID)
@@ -775,7 +775,7 @@ func (ref *UsersRepository) SelectByProjectID(ctx context.Context, projectID uui
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.Users.SelectByProjectID", "query", prettyPrint(query, projectID.String()))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, projectID.String()))
 
 	// execute the query
 	rows, err := ref.db.Query(ctx, query, projectID)
@@ -964,7 +964,7 @@ func (ref *UsersRepository) Select(ctx context.Context, input *domain.SelectUser
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.Users.Select", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	// execute the query
 	rows, err := ref.db.Query(ctx, query)
@@ -1096,7 +1096,7 @@ func (ref *UsersRepository) LinkRoles(ctx context.Context, input *domain.LinkRol
         DO UPDATE SET updated_at = NOW();
     `
 
-	cslog.Trace(ctx, "repository.Users.LinkRoles", "query", prettyPrint(query, userIDs, roleIDs))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, userIDs, roleIDs))
 
 	_, err := ref.db.Exec(ctx, query, userIDs, roleIDs)
 	if err != nil {
@@ -1137,7 +1137,7 @@ func (ref *UsersRepository) UnlinkRoles(ctx context.Context, input *domain.Unlin
         WHERE users_id = $1 AND roles_id IN (SELECT unnest($2::uuid[]));
     `
 
-	cslog.Trace(ctx, "repository.Users.UnlinkRoles", "query", prettyPrint(queryString, input.UserID.String(), roleIDs))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(queryString, input.UserID.String(), roleIDs))
 
 	// Pass input.UserID and the slice of roleIDs as parameters
 	_, err := ref.db.Exec(ctx, queryString, input.UserID.String(), roleIDs)
@@ -1183,7 +1183,7 @@ func (ref *UsersRepository) LinkProjects(ctx context.Context, input *domain.Link
         DO UPDATE SET updated_at = NOW();
     `
 
-	cslog.Trace(ctx, "repository.Users.LinkProjects", "query", prettyPrint(query, userIDs, projectIDs))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, userIDs, projectIDs))
 
 	_, err := ref.db.Exec(ctx, query, userIDs, projectIDs)
 	if err != nil {
@@ -1224,7 +1224,7 @@ func (ref *UsersRepository) UnlinkProjects(ctx context.Context, input *domain.Un
         WHERE users_id = $1 AND projects_id IN (SELECT unnest($2::uuid[]));
     `
 
-	cslog.Trace(ctx, "repository.Users.UnlinkProjects", "query", prettyPrint(query, input.UserID.String(), projectIDs))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, input.UserID.String(), projectIDs))
 
 	_, err := ref.db.Exec(ctx, query, input.UserID.String(), projectIDs)
 	if err != nil {
@@ -1319,7 +1319,7 @@ func (ref *UsersRepository) SelectAuthz(ctx context.Context, userID uuid.UUID) (
         user_id;
     `
 
-	cslog.Trace(ctx, "repository.Users.SelectAuthz", "query", prettyPrint(query, userID.String()))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, userID.String()))
 
 	rows, err := ref.db.Query(ctx, query, userID)
 	if err != nil {
@@ -1458,7 +1458,7 @@ func (ref *UsersRepository) buildScanFields(item *domain.User, requestedFields s
 			scanFields = append(scanFields, &item.UpdatedAt)
 
 		default:
-			slog.Warn("repository.Users.buildScanFields", "what", "field not found", "field", field)
+			slog.Warn("field not found while building the scan list", "field", field)
 		}
 	}
 

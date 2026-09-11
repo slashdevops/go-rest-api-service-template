@@ -199,7 +199,7 @@ func (ref *MeHandler) authz(w http.ResponseWriter, r *http.Request) {
 	// the caller may use and can never reveal one they may not.
 	typedPermissions, err := payload.NewAuthzPermissions(permissions)
 	if err != nil {
-		slog.ErrorContext(r.Context(), "handler.Me.authz: unrecognised permission shape, sending an empty set",
+		slog.ErrorContext(r.Context(), "unrecognised permission shape, sending an empty set",
 			"user.id", userID.String(), "error", err)
 	}
 

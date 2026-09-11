@@ -5,6 +5,8 @@ import (
 	"log/slog"
 
 	"go.opentelemetry.io/otel/trace"
+
+	"github.com/slashdevops/go-rest-api-service-template/internal/o11y"
 )
 
 // traceAttrsHandler adds trace_id and span_id to records written while a span
@@ -32,18 +34,15 @@ type traceAttrsHandler struct {
 }
 
 func (h *traceAttrsHandler) Handle(ctx context.Context, record slog.Record) error {
-	span := trace.SpanContextFromContext(ctx)
-	if !span.IsValid() {
-		return h.Handler.Handle(ctx, record)
-	}
-
 	// Handle must not mutate the caller's record, and a Record is copied by
 	// value, so adding to this copy is safe and is what the slog documentation
 	// prescribes.
-	record.AddAttrs(
-		slog.String("trace_id", span.TraceID().String()),
-		slog.String("span_id", span.SpanID().String()),
-	)
+	if span := trace.SpanContextFromContext(ctx); span.IsValid() {
+		record.AddAttrs(
+			slog.String("trace_id", span.TraceID().String()),
+			slog.String("span_id", span.SpanID().String()),
+		)
+	}
 
 	return h.Handler.Handle(ctx, record)
 }
@@ -58,4 +57,62 @@ func (h *traceAttrsHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 
 func (h *traceAttrsHandler) WithGroup(name string) slog.Handler {
 	return &traceAttrsHandler{Handler: h.Handler.WithGroup(name)}
+}
+
+// operationAttrsHandler adds the layer, domain and action of the operation a
+// record was written inside.
+//
+// # Why a handler and not the call sites
+//
+// app.layer, app.domain and app.action are on the span and on the metric. On a
+// log record they were on exactly one line -- operation_failed -- because every
+// other call site would have had to pass them by hand, and 368 call sites
+// passing three attributes each is a rule nobody keeps.
+//
+// So the operation rides the context, put there by o11y.SetupTrace, which
+// already knows it, and is added here once. A log store can then filter by
+// layer, domain and action the same way the metrics do: "every line this
+// repository call wrote" becomes a query rather than a regex over message text.
+//
+// # Why it wraps the COMPOSED logger and not the standard handler
+//
+// It has to reach both sinks, and that is the one thing the first version of
+// this got wrong. traceAttrsHandler wraps the standard handler only, which is
+// correct for trace ids -- the OpenTelemetry bridge puts those on the exported
+// record itself -- but nothing puts the operation on the exported side. The
+// attributes went to stdout and not to the log store, and the bridge supplying
+// trace_id there hid it: the records looked correlated, so the gap showed up
+// only as "3 of 294 exported lines carry app_layer" when the live stack was
+// asked directly.
+type operationAttrsHandler struct {
+	slog.Handler
+}
+
+func (h *operationAttrsHandler) Handle(ctx context.Context, record slog.Record) error {
+	meta, ok := o11y.OperationFrom(ctx)
+	if !ok {
+		// Written outside any instrumented operation -- during startup, say.
+		// No attributes rather than three empty ones, which would read as "the
+		// empty layer" and pollute every filter.
+		return h.Handler.Handle(ctx, record)
+	}
+
+	record.AddAttrs(
+		slog.String(o11y.AttrLayer, meta.Layer),
+		slog.String(o11y.AttrDomain, meta.Domain),
+		slog.String(o11y.AttrAction, meta.Action),
+	)
+
+	return h.Handler.Handle(ctx, record)
+}
+
+// WithAttrs and WithGroup must return this type, or the wrapper is dropped the
+// first time a caller does logger.With(...) -- and two components do exactly
+// that at wiring time.
+func (h *operationAttrsHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &operationAttrsHandler{Handler: h.Handler.WithAttrs(attrs)}
+}
+
+func (h *operationAttrsHandler) WithGroup(name string) slog.Handler {
+	return &operationAttrsHandler{Handler: h.Handler.WithGroup(name)}
 }
