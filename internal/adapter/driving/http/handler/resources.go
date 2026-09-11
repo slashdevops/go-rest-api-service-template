@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/middleware"
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/payload"
@@ -61,27 +60,12 @@ func NewResourcesHandler(conf ResourcesHandlerConf) (*ResourcesHandler, error) {
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -166,7 +150,7 @@ func (ref *ResourcesHandler) getByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Debug("handler.Resources.getByID", "id", outResponse.ID.String())
+	slog.DebugContext(r.Context(), "handler.Resources.getByID", "id", outResponse.ID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "Resources found",
 		attribute.String("resource.id", outResponse.ID.String()))
 }
@@ -261,7 +245,7 @@ func (ref *ResourcesHandler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Debug("handler.Resources.list: called", "resources", len(outResponse.Items))
+	slog.DebugContext(r.Context(), "handler.Resources.list: called", "resources", len(outResponse.Items))
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "list resources",
 		attribute.Int("resources.count", len(outResponse.Items)))
 }
@@ -392,7 +376,7 @@ func (ref *ResourcesHandler) listMatches(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	slog.Debug("handler.Resources.listMatches: called", "resources", len(outResponse.Items))
+	slog.DebugContext(r.Context(), "handler.Resources.listMatches: called", "resources", len(outResponse.Items))
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "list resources by action and resource",
 		attribute.Int("resources.count", len(outResponse.Items)),
 		attribute.String("action", action),

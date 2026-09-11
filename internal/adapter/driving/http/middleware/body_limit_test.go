@@ -2,12 +2,13 @@ package middleware
 
 import (
 	"errors"
-	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/respond"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/respond"
 )
 
 func TestMaxBody(t *testing.T) {

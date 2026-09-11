@@ -55,7 +55,7 @@
 //   - Action — the specific operation, e.g. "GetByID", "Insert".
 //
 // These fields are projected into span names in dot-notation
-// (e.g. "service.Users.GetByID") and into OpenTelemetry attributes
+// (e.g. "usecase.Users.GetByID") and into OpenTelemetry attributes
 // for filtering and aggregation in the backend.
 //
 // [LayerMetrics] bundles a counter and a histogram for a given layer.

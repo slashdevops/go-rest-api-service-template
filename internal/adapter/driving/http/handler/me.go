@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/middleware"
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/payload"
@@ -61,27 +60,12 @@ func NewMeHandler(conf MeHandlerConf) (*MeHandler, error) {
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -215,7 +199,7 @@ func (ref *MeHandler) authz(w http.ResponseWriter, r *http.Request) {
 	// the caller may use and can never reveal one they may not.
 	typedPermissions, err := payload.NewAuthzPermissions(permissions)
 	if err != nil {
-		slog.Error("handler.Me.authz: unrecognised permission shape, sending an empty set",
+		slog.ErrorContext(r.Context(), "handler.Me.authz: unrecognised permission shape, sending an empty set",
 			"user.id", userID.String(), "error", err)
 	}
 
@@ -394,7 +378,7 @@ func (ref *MeHandler) getByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Debug("handler.Me.getByID", "user.email", outResponse.Email)
+	slog.DebugContext(r.Context(), "handler.Me.getByID", "user.email", outResponse.Email)
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, domain.UsersUserFound,
 		attribute.String("user.id", outResponse.ID.String()),
 		attribute.String("user.email", outResponse.Email),

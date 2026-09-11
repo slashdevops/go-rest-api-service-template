@@ -122,8 +122,7 @@ func (ref *OpenTelemetryMeter) newMetricExporter(ctx context.Context) (metric.Ex
 		insecureOpt := otlpmetrichttp.WithInsecure()
 		WithCompression := otlpmetrichttp.WithCompression(otlpmetrichttp.GzipCompression)
 		endpointOpt := otlpmetrichttp.WithEndpointURL(
-			fmt.Sprintf(
-				"http://%s:%d/api/v1/otlp/v1/metrics",
+			fmt.Sprintf("http://%s:%d/api/v1/otlp/v1/metrics",
 				ref.metricEndpoint,
 				ref.metricPort,
 			),
@@ -153,6 +152,11 @@ func (ref *OpenTelemetryMeter) newMeterProvider(exp metric.Exporter) (*metric.Me
 		metric.WithReader(
 			metric.NewPeriodicReader(exp, metric.WithInterval(ref.metricInterval)),
 		),
+		// The shared call-duration histogram needs boundaries that reach past
+		// the SDK default of 10 seconds, because the same instrument now times
+		// both a millisecond database call and a multi-minute LLM generation.
+		// See [CallDurationView].
+		metric.WithView(CallDurationView()),
 	)
 
 	return meterProvider, nil

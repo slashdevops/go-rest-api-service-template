@@ -2,13 +2,11 @@ package usecase
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/changenotify"
@@ -83,24 +81,12 @@ func NewTokenLifetimesService(conf TokenLifetimesServiceConf) (*TokenLifetimesSe
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{Counter: callsCounter, Histogram: callsDuration}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -173,7 +159,7 @@ func (ref *TokenLifetimesService) Update(ctx context.Context, input *domain.Upda
 // lifetime, not the old one for up to a reload interval.
 func (ref *TokenLifetimesService) applyLocally(ctx context.Context) {
 	if err := ref.mirror.Reload(ctx); err != nil {
-		slog.Warn("token lifetimes written but the local mirror could not be refreshed",
+		slog.WarnContext(ctx, "token lifetimes written but the local mirror could not be refreshed",
 			"error", err,
 			"consequence", "this replica keeps issuing with the previous lifetimes until the next scheduled reload",
 		)
@@ -184,7 +170,7 @@ func (ref *TokenLifetimesService) applyLocally(ctx context.Context) {
 	}
 
 	if err := ref.notifier.Notify(ctx); err != nil {
-		slog.Warn("token lifetimes written but other replicas could not be notified",
+		slog.WarnContext(ctx, "token lifetimes written but other replicas could not be notified",
 			"error", err,
 			"consequence", "they apply it within authn.token.lifetimes.reload.interval instead of at once",
 		)

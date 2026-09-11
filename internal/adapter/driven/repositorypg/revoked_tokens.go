@@ -18,7 +18,6 @@ import (
 	"github.com/slashdevops/go-rest-api-service-template/pkg/cslog"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 )
 
 type RevokedTokensRepositoryConfig struct {
@@ -87,27 +86,12 @@ func NewRevokedTokensRepository(conf RevokedTokensRepositoryConfig) (*RevokedTok
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }

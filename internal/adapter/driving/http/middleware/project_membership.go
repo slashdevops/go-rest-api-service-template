@@ -74,7 +74,7 @@ func RequireProjectMembership(checker ProjectMembershipChecker) Middleware {
 
 			switch membership {
 			case domain.ProjectMembershipAdmin:
-				slog.Info("project membership bypassed by an administrator",
+				slog.InfoContext(r.Context(), "project membership bypassed by an administrator",
 					"request_id", respond.RequestIDFrom(r.Context()),
 					"project.id", projectID.String(),
 					"user.id", userID.String(),
@@ -83,7 +83,7 @@ func RequireProjectMembership(checker ProjectMembershipChecker) Middleware {
 				)
 			case domain.ProjectMembershipMember:
 			default:
-				slog.Warn("project-scoped request refused: caller is not a member",
+				slog.WarnContext(r.Context(), "project-scoped request refused: caller is not a member",
 					"request_id", respond.RequestIDFrom(r.Context()),
 					"project.id", projectID.String(),
 					"user.id", userID.String(),

@@ -52,6 +52,26 @@ limits_config:
   # first thing an operator sees after a restart is a gap.
   reject_old_samples: false
 
+  # How far in the FUTURE an entry may be stamped. The default is 10 minutes,
+  # and on this stack that is not enough.
+  #
+  # The containers run inside a podman VM whose clock drifts behind the host's
+  # across sleep and wake -- measured at 10m39s after a few hours on a laptop.
+  # The service stamps a record with the HOST clock and Loki compares it to the
+  # VM clock, so once the drift passes the grace period every write is refused
+  # with "entry has timestamp too new".
+  #
+  # That failure is close to invisible. Loki answers 400 and logs to its own
+  # container; the exporter is asynchronous so no request fails; every panel
+  # simply stops updating and looks like an idle service. It was found here
+  # only because /health/detailed reports the SDK's export errors -- which is
+  # the reason that check exists.
+  #
+  # An hour absorbs any plausible drift. The real fix is `podman machine stop`
+  # and `start` to resynchronise the VM, and this keeps the stack usable until
+  # somebody does that.
+  creation_grace_period: 1h
+
   retention_period: 24h
 
   # The service runs at ctrace in development (.air.toml, run.sh), which is a

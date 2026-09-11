@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -10,7 +9,6 @@ import (
 	"uuid"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/ratelimit"
@@ -94,24 +92,12 @@ func NewRateLimitsService(conf RateLimitsServiceConf) (*RateLimitsService, error
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{Counter: callsCounter, Histogram: callsDuration}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -342,8 +328,7 @@ func (ref *RateLimitsService) applyLocally(ctx context.Context) {
 	}
 
 	if err := ref.ruleSet.Reload(ctx); err != nil {
-		slog.Warn(
-			"rate-limit rule written but the local mirror could not be refreshed",
+		slog.WarnContext(ctx, "rate-limit rule written but the local mirror could not be refreshed",
 			"error", err,
 			"consequence", "this replica keeps enforcing the previous set until the next scheduled reload",
 		)
@@ -361,8 +346,7 @@ func (ref *RateLimitsService) applyLocally(ctx context.Context) {
 	}
 
 	if err := ref.notifier.Notify(ctx); err != nil {
-		slog.Warn(
-			"rate-limit rule written but other replicas could not be notified",
+		slog.WarnContext(ctx, "rate-limit rule written but other replicas could not be notified",
 			"error", err,
 			"consequence", "they apply it within ratelimit.reload.interval instead of at once",
 		)

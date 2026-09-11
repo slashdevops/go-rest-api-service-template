@@ -1,12 +1,9 @@
 package handler
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
-
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/middleware"
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/payload"
@@ -51,27 +48,12 @@ func NewVersionHandler(conf VersionHandlerConf) (*VersionHandler, error) {
 		handler.metricsPrefix += "_"
 	}
 
-	callsCounter, err := handler.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", handler.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(handler.ot.Metrics.Meter, handler.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := handler.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", handler.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	handler.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	handler.metrics = metrics
 
 	return handler, nil
 }

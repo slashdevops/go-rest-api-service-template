@@ -72,6 +72,7 @@ type dashboardPanel struct {
 	} `json:"datasource"`
 	Type    string           `json:"type"`
 	Title   string           `json:"title"`
+	Expr    string           `json:"expr"`
 	Targets []dashboardPanel `json:"targets"`
 	Panels  []dashboardPanel `json:"panels"`
 	ID      int              `json:"id"`
@@ -223,27 +224,100 @@ func TestDashboardsHaveAStableUID(t *testing.T) {
 	}
 }
 
-// The logs panels are the reason Loki is in the pod. A dashboard that quietly
-// loses them leaves the third signal invisible, which is the state this whole
-// change exists to end.
-func TestObservabilityDashboardQueriesLoki(t *testing.T) {
+// Loki is in the pod so that logs are visible from a dashboard. A dashboard set
+// that quietly loses its log panels leaves the third signal invisible, which is
+// the state this whole change exists to end.
+//
+// It asserts the PROPERTY -- some dashboard queries Loki, and the one named for
+// logs is among them -- rather than naming a file. The previous version named
+// go-rest-api-service-template-observability.json and broke the moment that dashboard was
+// renamed, which is a test failing for the wrong reason.
+func TestSomeDashboardQueriesLoki(t *testing.T) {
 	t.Parallel()
 
-	body, err := os.ReadFile(filepath.Join(dashboardDir(t), "go-rest-api-service-template-observability.json"))
-	if err != nil {
-		t.Fatalf("read: %v", err)
-	}
+	var queryingLoki []string
 
-	var d dashboard
-	if err := json.Unmarshal(body, &d); err != nil {
-		t.Fatalf("invalid JSON: %v", err)
-	}
+	for _, file := range dashboardFiles(t) {
+		body, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatalf("read %s: %v", file, err)
+		}
 
-	for _, p := range flatten(d.Panels) {
-		if p.Datasource != nil && p.Datasource.UID == "loki" {
-			return
+		var d dashboard
+		if err := json.Unmarshal(body, &d); err != nil {
+			t.Fatalf("%s: invalid JSON: %v", filepath.Base(file), err)
+		}
+
+		for _, p := range flatten(d.Panels) {
+			if p.Datasource != nil && p.Datasource.UID == "loki" {
+				queryingLoki = append(queryingLoki, filepath.Base(file))
+
+				break
+			}
 		}
 	}
 
-	t.Error("the observability dashboard has no panel querying Loki; logs are the third signal and this is where they are shown")
+	if len(queryingLoki) == 0 {
+		t.Fatal("no dashboard queries Loki; logs are the third signal and a dashboard is where they are seen")
+	}
+
+	// The dashboard named for logs must be one of them, or "Logs" is a title
+	// over a page of metrics.
+	var hasLogsDashboard bool
+
+	for _, name := range queryingLoki {
+		if strings.Contains(name, "logs") {
+			hasLogsDashboard = true
+		}
+	}
+
+	if !hasLogsDashboard {
+		t.Errorf("the logs dashboard does not query Loki; dashboards that do: %v", queryingLoki)
+	}
+}
+
+// Every dashboard scopes its queries to the selected service.
+//
+// One Grafana can serve this service and the template it came from, or two
+// replicas of one deployment. A panel that omits the selector sums them
+// together and says nothing about having done so -- and a dashboard where some
+// panels are scoped and some are not is worse than one where none are, because
+// the two disagree and neither is marked.
+func TestDashboardQueriesAreScopedToTheSelectedService(t *testing.T) {
+	t.Parallel()
+
+	for _, file := range dashboardFiles(t) {
+		t.Run(strings.TrimSuffix(filepath.Base(file), ".json"), func(t *testing.T) {
+			t.Parallel()
+
+			body, err := os.ReadFile(file)
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+
+			var d dashboard
+			if err := json.Unmarshal(body, &d); err != nil {
+				t.Fatalf("invalid JSON: %v", err)
+			}
+
+			for _, p := range flatten(d.Panels) {
+				for _, target := range p.Targets {
+					expr := target.Expr
+					if expr == "" || !strings.Contains(expr, "_") {
+						continue
+					}
+
+					// target_info is the build-info table: one series per
+					// instance is the point of it.
+					if strings.Contains(expr, "target_info") {
+						continue
+					}
+
+					if !strings.Contains(expr, "service_name") {
+						t.Errorf("panel %q has a query that is not scoped to $service_name: %s", p.Title, expr)
+					}
+				}
+			}
+		})
+	}
 }

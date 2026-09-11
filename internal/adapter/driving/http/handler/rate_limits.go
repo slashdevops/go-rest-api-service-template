@@ -3,14 +3,12 @@ package handler
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/middleware"
@@ -63,24 +61,12 @@ func NewRateLimitsHandler(conf RateLimitsHandlerConf) (*RateLimitsHandler, error
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{Counter: callsCounter, Histogram: callsDuration}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -331,7 +317,7 @@ func (ref *RateLimitsHandler) create(w http.ResponseWriter, r *http.Request) {
 	respond.SetLocation(w, r, input.ID.String())
 	respond.WriteJSONMessage(w, r, http.StatusCreated, domain.RateLimitsRateLimitCreatedSuccessfully)
 
-	slog.Debug("handler.RateLimits.create: called", "rate_limit.id", input.ID.String())
+	slog.DebugContext(r.Context(), "handler.RateLimits.create: called", "rate_limit.id", input.ID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "create rate limit",
 		attribute.String("rate_limit.id", input.ID.String()),
 		attribute.String("rate_limit.strategy", string(input.Strategy)),

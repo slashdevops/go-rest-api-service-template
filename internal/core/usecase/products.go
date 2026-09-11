@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -10,7 +9,6 @@ import (
 	"uuid"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/repository"
@@ -59,27 +57,12 @@ func NewProductsService(conf ProductsServiceConf) (*ProductsService, error) {
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s handler calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -257,7 +240,7 @@ func (ref *ProductsService) DeleteByIDByProjectID(ctx context.Context, input *do
 		}
 
 		if err := ref.resourcesLimits.DecrementUsage(ctx, rlScope, domain.ResourcesLimitsResourceTypeProducts); err != nil {
-			slog.Warn("service.Products.DeleteByIDByProjectID",
+			slog.WarnContext(ctx, "usecase.Products.DeleteByIDByProjectID",
 				"what", "failed to decrement usage", slog.Any("error", err),
 				"project_id", input.ProjectID.String())
 		}

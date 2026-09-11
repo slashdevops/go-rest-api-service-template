@@ -100,21 +100,62 @@ func HeaderAPIVersion(version string) Middleware {
 	}
 }
 
-// Logging middleware logs the request and response
-func Logging(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wrapped := newWrappedResponseWriter(w)
+// Logging writes one line per request: this service's access log.
+//
+// # What it carries, and why each field is there
+//
+//   - It takes the CONTEXT. Everything else here is detail; this is the point.
+//     The line is emitted through slog.InfoContext so the OpenTelemetry bridge
+//     can read the server span out of the context and stamp trace_id and
+//     span_id on the record. Without it the access log and the trace of the
+//     same request cannot be joined, which is the single most useful thing a
+//     log store does. It works because Tracing runs ABOVE this middleware --
+//     a context does not flow back up out of next.ServeHTTP, so a span started
+//     below would not be visible from here.
+//   - duration_ms, because "which requests are slow" is the first question
+//     asked of an access log and the line could not answer it.
+//   - route, the mux pattern rather than the path. `/users/{id}` groups; the
+//     path does not.
+//   - client_ip, resolved through the trusted-proxy policy. RemoteAddr behind
+//     a proxy is the proxy, logged identically for every caller.
+//   - bytes, because a slow endpoint returning a megabyte and a slow endpoint
+//     returning nothing are different problems that a duration alone cannot
+//     tell apart.
+//
+// clientIP may be nil, in which case the peer address is logged as before.
+func Logging(clientIP *ClientIPResolver) Middleware {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			start := time.Now()
+			wrapped := newWrappedResponseWriter(w)
 
-		next.ServeHTTP(wrapped, r)
+			next.ServeHTTP(wrapped, r)
 
-		slog.Info("request",
-			"request_id", respond.RequestIDFrom(r.Context()),
-			"method", r.Method,
-			"path", r.URL.Path,
-			"address", r.RemoteAddr,
-			"status", wrapped.status,
-		)
-	})
+			address := r.RemoteAddr
+			if clientIP != nil {
+				address = clientIP.ClientIP(r)
+			}
+
+			// Read AFTER the handler: the mux sets the pattern while routing,
+			// so before this point there is nothing to read.
+			route := r.Pattern
+			if route == "" {
+				route = "unmatched"
+			}
+
+			slog.InfoContext(r.Context(), "request",
+				"request_id", respond.RequestIDFrom(r.Context()),
+				"method", r.Method,
+				"path", r.URL.Path,
+				"route", route,
+				"client_ip", address,
+				"status", wrapped.status,
+				"duration_ms", time.Since(start).Milliseconds(),
+				"bytes", wrapped.written,
+				"user_agent", r.UserAgent(),
+			)
+		})
+	}
 }
 
 // OtelTextMapPropagation middleware propagates the OpenTelemetry context
@@ -335,7 +376,7 @@ func checkToken(
 				// caller needs to tell "expired, go refresh" from "revoked, go
 				// log in", that is a deliberate signal to design (Phase 3b),
 				// not a library string to leak.
-				slog.Debug("checkToken: token refused", "error", err, "path", r.URL.Path)
+				slog.DebugContext(r.Context(), "checkToken: token refused", "error", err, "path", r.URL.Path)
 				respond.WriteJSONMessage(w, r, http.StatusUnauthorized, "Invalid or expired token")
 				return
 			}
@@ -373,7 +414,7 @@ func checkToken(
 			if revoked != nil && tokenTypeStr == domain.TokenTypeAccess.String() {
 				jti, ok := claims["jti"].(string)
 				if !ok {
-					slog.Warn("checkToken: access token has no jti and therefore cannot be revoked", "path", r.URL.Path)
+					slog.WarnContext(r.Context(), "checkToken: access token has no jti and therefore cannot be revoked", "path", r.URL.Path)
 					respond.WriteJSONMessage(w, r, http.StatusUnauthorized, "Invalid or expired token")
 
 					return
@@ -381,7 +422,7 @@ func checkToken(
 
 				tokenID, err := uuid.Parse(jti)
 				if err != nil {
-					slog.Warn("checkToken: access token has an unreadable jti", "path", r.URL.Path)
+					slog.WarnContext(r.Context(), "checkToken: access token has an unreadable jti", "path", r.URL.Path)
 					respond.WriteJSONMessage(w, r, http.StatusUnauthorized, "Invalid or expired token")
 
 					return
@@ -505,8 +546,7 @@ func CheckAuthz(authz *usecase.AuthzService) Middleware {
 
 			ok, err = authz.IsAuthorized(r.Context(), sub, action, r.URL.Path)
 			if err != nil {
-				slog.Error(
-					"authorization service error",
+				slog.ErrorContext(r.Context(), "authorization service error",
 					"error", err,
 					"sub", subStr,
 					"method", r.Method,
@@ -520,7 +560,7 @@ func CheckAuthz(authz *usecase.AuthzService) Middleware {
 				// A refusal is a security event: logged with the request id,
 				// like the membership refusal, so a caller probing the
 				// authorization surface is visible. It used to write nothing.
-				slog.Warn("authorization refused",
+				slog.WarnContext(r.Context(), "authorization refused",
 					"request_id", respond.RequestIDFrom(r.Context()),
 					"user.id", subStr,
 					"method", r.Method,
@@ -610,8 +650,7 @@ func Recovery(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				slog.Error(
-					"panic recovered",
+				slog.ErrorContext(r.Context(), "panic recovered",
 					"error", rec,
 					"method", r.Method,
 					"path", r.URL.Path,

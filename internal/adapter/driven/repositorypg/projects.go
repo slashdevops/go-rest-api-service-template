@@ -22,7 +22,6 @@ import (
 	"github.com/slashdevops/go-rest-api-service-template/pkg/cslog"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 )
 
 type ProjectsRepositoryConfig struct {
@@ -88,27 +87,12 @@ func NewProjectsRepository(conf ProjectsRepositoryConfig) (*ProjectsRepository, 
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -160,13 +144,13 @@ func (ref *ProjectsRepository) Insert(ctx context.Context, input *domain.InsertP
 		if txErr != nil {
 			if err := tx.Rollback(ctx); err != nil {
 				e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-				slog.Error("repository.Projects.Insert", "error", e)
+				slog.ErrorContext(ctx, "repository.Projects.Insert", "error", e)
 			}
 		} else {
 			if err := tx.Commit(ctx); err != nil {
 				e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 				if e != nil {
-					slog.Error("repository.Projects.Insert", "error", e)
+					slog.ErrorContext(ctx, "repository.Projects.Insert", "error", e)
 				}
 			}
 		}
@@ -217,7 +201,7 @@ func (ref *ProjectsRepository) Insert(ctx context.Context, input *domain.InsertP
 		return ref.handlePgError(txErr, input)
 	}
 
-	slog.Debug("repository.Projects.Insert", "project.id", input.ID)
+	slog.DebugContext(ctx, "repository.Projects.Insert", "project.id", input.ID)
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "project inserted successfully", attribute.String("project.id", input.ID.String()))
 
 	return nil
@@ -597,7 +581,7 @@ func (ref *ProjectsRepository) SelectByUserID(ctx context.Context, input *domain
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.Warn("repository.Projects.Select", "what", "no projects found")
+		slog.WarnContext(ctx, "repository.Projects.Select", "what", "no projects found")
 		return &domain.SelectProjectsOutput{
 			Items:     make([]domain.Project, 0),
 			Paginator: domain.Paginator{},
@@ -788,7 +772,7 @@ func (ref *ProjectsRepository) Select(ctx context.Context, input *domain.SelectP
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.Warn("repository.Projects.Select", "what", "no projects found")
+		slog.WarnContext(ctx, "repository.Projects.Select", "what", "no projects found")
 		return &domain.SelectProjectsOutput{
 			Items:     make([]domain.Project, 0),
 			Paginator: domain.Paginator{},

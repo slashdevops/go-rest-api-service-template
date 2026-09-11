@@ -17,7 +17,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
@@ -111,27 +110,12 @@ func NewProductsRepository(conf ProductsRepositoryConfig) (*ProductsRepository, 
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -218,7 +202,7 @@ func (ref *ProductsRepository) InsertByProjectID(ctx context.Context, input *dom
 		return o11y.RecordError(ctx, span, start, notFound, ref.metrics, attrs)
 	}
 
-	slog.Debug("repository.Products.InsertByProjectID", "product.id", input.ID)
+	slog.DebugContext(ctx, "repository.Products.InsertByProjectID", "product.id", input.ID)
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "product inserted successfully",
 		attribute.String("product.id", input.ID.String()))
 
@@ -671,7 +655,7 @@ func (ref *ProductsRepository) collectPage(
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.Warn("repository.Products."+action, "what", "no products found")
+		slog.WarnContext(ctx, "repository.Products."+action, "what", "no products found")
 
 		return &domain.SelectProductsOutput{
 			Items:     make([]domain.Product, 0),

@@ -17,7 +17,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
 	"github.com/slashdevops/go-rest-api-service-template/internal/o11y"
@@ -108,27 +107,12 @@ func NewRateLimitsRepository(conf RateLimitsRepositoryConfig) (*RateLimitsReposi
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -181,7 +165,7 @@ func (ref *RateLimitsRepository) Insert(ctx context.Context, input *domain.Creat
 
 	defer func() {
 		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
-			slog.Error("repository.RateLimits.Insert", "what", "rollback failed", "error", rbErr)
+			slog.ErrorContext(ctx, "repository.RateLimits.Insert", "what", "rollback failed", "error", rbErr)
 		}
 	}()
 
@@ -215,7 +199,7 @@ func (ref *RateLimitsRepository) Insert(ctx context.Context, input *domain.Creat
 		return o11y.RecordError(ctx, span, start, ref.handlePgError(err, input), ref.metrics, attrs)
 	}
 
-	slog.Debug("repository.RateLimits.Insert", "rate_limit_id", input.ID.String(), "windows", len(input.Windows))
+	slog.DebugContext(ctx, "repository.RateLimits.Insert", "rate_limit_id", input.ID.String(), "windows", len(input.Windows))
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "rate limit inserted successfully", attribute.String("rate_limit.id", input.ID.String()))
 
 	return nil
@@ -251,7 +235,7 @@ func (ref *RateLimitsRepository) UpdateByID(ctx context.Context, input *domain.U
 
 	defer func() {
 		if rbErr := tx.Rollback(ctx); rbErr != nil && !errors.Is(rbErr, pgx.ErrTxClosed) {
-			slog.Error("repository.RateLimits.UpdateByID", "what", "rollback failed", "error", rbErr)
+			slog.ErrorContext(ctx, "repository.RateLimits.UpdateByID", "what", "rollback failed", "error", rbErr)
 		}
 	}()
 
@@ -304,7 +288,7 @@ func (ref *RateLimitsRepository) UpdateByID(ctx context.Context, input *domain.U
 		return o11y.RecordError(ctx, span, start, ref.handlePgError(err, input), ref.metrics, attrs)
 	}
 
-	slog.Debug("repository.RateLimits.UpdateByID", "rate_limit_id", input.ID.String())
+	slog.DebugContext(ctx, "repository.RateLimits.UpdateByID", "rate_limit_id", input.ID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "rate limit updated successfully", attribute.String("rate_limit.id", input.ID.String()))
 
 	return nil
@@ -359,7 +343,7 @@ func (ref *RateLimitsRepository) DeleteByID(ctx context.Context, input *domain.D
 		return o11y.RecordError(ctx, span, start, &domain.RateLimitNotFoundError{ID: input.ID}, ref.metrics, attrs)
 	}
 
-	slog.Debug("repository.RateLimits.DeleteByID", "rate_limit_id", input.ID.String())
+	slog.DebugContext(ctx, "repository.RateLimits.DeleteByID", "rate_limit_id", input.ID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "rate limit deleted successfully", attribute.String("rate_limit.id", input.ID.String()))
 
 	return nil
@@ -649,7 +633,7 @@ func (ref *RateLimitsRepository) Select(ctx context.Context, input *domain.Selec
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.Warn("repository.RateLimits.Select", "what", "no rate limits found")
+		slog.WarnContext(ctx, "repository.RateLimits.Select", "what", "no rate limits found")
 
 		return &domain.SelectRateLimitsOutput{
 			Items:     make([]domain.RateLimit, 0),

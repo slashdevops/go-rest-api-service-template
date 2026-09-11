@@ -328,7 +328,7 @@ func (ref *RevokedAccessTokens) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Debug("stopping the revoked access token mirror", "cause", context.Cause(ctx))
+			slog.DebugContext(ctx, "stopping the revoked access token mirror", "cause", context.Cause(ctx))
 
 			return
 		case <-ticker.C:
@@ -336,8 +336,7 @@ func (ref *RevokedAccessTokens) Run(ctx context.Context) {
 				// Loud, because every symptom of this is invisible: the mirror
 				// keeps answering from a set that is quietly getting older, and
 				// a revocation made on another replica is never seen here.
-				slog.Error(
-					"could not reload the revoked access token set; serving from the previous copy",
+				slog.ErrorContext(ctx, "could not reload the revoked access token set; serving from the previous copy",
 					"error", err,
 					"staleness", ref.Staleness(),
 					"size", ref.Size(),

@@ -3,11 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/middleware"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/middleware"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/payload"
 	"github.com/slashdevops/go-rest-api-service-template/internal/o11y"

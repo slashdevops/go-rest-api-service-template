@@ -28,7 +28,7 @@ const (
 // under the request id, so an operator can join the two and a caller cannot
 // read the first.
 func WriteInternalError(w http.ResponseWriter, r *http.Request, err error) {
-	slog.Error("internal server error",
+	slog.ErrorContext(r.Context(), "internal server error",
 		"request_id", RequestIDFrom(r.Context()),
 		"method", r.Method,
 		"path", r.URL.Path,
