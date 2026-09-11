@@ -54,24 +54,11 @@ func (a *App) initHTTPServer(ctx context.Context) error {
 	// Location headers are built from this, never from a request header.
 	respond.SetPublicBaseURL(a.configs.HTTPServer.PublicURL.Value)
 
-	// Setup common middlewares. The order is the contract; middleware/doc.go
-	// explains each position and TestEveryRequestIsRecoveredBoundedAndHeadered
-	// pins it.
-	apiCommonMdws := []middleware.Middleware{
-		middleware.RequestID,
-		middleware.Recovery,
-		middleware.SecurityHeaders(a.securityHeadersOpts()),
-		middleware.RewriteStandardErrorsAsJSON,
-		middleware.Logging,
-		middleware.HeaderAPIVersion(apiVersion),
-		middleware.OtelTextMapPropagation,
-		middleware.MaxBody(a.bodyLimits()),
-		middleware.RequireJSONBody,
-	}
-
 	// The client IP resolver is needed by the limiter AND by the exemptions --
 	// an excluded address must be exempt even when rate limiting is disabled --
-	// and building it can fail, so it is built once, here.
+	// and by the request log and the server span, which must both report the
+	// caller rather than the proxy in front of it. Building it can fail, so it
+	// is built once, here, above everything that uses it.
 	var clientIP *middleware.ClientIPResolver
 
 	{
@@ -84,6 +71,29 @@ func (a *App) initHTTPServer(ctx context.Context) error {
 			// to a resolver that trusts nothing when an operator asked it to.
 			return fmt.Errorf("http.server.trusted.proxies: %w", err)
 		}
+	}
+
+	// Setup common middlewares. The order is the contract; middleware/doc.go
+	// explains each position and TestEveryRequestIsRecoveredBoundedAndHeadered
+	// pins it.
+	//
+	// Within the transport group, the three observability middlewares run in
+	// the only order that works: OtelTextMapPropagation adopts the caller's
+	// trace context, Tracing opens this service's span in it, and Logging
+	// writes the request line INSIDE that span so the line carries its trace
+	// id. A context does not flow back up out of next.ServeHTTP, so a span
+	// opened any lower is invisible to the log line.
+	apiCommonMdws := []middleware.Middleware{
+		middleware.RequestID,
+		middleware.Recovery,
+		middleware.SecurityHeaders(a.securityHeadersOpts()),
+		middleware.RewriteStandardErrorsAsJSON,
+		middleware.OtelTextMapPropagation,
+		middleware.Tracing(a.telemetry.Traces.Tracer, clientIP),
+		middleware.Logging(clientIP),
+		middleware.HeaderAPIVersion(apiVersion),
+		middleware.MaxBody(a.bodyLimits()),
+		middleware.RequireJSONBody,
 	}
 
 	// Stated at startup because the two postures fail in OPPOSITE directions and

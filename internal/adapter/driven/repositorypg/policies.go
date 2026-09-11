@@ -17,7 +17,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
 	"github.com/slashdevops/go-rest-api-service-template/internal/o11y"
@@ -90,27 +89,12 @@ func NewPoliciesRepository(conf PoliciesRepositoryConfig) (*PoliciesRepository, 
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -171,7 +155,7 @@ func (ref *PoliciesRepository) Insert(ctx context.Context, input *domain.CreateP
 		return o11y.RecordError(ctx, span, start, ref.handlePgError(err, input), ref.metrics, attrs)
 	}
 
-	slog.Debug("repository.Policies.Insert", "policy_id", input.ID.String())
+	slog.DebugContext(ctx, "repository.Policies.Insert", "policy_id", input.ID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "policy inserted successfully", attribute.String("policy.id", input.ID.String()))
 
 	return nil
@@ -275,12 +259,12 @@ func (ref *PoliciesRepository) DeleteByID(ctx context.Context, input *domain.Del
 		// grateful return user was deleted, security reason, but log and record error
 		errorType := &domain.PolicyNotFoundError{Message: "policy not found"}
 		e := o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
-		slog.Error("repository.Policies.DeleteByID", "error", e, "policy.id", input.ID.String())
+		slog.ErrorContext(ctx, "repository.Policies.DeleteByID", "error", e, "policy.id", input.ID.String())
 
 		return nil
 	}
 
-	slog.Debug("repository.Policies.DeleteByID", "policy_id", input.ID.String())
+	slog.DebugContext(ctx, "repository.Policies.DeleteByID", "policy_id", input.ID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "policy deleted successfully",
 		attribute.String("policy.id", input.ID.String()),
 	)
@@ -502,7 +486,7 @@ func (ref *PoliciesRepository) Select(ctx context.Context, input *domain.SelectP
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.Warn("repository.Policies.Select", "what", "no policies found")
+		slog.WarnContext(ctx, "repository.Policies.Select", "what", "no policies found")
 		return &domain.SelectPoliciesOutput{
 			Items:     make([]domain.Policy, 0),
 			Paginator: domain.Paginator{},
@@ -712,7 +696,7 @@ func (ref *PoliciesRepository) SelectByRoleID(ctx context.Context, roleID uuid.U
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.Warn("repository.Policies.SelectByRoleID", "what", "no policies found")
+		slog.WarnContext(ctx, "repository.Policies.SelectByRoleID", "what", "no policies found")
 		return &domain.SelectPoliciesOutput{
 			Items:     make([]domain.Policy, 0),
 			Paginator: domain.Paginator{},

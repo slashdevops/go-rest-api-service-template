@@ -250,7 +250,7 @@ func (ref *TokenLifetimes) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Debug("stopping the token lifetimes mirror", "cause", context.Cause(ctx))
+			slog.DebugContext(ctx, "stopping the token lifetimes mirror", "cause", context.Cause(ctx))
 
 			return
 		case <-ticker.C:
@@ -258,7 +258,7 @@ func (ref *TokenLifetimes) Run(ctx context.Context) {
 				// Loud, because every symptom is invisible: tokens keep being
 				// issued, from a value that is quietly getting older, and a
 				// change made on another replica is never seen here.
-				slog.Error("could not reload the token lifetimes; issuing from the previous value",
+				slog.ErrorContext(ctx, "could not reload the token lifetimes; issuing from the previous value",
 					"error", err,
 					"staleness", ref.Staleness(),
 				)

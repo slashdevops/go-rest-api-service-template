@@ -372,8 +372,7 @@ func (conf RateLimitConfig) charge(w http.ResponseWriter, r *http.Request, bucke
 				// same answer the mirror gives a rule it cannot enforce; this
 				// path exists for the window between a bad write and the reload
 				// that drops it.
-				slog.Error(
-					"rate-limit rule cannot be enforced and is being skipped for this request",
+				slog.ErrorContext(r.Context(), "rate-limit rule cannot be enforced and is being skipped for this request",
 					"error", fault.err,
 					"rule", fault.rule,
 					"scope", b.scope,
@@ -390,8 +389,7 @@ func (conf RateLimitConfig) charge(w http.ResponseWriter, r *http.Request, bucke
 			// The store could not answer. NOT "allowed": an unknown budget is
 			// not an empty one, and reporting it as allowed removes the limit
 			// exactly when the system is least healthy.
-			slog.Warn(
-				"rate limit store fault",
+			slog.WarnContext(r.Context(), "rate limit store fault",
 				"error", err,
 				"rule", b.rule,
 				"scope", b.scope,
@@ -484,8 +482,7 @@ func (conf RateLimitConfig) budgetsFor(
 		// It is logged rather than refused: a can't-happen path that answers
 		// 429 turns an internal inconsistency into an outage, and the rule set
 		// being absent is not evidence that this particular caller is abusive.
-		slog.Error(
-			"rate-limit rule set is not loaded; this request is not being limited",
+		slog.ErrorContext(r.Context(), "rate-limit rule set is not loaded; this request is not being limited",
 			"what", "the mirror reports no known rule set on a serving replica",
 			"why", "the first load is fatal at startup, so this should be unreachable",
 			"consequence", "requests are not being limited until a reload succeeds",

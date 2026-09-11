@@ -163,11 +163,17 @@ The operator's view: [`docs/operations/running-the-service.md`](../docs/operatio
 
 ## Observability
 
-Three OpenTelemetry signals. Traces and metrics go to Tempo and Prometheus;
-logs are the one with a second sink and one hard rule.
+Three OpenTelemetry signals.
 
+Traces and metrics go to Tempo and Prometheus; logs are the one with a second
+sink and one hard rule.
+
+- **One instrument pair for every layer**: `app_calls_total` and `app_call_duration_seconds`, with the layer as the `app.layer` attribute — `handler` (driving), `usecase` (core), `repository`/`cache`/`mail` (driven). The values name port ROLES, not packages, so swapping an adapter does not rename a metric. Build them with `o11y.NewLayerMetrics`, never by hand: one name means one description, and the SDK splits the series when two registrations disagree. The hexagon ring is documentation, not a label. `cache` and `mail` keep their specialised instruments *as well*.
+- **Five dashboards, each named for a question**: Overview, Layers (one dashboard for every layer, via a `layer` variable), Logs, Cache, Email. The three per-layer copies are gone — they existed only because the layer was in the metric name. Every dashboard carries `service_name`/`instance` variables, Loki-sourced restart annotations, and `clamp_min` on every ratio so an idle service does not render NaN as a red 0%.
 - **A log exporter ADDS a sink, it never replaces `log.output`.** `slog` stays the API; `App.composeLogger` wraps the standard handler and the OTEL one in a `slog.NewMultiHandler`, so a collector that is down costs Grafana and not the local record. `opentelemetry.log.exporter` is `noop` (stdout only, the default and the pre-existing behaviour), `console` (see the OTLP record shape) or `otlp-http` (Loki, or a Collector — `opentelemetry.log.path` is why, Loki serves `/otlp/v1/logs` and a Collector `/v1/logs`).
-- **TRACE never leaves the process.** `o11y.ExportedLogFloor` raises the exporter's minimum to `DEBUG` whatever `log.level` says, because `ctrace` logs SQL with its arguments and outbound LLM bodies. It is a constant, not a flag: a flag can be raised, in production, by a typo. So `-log.level=ctrace` is unchanged on stdout and exports `DEBUG` and above.
+- **TRACE never leaves the process.** `o11y.ExportedLogFloor` raises the exporter's minimum to `DEBUG` whatever `log.level` says, because `ctrace` logs SQL with its arguments and outbound request bodies. It is a constant, not a flag: a flag can be raised, in production, by a typo. So `-log.level=ctrace` is unchanged on stdout and exports `DEBUG` and above.
+- **Every log in the request path takes `ctx`** (`slog.InfoContext`, `cslog.Trace`) — the bridge reads the span from there and nowhere else; `TestNoContextlessSlogInTheRequestPath` fails the build otherwise, and its exemptions are keyed on the function, not the file. **No e-mail, token, password, secret or prompt text above TRACE**; log ids. **`ExportErrors.Handle` never logs** — it is the log pipeline's own error path, and a `slog` call there is a loop.
+- **The server span starts in `middleware.Tracing`, above `Logging`**, so the request line is written inside it and a request refused before the handler still gets a span. `http.route` is the mux pattern, set on the way out; the span is renamed then, because `ServeMux` assigns `Request.Pattern` while it routes. Only 5xx marks a span `Error`. The layer/domain/action are flat attributes on a log record, never a `slog.Group`.
 - **`application`/`version` belong to the standard handler only**; on the exported side they are resource attributes carried once per batch. **Anything capturing `slog.Default()` must be wired after `initTelemetry`** — `TestLoggerConsumersAreWiredAfterTelemetry` pins the order.
 → [observability.md](../docs/architecture/observability.md)
 

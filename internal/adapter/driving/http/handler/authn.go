@@ -13,7 +13,6 @@ import (
 	"uuid"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/middleware"
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/payload"
@@ -65,28 +64,12 @@ func NewAuthnHandler(conf AuthnHandlerConf) (*AuthnHandler, error) {
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-		// OTel usually has default buckets, but you can define custom explicit buckets here if needed
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -211,7 +194,7 @@ func (ref *AuthnHandler) loginUser(w http.ResponseWriter, r *http.Request) {
 	// offers no controls until the next read succeeds.
 	typedResources, err := payload.NewAuthzPermissions(out.Resources)
 	if err != nil {
-		slog.Error("handler.Authn.login: unrecognised permission shape, sending an empty set",
+		slog.ErrorContext(r.Context(), "handler.Authn.login: unrecognised permission shape, sending an empty set",
 			"user.id", out.UserID.String(), "error", err)
 	}
 
@@ -518,7 +501,7 @@ func (ref *AuthnHandler) logout(w http.ResponseWriter, r *http.Request) {
 	var req payload.LogoutUserRequest
 	if r.Body != nil {
 		if err := decodeJSONBody(r, &req); err != nil && !errors.Is(err, io.EOF) {
-			slog.Debug("logout: could not decode the request body, continuing without a refresh token", "error", err)
+			slog.DebugContext(r.Context(), "logout: could not decode the request body, continuing without a refresh token", "error", err)
 		}
 	}
 
@@ -561,7 +544,7 @@ func (ref *AuthnHandler) logout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Debug("user logged out", "userID", userID)
+	slog.DebugContext(r.Context(), "user logged out", "userID", userID)
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, domain.AuthnUserLoggedOutSuccessfully)
 

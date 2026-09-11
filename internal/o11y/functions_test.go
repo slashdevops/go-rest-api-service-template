@@ -32,17 +32,17 @@ func TestMetadata_FullName(t *testing.T) {
 	}{
 		{
 			name:     "standard_metadata",
-			meta:     Metadata{Layer: "service", Domain: "Users", Action: "GetByID"},
-			expected: "service.Users.GetByID",
+			meta:     Metadata{Layer: LayerUsecase, Domain: "Users", Action: "GetByID"},
+			expected: "usecase.Users.GetByID",
 		},
 		{
 			name:     "handler_layer",
-			meta:     Metadata{Layer: "handler", Domain: "Projects", Action: "Create"},
+			meta:     Metadata{Layer: LayerHandler, Domain: "Projects", Action: "Create"},
 			expected: "handler.Projects.Create",
 		},
 		{
 			name:     "repository_layer",
-			meta:     Metadata{Layer: "repository", Domain: "Embeddings", Action: "Insert"},
+			meta:     Metadata{Layer: LayerRepository, Domain: "Embeddings", Action: "Insert"},
 			expected: "repository.Embeddings.Insert",
 		},
 		{
@@ -67,7 +67,7 @@ func TestMetadata_FullName(t *testing.T) {
 func TestMetadata_ToAttributes(t *testing.T) {
 	t.Parallel()
 
-	meta := Metadata{Layer: "service", Domain: "Users", Action: "GetByID"}
+	meta := Metadata{Layer: LayerUsecase, Domain: "Users", Action: "GetByID"}
 	attrs := meta.ToAttributes()
 
 	if len(attrs) != 3 {
@@ -75,7 +75,7 @@ func TestMetadata_ToAttributes(t *testing.T) {
 	}
 
 	expected := map[attribute.Key]string{
-		AttrLayer:  "service",
+		AttrLayer:  LayerUsecase,
 		AttrDomain: "Users",
 		AttrAction: "GetByID",
 	}
@@ -99,7 +99,7 @@ func TestSetupTrace(t *testing.T) {
 	defer func() { _ = tp.Shutdown(context.Background()) }()
 	tracer := tp.Tracer("test")
 
-	meta := Metadata{Layer: "service", Domain: "Users"}
+	meta := Metadata{Layer: LayerUsecase, Domain: "Users"}
 	ctx, span, attrs := SetupTrace(context.Background(), tracer, meta, "GetByID")
 	span.End()
 
@@ -120,8 +120,8 @@ func TestSetupTrace(t *testing.T) {
 		t.Fatalf("expected 1 span, got %d", len(spans))
 	}
 
-	if spans[0].Name != "service.Users.GetByID" {
-		t.Errorf("span name = %q, want %q", spans[0].Name, "service.Users.GetByID")
+	if spans[0].Name != "usecase.Users.GetByID" {
+		t.Errorf("span name = %q, want %q", spans[0].Name, "usecase.Users.GetByID")
 	}
 
 	// In-process (service/repository) spans must be Internal, not Server.
@@ -137,7 +137,7 @@ func TestSetupTraceHTTP(t *testing.T) {
 	defer func() { _ = tp.Shutdown(context.Background()) }()
 	tracer := tp.Tracer("test")
 
-	meta := Metadata{Layer: "handler", Domain: "Projects"}
+	meta := Metadata{Layer: LayerHandler, Domain: "Projects"}
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/projects", nil)
 
 	ctx, span, attrs := SetupTraceHTTP(req, tracer, meta, "ListProjects")
@@ -199,7 +199,7 @@ func TestSetupTraceWithTimeout(t *testing.T) {
 	defer func() { _ = tp.Shutdown(context.Background()) }()
 	tracer := tp.Tracer("test")
 
-	meta := Metadata{Layer: "repository", Domain: "Embeddings"}
+	meta := Metadata{Layer: LayerRepository, Domain: "Embeddings"}
 	timeout := 5 * time.Second
 
 	ctx, span, attrs, cancel := SetupTraceWithTimeout(context.Background(), tracer, timeout, meta, "SelectByID")
@@ -275,7 +275,7 @@ func TestRecordResult_success(t *testing.T) {
 
 	ctx, span := tracer.Start(context.Background(), "test-op")
 	baseAttrs := []attribute.KeyValue{
-		attribute.String(AttrLayer, "service"),
+		attribute.String(AttrLayer, LayerUsecase),
 		attribute.String(AttrDomain, "Users"),
 		attribute.String(AttrAction, "GetByID"),
 	}
@@ -306,7 +306,7 @@ func TestRecordResult_success_default_message(t *testing.T) {
 
 	ctx, span := tracer.Start(context.Background(), "test-op")
 	baseAttrs := []attribute.KeyValue{
-		attribute.String(AttrLayer, "handler"),
+		attribute.String(AttrLayer, LayerHandler),
 	}
 
 	err := RecordResult(ctx, span, time.Now(), nil, baseAttrs, nil)
@@ -331,7 +331,7 @@ func TestRecordResult_error(t *testing.T) {
 
 	ctx, span := tracer.Start(context.Background(), "test-op")
 	baseAttrs := []attribute.KeyValue{
-		attribute.String(AttrLayer, "repository"),
+		attribute.String(AttrLayer, LayerRepository),
 		attribute.String(AttrDomain, "Users"),
 		attribute.String(AttrAction, "Insert"),
 	}
@@ -397,7 +397,7 @@ func TestRecordError(t *testing.T) {
 
 	ctx, span := tracer.Start(context.Background(), "test-op")
 	baseAttrs := []attribute.KeyValue{
-		attribute.String(AttrLayer, "service"),
+		attribute.String(AttrLayer, LayerUsecase),
 	}
 
 	testErr := errors.New("not found")
@@ -423,7 +423,7 @@ func TestRecordSuccess(t *testing.T) {
 
 	ctx, span := tracer.Start(context.Background(), "test-op")
 	baseAttrs := []attribute.KeyValue{
-		attribute.String(AttrLayer, "handler"),
+		attribute.String(AttrLayer, LayerHandler),
 	}
 
 	RecordSuccess(ctx, span, time.Now(), nil, baseAttrs, "all good")
@@ -511,7 +511,7 @@ func TestRecordResult_preserves_base_attrs(t *testing.T) {
 
 	ctx, span := tracer.Start(context.Background(), "test-op")
 	baseAttrs := []attribute.KeyValue{
-		attribute.String(AttrLayer, "service"),
+		attribute.String(AttrLayer, LayerUsecase),
 		attribute.String(AttrDomain, "Users"),
 	}
 
@@ -549,7 +549,7 @@ func TestSetupTraceKeepsEachCallersActionSeparate(t *testing.T) {
 	tracer := tp.Tracer("test")
 
 	// The shared value. Note it carries no Action: there is nowhere to put one.
-	shared := Metadata{Layer: "service", Domain: "Users"}
+	shared := Metadata{Layer: LayerUsecase, Domain: "Users"}
 
 	actions := []string{"Insert", "SelectByID", "UpdateByID", "Delete", "List"}
 
@@ -563,7 +563,7 @@ func TestSetupTraceKeepsEachCallersActionSeparate(t *testing.T) {
 				_, span, attrs := SetupTrace(context.Background(), tracer, shared, action)
 				defer span.End()
 
-				want := "service.Users." + action
+				want := "usecase.Users." + action
 
 				var got string
 

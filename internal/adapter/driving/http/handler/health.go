@@ -2,13 +2,10 @@ package handler
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
-
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/middleware"
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/payload"
@@ -68,27 +65,12 @@ func NewHealthHandler(conf HealthHandlerConf) (*HealthHandler, error) {
 		Action: "NewHealthHandler",
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -183,14 +165,14 @@ func (ref *HealthHandler) getStatus(w http.ResponseWriter, r *http.Request) {
 	outResponse, err := ref.service.HealthCheck(ctxWithTimeout)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		slog.Error("health status check failed", "error", e)
+		slog.ErrorContext(r.Context(), "health status check failed", "error", e)
 		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, healthCheckFailedMessage)
 		return
 	}
 
 	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		slog.Error("writing the health status response failed", "error", e)
+		slog.ErrorContext(r.Context(), "writing the health status response failed", "error", e)
 		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, healthCheckFailedMessage)
 		return
 	}
@@ -244,7 +226,7 @@ func (ref *HealthHandler) getDetailedHealth(w http.ResponseWriter, r *http.Reque
 	outResponse, err := ref.service.GetDetailedHealth(ctxWithTimeout)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		slog.Error("detailed health check failed", "error", e)
+		slog.ErrorContext(r.Context(), "detailed health check failed", "error", e)
 		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, healthCheckFailedMessage)
 		return
 	}
@@ -265,7 +247,7 @@ func (ref *HealthHandler) getDetailedHealth(w http.ResponseWriter, r *http.Reque
 
 	if err := respond.WriteJSONData(w, statusCode, outResponse); err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-		slog.Error("writing the detailed health response failed", "error", e)
+		slog.ErrorContext(r.Context(), "writing the detailed health response failed", "error", e)
 		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, healthCheckFailedMessage)
 		return
 	}

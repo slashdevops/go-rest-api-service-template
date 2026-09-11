@@ -41,6 +41,97 @@ flowchart LR
     EH --> HEALTH["/health/detailed<br/><i>telemetry component</i>"]
 ```
 
+## The vocabulary: one instrument pair, the layer as an attribute
+
+Every layer records on the same two instruments:
+
+| | |
+| --- | --- |
+| `app_calls_total` | counter |
+| `app_call_duration_seconds` | histogram, seconds |
+
+and the layer travels as the `app.layer` attribute, alongside `app.domain` and
+`app.action`. Those six values are the only ones it takes:
+
+| `app.layer` | Hexagon ring | What it is |
+| --- | --- | --- |
+| `handler` | driving adapter | the HTTP port. A gRPC handler would report the same layer; the protocol is an attribute on the span, not a layer |
+| `usecase` | core | the business logic |
+| `repository` | driven adapter | persistence, whatever implements it |
+| `cache` | driven adapter | Valkey |
+| `mail` | driven adapter | the mail transport |
+
+**The values name port roles, not packages.** Swapping `repositorypg` for
+another driver must not rename a metric or invalidate a dashboard.
+
+**The ring is documentation, not a label.** No panel would ever ask for "all
+driven adapters together" — one asks for `repository` or `cache` by name — and it
+is derivable from the layer. A label nobody queries is cardinality nobody
+wanted.
+
+### What this replaced, and why
+
+There used to be six instruments — `handler_calls_total`,
+`service_calls_total`, `repository_calls_total` and a duration histogram each —
+so the layer was encoded in the metric **name**. That is backwards from how
+OpenTelemetry's semantic conventions work, where a dimension is an attribute
+(`http.server.request.duration{http.route}`) and never part of the name, and it
+was paid for daily:
+
+```promql
+# before: a regex over metric names
+sum by (app_layer) (rate({__name__=~"(handler|service|repository)_calls_total"}[$__rate_interval]))
+
+# after
+sum by (app_layer) (rate(app_calls_total[$__rate_interval]))
+```
+
+A dashboard variable over the layer was not expressible at all before; now it
+is just `app_calls_total{app_layer="$layer"}`.
+
+Adding a layer used to mean a fourth copy of a per-package constants file and
+two more metric names for every dashboard to learn, which is why the driven
+adapters were instrumented unevenly and a layer breakdown stopped at the
+repository.
+
+Series count is unchanged — the same layer × domain × action combinations, in
+one family instead of three.
+
+`service` became `usecase` in the same change. The package has been `usecase`
+since the ports refactor, and next to `service.name` and `service_name` the old
+spelling read as "the whole binary" rather than "the core".
+
+### One name means one description
+
+Every construction of an instrument with a given name must agree on its
+description, or the SDK reports a duplicate-instrument conflict and the
+disagreeing registrations export as separate, half-populated series. With the
+layer in the name this was invisible — each layer had its own instrument, so
+each could describe itself differently, and three spellings had drifted in,
+including `"Duration of %s handler calls"` on a repository. Sharing one name
+makes agreement mandatory, so the text lives in one place and
+`o11y.NewLayerMetrics` is the only thing that builds the pair.
+
+### Buckets
+
+`app_call_duration_seconds` sets its boundaries explicitly, 1 ms to 10 minutes.
+The SDK default stops at 10 seconds, which is survivable while every layer is a
+database call measured in milliseconds and is not once the same instrument
+times a slow outbound dependency, which can run for far longer — the reason the
+server has no write timeout. Everything past the last bucket lands in `+Inf`,
+so a p95 over a slow dependency would be pinned at 10s and tell nobody
+anything.
+
+### Adapters keep their own instruments too
+
+`cache` and `mail` record the shared pair **in addition to** their specialised
+ones, never instead. The two answer different questions: `cache_requests_total`
+measures what only a cache has (hit, stale, miss, timeout, per entity) and that
+vocabulary is meaningless on a shared instrument, while the shared pair
+measures what every layer has, so a layer breakdown includes them instead of
+stopping at the repository and leaving a hole where a real dependency sits.
+Different instrument names, so nothing is double-counted.
+
 ## Logs are a second sink, never a replacement
 
 `opentelemetry.log.exporter` adds a destination. It never takes `log.output`
@@ -285,6 +376,7 @@ it is, so `Tracing` and `Logging` share one wrapper instead of stacking two.
    bridge reads the span from the context and from nowhere else, so a
    context-less call can never be found from the trace it belongs to.
    `TestNoContextlessSlogInTheRequestPath` enforces it.
+   `TestNoContextlessSlogInTheRequestPath` enforces it.
 2. **No e-mail, token, password, secret or prompt text above TRACE.** Log ids.
    TRACE is the level that may carry SQL and payloads, and TRACE is the level
    that never leaves the process.
@@ -378,6 +470,45 @@ sum by (severity_text) (count_over_time({service_name="go-rest-api-service-templ
 Until the call sites pass a context, exported records carry no `trace_id` and
 the log → trace direction has nothing to link. That is the next change, not a
 misconfiguration.
+
+## The dashboards
+
+Provisioned from [`dev-env/configuration/grafana/dashboard/`](../../dev-env/configuration/grafana/dashboard)
+into the folder "Services". Each is named for the question it answers.
+
+| Dashboard | Open it when |
+| --- | --- |
+| **Overview** | something is wrong and you do not yet know what. Golden signals, the layer breakdown, logs, traces, and whether telemetry itself is working |
+| **Layers** | you know which layer. One dashboard for all six, selected by the `layer` variable, with a per-operation RED table |
+| **Logs** | you have a trace id, a request id, or a question the metrics cannot answer |
+| **Cache**, **Email** | the adapter's own vocabulary — hit ratio per entity, enqueue against send per template |
+
+### What replaced what
+
+`handlers`, `service` and `database` were three copies of one RED template, one
+per layer, and they are gone. They existed because the layer was part of the
+metric name, so a single dashboard with a layer variable was not expressible:
+`{__name__=~"${layer}_calls_total"}` is not a query anyone should write. With
+the layer as an attribute it is `app_calls_total{app_layer="$layer"}`, and one
+dashboard covers six layers instead of three covering three.
+
+`observability` became **Overview**, keeping its uid so existing links and
+bookmarks still resolve.
+
+### What every dashboard now carries
+
+- **`service_name` and `instance` variables.** One Grafana can serve this
+  service and the template it came from, or several replicas. Without the
+  variable their series are summed together and nothing says so.
+- **Restart and FATAL annotations, read from Loki.** A deploy that explains a
+  step change in every panel at once is worth more than any single panel.
+- **Links from a metric panel to the matching log lines.** A spike and the
+  lines that produced it used to be two separate searches.
+- **`clamp_min` on every ratio.** An error-rate panel that divides by zero while
+  the service is idle renders NaN as a red 0% and reads as an outage.
+
+They are generated rather than hand-written, because hand-edited JSON is how
+six dashboards ended up with three spellings of the same query.
 
 ## Related
 

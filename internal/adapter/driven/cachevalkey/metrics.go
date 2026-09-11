@@ -8,6 +8,8 @@ import (
 	"go.opentelemetry.io/otel/metric"
 
 	"github.com/slashdevops/c3e"
+
+	"github.com/slashdevops/go-rest-api-service-template/internal/o11y"
 )
 
 // Metric instrument names. Counters keep the _total suffix so the Prometheus
@@ -54,6 +56,21 @@ type Instruments struct {
 	requests metric.Int64Counter
 	refresh  metric.Int64Counter
 	duration metric.Float64Histogram
+
+	// layer is the shared app_calls_total / app_call_duration_seconds pair,
+	// recorded in ADDITION to the specialised instruments above and never
+	// instead of them.
+	//
+	// The two answer different questions and neither replaces the other. The
+	// cache instruments measure what only a cache has -- hit, stale, miss,
+	// timeout, per entity -- and that vocabulary would be meaningless on the
+	// shared pair. The shared pair measures what every layer has, so "call rate
+	// and p95 by layer" includes the cache instead of stopping at the
+	// repository and leaving a hole where a real dependency sits.
+	//
+	// Different instrument names, so nothing is double-counted: a panel sums
+	// one family or the other.
+	layer *o11y.LayerMetrics
 }
 
 // NewInstruments builds the cache instruments from meter. A nil meter
@@ -88,7 +105,15 @@ func NewInstruments(meter metric.Meter) (*Instruments, error) {
 		return nil, err
 	}
 
-	return &Instruments{requests: requests, refresh: refresh, duration: duration}, nil
+	// A failure to build the shared pair must not take the cache's own
+	// instruments down with it: losing the layer breakdown costs one panel,
+	// losing the hit ratio costs the reason this adapter is instrumented.
+	layer, err := o11y.NewLayerMetrics(meter, "")
+	if err != nil {
+		return &Instruments{requests: requests, refresh: refresh, duration: duration}, nil
+	}
+
+	return &Instruments{requests: requests, refresh: refresh, duration: duration, layer: layer}, nil
 }
 
 // Hooks returns the callbacks to hand to [c3e.SafeCacheManagerConfig]. The
@@ -146,6 +171,37 @@ func (i *Instruments) record(ctx context.Context, operation, entity, result stri
 		attribute.String("operation", operation),
 		attribute.String("entity", entity),
 	))
+
+	i.recordLayer(ctx, operation, entity, result, took)
+}
+
+// recordLayer mirrors the operation onto the shared per-layer instruments, so
+// the cache appears in a layer breakdown alongside handler, usecase,
+// repository, llm and mail.
+//
+// The cache's own result vocabulary (hit / stale / miss / timeout / error) is
+// collapsed to the successful flag the shared instruments carry, because that
+// is the only outcome every layer has in common. Anything finer is on the cache
+// instruments, where it means something.
+func (i *Instruments) recordLayer(ctx context.Context, operation, entity, result string, took time.Duration) {
+	if i.layer == nil {
+		return
+	}
+
+	attrs := []attribute.KeyValue{
+		attribute.String(o11y.AttrLayer, o11y.LayerCache),
+		attribute.String(o11y.AttrDomain, entity),
+		attribute.String(o11y.AttrAction, operation),
+		attribute.Bool(o11y.AttrSuccessful, result != resultError),
+	}
+
+	if i.layer.Counter != nil {
+		i.layer.Counter.Add(ctx, 1, metric.WithAttributes(attrs...))
+	}
+
+	if i.layer.Histogram != nil {
+		i.layer.Histogram.Record(ctx, took.Seconds(), metric.WithAttributes(attrs...))
+	}
 }
 
 func resultOf(err error) string {

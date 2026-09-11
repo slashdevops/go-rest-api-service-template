@@ -125,7 +125,8 @@ func ReleaseResourceSlot(params ResourceLimitCheckParams) {
 			scopeID = new(uuid.Nil())
 		}
 
-		slog.Error(
+		slog.ErrorContext(
+			params.Ctx,
 			"failed to release a resource reservation; the counter is now one too high until reconciliation runs",
 			"scope_type", params.Scope.Type,
 			"scope_id", scopeID,
@@ -149,7 +150,8 @@ func WarnOnSoftLimit(params ResourceLimitCheckParams) {
 		scopeID = new(uuid.Nil())
 	}
 
-	slog.Warn(
+	slog.WarnContext(
+		params.Ctx,
 		fmt.Sprintf("soft limit reached: scope type %s, scope ID %v, resource type %s",
 			params.Scope.Type, scopeID, params.ResourceType),
 		"soft_limit", status.SoftLimit,

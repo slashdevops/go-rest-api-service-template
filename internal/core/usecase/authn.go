@@ -14,7 +14,6 @@ import (
 	"uuid"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
@@ -146,27 +145,12 @@ func NewAuthnService(conf AuthnServiceConf) (*AuthnService, error) {
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s handler calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -359,7 +343,7 @@ func (ref *AuthnService) issueSession(ctx context.Context, user *domain.User) (*
 	}
 
 	if permissions == nil || permissions["permissions"] == nil {
-		slog.Warn("service.Authn.issueSession: user does not have any permissions", "user.id", user.ID.String())
+		slog.WarnContext(ctx, "usecase.Authn.issueSession: user does not have any permissions", "user.id", user.ID.String())
 
 		permissions = map[string]any{"permissions": map[string]any{}}
 	}
@@ -493,11 +477,11 @@ func (ref *AuthnService) registrationTaken(
 		}
 
 		if err := ref.notifier.SendAccountExists(ctx, recipient); err != nil {
-			slog.Error("service.Authn.RegisterUser: could not tell an existing account that its address was used to register", "error", err)
+			slog.ErrorContext(ctx, "usecase.Authn.RegisterUser: could not tell an existing account that its address was used to register", "error", err)
 		}
 	}
 
-	slog.Debug("service.Authn.RegisterUser: the address already has an account; answered as a successful registration")
+	slog.DebugContext(ctx, "usecase.Authn.RegisterUser: the address already has an account; answered as a successful registration")
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "registration accepted")
 
 	return nil
@@ -633,23 +617,23 @@ func (ref *AuthnService) ReVerifyUser(ctx context.Context, email string) error {
 
 	// grateful answer when user not found, because security reason
 	if user == nil {
-		slog.Warn("service.Authn.ReVerifyUser: user not found", "email", email)
+		slog.WarnContext(ctx, "usecase.Authn.ReVerifyUser: user not found", "email", email)
 		return nil
 	}
 
 	// grateful answer when user is already verified, because security reason
 	if user.Verified != nil && *user.Verified {
-		slog.Warn("service.Authn.ReVerifyUser: user already verified", "email", email)
+		slog.WarnContext(ctx, "usecase.Authn.ReVerifyUser: user already verified", "email", email)
 		return nil
 	}
 
 	// if user is not a local account, do not send a verification email
 	if user.LocalAccount == nil || !*user.LocalAccount {
-		slog.Warn("service.Authn.ReVerifyUser: user is not a local account, cannot re-verify", "email", email)
+		slog.WarnContext(ctx, "usecase.Authn.ReVerifyUser: user is not a local account, cannot re-verify", "email", email)
 		return nil
 	}
 
-	slog.Debug("service.Authn.ReVerifyUser: enqueuing verification email", "to", user.Email)
+	slog.DebugContext(ctx, "usecase.Authn.ReVerifyUser: enqueuing verification email", "to", user.Email)
 	if err := ref.sendVerificationEmail(ctx, user); err != nil {
 		return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
@@ -749,7 +733,7 @@ func (ref *AuthnService) RefreshAccessToken(ctx context.Context, input *domain.R
 		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
 
-	slog.Debug("service.Authn.RefreshAccessToken", "userID", userID)
+	slog.DebugContext(ctx, "usecase.Authn.RefreshAccessToken", "userID", userID)
 
 	// Presence only. A refresh token carries an email claim and an access token
 	// does not, so this is part of telling the two apart — but the value is not
@@ -759,7 +743,7 @@ func (ref *AuthnService) RefreshAccessToken(ctx context.Context, input *domain.R
 		errorValue := &domain.InvalidRefreshTokenError{Message: "email claim is missing"}
 		return nil, o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
 	}
-	slog.Debug("service.Authn.RefreshAccessToken", "claimEmail", claimEmail)
+	slog.DebugContext(ctx, "usecase.Authn.RefreshAccessToken", "claimEmail", claimEmail)
 
 	tokenType, ok := rtClaims["token_type"].(string)
 	if !ok {
@@ -862,7 +846,7 @@ func (ref *AuthnService) resolveSpentRefreshToken(ctx context.Context, record *d
 		}
 
 		if successor == nil {
-			slog.Info("service.Authn.RefreshAccessToken: re-issuing the successor of an already-rotated refresh token",
+			slog.InfoContext(ctx, "usecase.Authn.RefreshAccessToken: re-issuing the successor of an already-rotated refresh token",
 				"userID", record.UserID, "rotatedAgo", age)
 
 			return record.ReplacedBy, nil
@@ -871,7 +855,7 @@ func (ref *AuthnService) resolveSpentRefreshToken(ctx context.Context, record *d
 		// Deliberately not treated as a replay. A client refreshing twice in
 		// quick succession lands here, and ending its session over that would
 		// be the false alarm the grace window exists to avoid.
-		slog.Info("service.Authn.RefreshAccessToken: refusing an already-rotated refresh token whose successor is no longer live",
+		slog.InfoContext(ctx, "usecase.Authn.RefreshAccessToken: refusing an already-rotated refresh token whose successor is no longer live",
 			"userID", record.UserID, "rotatedAgo", age)
 
 		return uuid.Nil(), &domain.InvalidRefreshTokenError{Message: "this token has been revoked"}
@@ -887,7 +871,7 @@ func (ref *AuthnService) resolveSpentRefreshToken(ctx context.Context, record *d
 		return uuid.Nil(), err
 	}
 
-	slog.Warn("service.Authn.RefreshAccessToken: a refresh token was replayed after it had been rotated; the session has been ended",
+	slog.WarnContext(ctx, "usecase.Authn.RefreshAccessToken: a refresh token was replayed after it had been rotated; the session has been ended",
 		"userID", record.UserID, "jti", record.JTI, "chainTip", tip, "rotatedAgo", time.Since(record.RevokedAt))
 
 	return uuid.Nil(), &domain.InvalidRefreshTokenError{Message: "this token has been revoked"}
@@ -1048,7 +1032,7 @@ func (ref *AuthnService) RecoverPassword(ctx context.Context, input *domain.Reco
 	// registration sent nothing and looked like a broken mailer.
 	if user.Verified != nil && !*user.Verified {
 		span.SetAttributes(attribute.String("authn.recovery.no_email_reason", "the account is not verified; the verification email was sent instead"))
-		slog.Debug("service.Authn.RecoverPassword: unverified account, sending the verification email instead")
+		slog.DebugContext(ctx, "usecase.Authn.RecoverPassword: unverified account, sending the verification email instead")
 
 		if err := ref.sendVerificationEmail(ctx, user); err != nil {
 			return o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
@@ -1192,15 +1176,14 @@ func (ref *AuthnService) LogoutUser(ctx context.Context, input *domain.LogoutUse
 		// Not an error: the endpoint has always accepted a bare access token,
 		// and refusing now would break callers. But the session does not end,
 		// so it should not pass silently either.
-		slog.Warn(
-			"service.Authn.LogoutUser: no refresh token supplied, so the session was not ended",
+		slog.WarnContext(ctx, "usecase.Authn.LogoutUser: no refresh token supplied, so the session was not ended",
 			"userID", input.UserID,
 			"effect", "the access token presented has been revoked, but the refresh token stays valid until it expires and can still mint new ones",
 		)
 	}
 
 	if ref.cacheService != nil {
-		slog.Debug("service.Authn.LogoutUser: invalidating refresh token in cache", "userID", input.UserID)
+		slog.DebugContext(ctx, "usecase.Authn.LogoutUser: invalidating refresh token in cache", "userID", input.UserID)
 
 		cacheKeys := []cache.Identifier{
 			{
@@ -1211,10 +1194,10 @@ func (ref *AuthnService) LogoutUser(ctx context.Context, input *domain.LogoutUse
 		}
 
 		for _, cacheKey := range cacheKeys {
-			slog.Debug("service.Authn.LogoutUser: invalidating cache", "type", cacheKey.Type, "id", cacheKey.ID)
+			slog.DebugContext(ctx, "usecase.Authn.LogoutUser: invalidating cache", "type", cacheKey.Type, "id", cacheKey.ID)
 
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-				slog.Warn("service.Authn.LogoutUser: failed to invalidate cache", "type", cacheKey.Type, "id", cacheKey.ID, "error", err)
+				slog.WarnContext(ctx, "usecase.Authn.LogoutUser: failed to invalidate cache", "type", cacheKey.Type, "id", cacheKey.ID, "error", err)
 			}
 		}
 	}
@@ -1271,7 +1254,7 @@ func (ref *AuthnService) rejectLogin(
 	reason string,
 ) error {
 	span.SetAttributes(attribute.String("authn.login.failure_reason", reason))
-	slog.Info("service.Authn.LoginUser: login rejected", "reason", reason)
+	slog.InfoContext(ctx, "usecase.Authn.LoginUser: login rejected", "reason", reason)
 
 	return o11y.RecordError(ctx, span, start, &domain.InvalidCredentialsError{}, ref.metrics, attrs)
 }
@@ -1289,7 +1272,7 @@ var dummyPasswordHash = sync.OnceValue(func() string {
 		// Cannot happen with the default cost. If it somehow does, an empty
 		// hash makes the compare fail immediately, which costs the timing
 		// equalisation but never grants a login.
-		slog.Error("service.Authn: could not build the dummy password hash; login timing will differ for unknown addresses", "error", err)
+		slog.Error("usecase.Authn: could not build the dummy password hash; login timing will differ for unknown addresses", "error", err)
 
 		return ""
 	}
@@ -1309,7 +1292,7 @@ func (ref *AuthnService) revokeRefreshToken(ctx context.Context, userID uuid.UUI
 		// An EXPIRED token is genuinely nothing to revoke: the session it named
 		// is already over, so reporting success is accurate.
 		if invalid, ok := errors.AsType[*domain.InvalidJWTError](err); ok && invalid.Expired {
-			slog.Info("service.Authn.LogoutUser: the supplied refresh token had already expired, nothing to revoke")
+			slog.InfoContext(ctx, "usecase.Authn.LogoutUser: the supplied refresh token had already expired, nothing to revoke")
 
 			return nil
 		}
@@ -1319,7 +1302,7 @@ func (ref *AuthnService) revokeRefreshToken(ctx context.Context, userID uuid.UUI
 		// session is still live, and answering 200 here would repeat the exact
 		// bug this endpoint was fixed for: reporting that a session ended when
 		// it did not.
-		slog.Warn("service.Authn.LogoutUser: the supplied refresh token could not be verified, so nothing was revoked", "error", err)
+		slog.WarnContext(ctx, "usecase.Authn.LogoutUser: the supplied refresh token could not be verified, so nothing was revoked", "error", err)
 
 		return &domain.InvalidRefreshTokenError{Message: "the token supplied to logout could not be verified, so the session was not ended"}
 	}
@@ -1367,7 +1350,7 @@ func (ref *AuthnService) revokeRefreshToken(ctx context.Context, userID uuid.UUI
 	}
 
 	if tip != uuid.Nil() {
-		slog.Info("service.Authn.LogoutUser: the token supplied to logout had already been rotated; ended the session at the live end of its chain",
+		slog.InfoContext(ctx, "usecase.Authn.LogoutUser: the token supplied to logout had already been rotated; ended the session at the live end of its chain",
 			"userID", userID, "chainTip", tip)
 	}
 
@@ -1390,7 +1373,7 @@ func (ref *AuthnService) silentRecovery(
 	ctx context.Context, span trace.Span, start time.Time, attrs []attribute.KeyValue, reason string,
 ) error {
 	span.SetAttributes(attribute.String("authn.recovery.no_email_reason", reason))
-	slog.Debug("service.Authn.RecoverPassword: no recovery email sent", "reason", reason)
+	slog.DebugContext(ctx, "usecase.Authn.RecoverPassword: no recovery email sent", "reason", reason)
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "password recovery request accepted")
 
@@ -1441,7 +1424,7 @@ func (ref *AuthnService) consumeSingleUseToken(ctx context.Context, jti, userID 
 	}
 
 	if !firstUse {
-		slog.Warn("service.Authn: single-use token presented again",
+		slog.WarnContext(ctx, "usecase.Authn: single-use token presented again",
 			"token_type", tokenType.String(), "jti", jti.String(), "user.id", userID.String())
 
 		return &domain.InvalidJWTError{Message: "token already used"}

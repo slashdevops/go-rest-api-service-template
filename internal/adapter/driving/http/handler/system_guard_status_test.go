@@ -8,8 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"go.uber.org/mock/gomock"
 	"uuid"
+
+	"go.uber.org/mock/gomock"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/config"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"

@@ -125,27 +125,12 @@ func NewResourcesLimitsService(conf ResourcesLimitsServiceConf) (*ResourcesLimit
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s handler calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	// Drift is worth its own instrument rather than a log line. A counter that
 	// is repeatedly wrong points at a code path mutating resources without going
@@ -224,7 +209,7 @@ func (ref *ResourcesLimitsService) CheckUsage(ctx context.Context, scope domain.
 		return nil, err
 	}
 
-	slog.Debug("service.ResourcesLimits.CheckUsage", "scopeType", scope.Type, "scopeID", scope.ID, "resourceType", resourceType, "usage", check.Usage, "softLimit", check.SoftLimit, "hardLimit", check.HardLimit)
+	slog.DebugContext(ctx, "usecase.ResourcesLimits.CheckUsage", "scopeType", scope.Type, "scopeID", scope.ID, "resourceType", resourceType, "usage", check.Usage, "softLimit", check.SoftLimit, "hardLimit", check.HardLimit)
 
 	// Verify whenever a counter exists, not merely when it is above zero. The
 	// old `Usage > 0` condition skipped verification for exactly the value an
@@ -245,8 +230,7 @@ func (ref *ResourcesLimitsService) CheckUsage(ctx context.Context, scope domain.
 				scopeID = *scope.ID
 			}
 
-			slog.Error(
-				"resource usage counter failed signature verification; writes for this scope will be refused until it is reconciled",
+			slog.ErrorContext(ctx, "resource usage counter failed signature verification; writes for this scope will be refused until it is reconciled",
 				"scope_type", scope.Type,
 				"scope_id", scopeID,
 				"resource_type", resourceType,
@@ -297,7 +281,7 @@ func (ref *ResourcesLimitsService) CheckUsage(ctx context.Context, scope domain.
 		status.CanCreate = false
 	}
 
-	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "service.ResourcesLimits.CheckUsage")
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "usecase.ResourcesLimits.CheckUsage")
 
 	return status, nil
 }
@@ -346,7 +330,7 @@ func (ref *ResourcesLimitsService) StatusByScope(ctx context.Context, scope doma
 		})
 	}
 
-	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "service.ResourcesLimits.StatusByScope",
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "usecase.ResourcesLimits.StatusByScope",
 		attribute.String("scope_type", scope.Type.String()),
 		attribute.Int("resources", len(out.Resources)))
 
@@ -391,10 +375,10 @@ func (ref *ResourcesLimitsService) ReserveUsage(ctx context.Context, scope domai
 		return err
 	}
 
-	slog.Debug("service.ResourcesLimits.ReserveUsage",
+	slog.DebugContext(ctx, "usecase.ResourcesLimits.ReserveUsage",
 		"scopeType", scope.Type, "scopeID", scope.ID, "resourceType", resourceType, "usage", newUsage)
 
-	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "service.ResourcesLimits.ReserveUsage")
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "usecase.ResourcesLimits.ReserveUsage")
 
 	return nil
 }
@@ -439,8 +423,7 @@ func (ref *ResourcesLimitsService) RecountUsage(ctx context.Context, scope domai
 		// Warn, not info: a corrected counter means something changed resources
 		// without telling the limits subsystem, and the size of the drift is the
 		// clue to which path did it.
-		slog.Warn(
-			"resource usage counter corrected by reconciliation",
+		slog.WarnContext(ctx, "resource usage counter corrected by reconciliation",
 			"scope_type", scope.Type,
 			"scope_id", scopeID,
 			"resource_type", resourceType,
@@ -455,7 +438,7 @@ func (ref *ResourcesLimitsService) RecountUsage(ctx context.Context, scope domai
 		))
 	}
 
-	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "service.ResourcesLimits.RecountUsage",
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "usecase.ResourcesLimits.RecountUsage",
 		attribute.Int("drift", out.Drift()))
 
 	return out, nil
@@ -486,8 +469,7 @@ func (ref *ResourcesLimitsService) ReconcileAll(ctx context.Context) (corrected 
 
 		out, recountErr := ref.RecountUsage(ctx, scope, tracked.ResourceType)
 		if recountErr != nil {
-			slog.Error(
-				"reconciliation skipped a scope",
+			slog.ErrorContext(ctx, "reconciliation skipped a scope",
 				"scope_type", tracked.ScopeType,
 				"scope_id", tracked.ScopeID,
 				"resource_type", tracked.ResourceType,
@@ -502,7 +484,7 @@ func (ref *ResourcesLimitsService) ReconcileAll(ctx context.Context) (corrected 
 		}
 	}
 
-	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "service.ResourcesLimits.ReconcileAll",
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "usecase.ResourcesLimits.ReconcileAll",
 		attribute.Int("scopes", len(scopes)), attribute.Int("corrected", corrected))
 
 	return corrected, nil
@@ -529,7 +511,7 @@ func (ref *ResourcesLimitsService) IncrementUsage(ctx context.Context, scope dom
 	}
 
 	// Record the usage in the metrics
-	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "service.ResourcesLimits.IncrementUsage")
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "usecase.ResourcesLimits.IncrementUsage")
 
 	return nil
 }
@@ -555,7 +537,7 @@ func (ref *ResourcesLimitsService) DecrementUsage(ctx context.Context, scope dom
 	}
 
 	// Record the usage in the metrics
-	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "service.ResourcesLimits.DecrementUsage")
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "usecase.ResourcesLimits.DecrementUsage")
 
 	return nil
 }

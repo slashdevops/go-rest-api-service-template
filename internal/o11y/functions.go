@@ -45,7 +45,7 @@ type Metadata struct {
 	Action string
 }
 
-// FullName creates the dot-notation string (e.g. "service.IDPs.GetByID") for the Span Name
+// FullName creates the dot-notation string (e.g. "usecase.IDPs.GetByID") for the Span Name
 func (m Metadata) FullName() string {
 	return fmt.Sprintf("%s.%s.%s", m.Layer, m.Domain, m.Action)
 }
@@ -207,15 +207,30 @@ func RecordResult(
 
 		funcName := runtime.FuncForPC(pc).Name()
 
-		// Log structured error
-		slog.Error("operation_failed",
+		// The most useful log line this service writes, so it is the one that
+		// most needs its trace.
+		//
+		// It takes ctx -- ErrorContext, not Error -- because the OpenTelemetry
+		// bridge reads the span out of the context and from nowhere else. Every
+		// caller already has the ctx it just traced with; passing it costs
+		// nothing and is the difference between "an operation failed somewhere"
+		// and the failing span of a known request.
+		//
+		// The layer, domain and action are flat attributes rather than a
+		// slog.Group. Grouped, they arrive at a log store as
+		// context_app_layer -- a name nobody guesses, and one that differs from
+		// the app_layer the metrics and the span carry, so the same fact could
+		// not be filtered on the same way in all three.
+		args := make([]any, 0, 8+len(baseAttrs)*2)
+		args = append(args,
 			"error", err,
 			"func", funcName,
 			"file", file,
 			"line", line,
-			// Add context attributes to logs for correlation
-			slog.Group("context", attrsToAny(baseAttrs)...),
 		)
+		args = append(args, attrsToAny(baseAttrs)...)
+
+		slog.ErrorContext(ctx, "operation_failed", args...)
 	} else {
 		mgs := "operation_successful"
 		if len(message) != 0 {

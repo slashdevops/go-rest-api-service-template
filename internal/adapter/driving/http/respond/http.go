@@ -62,7 +62,7 @@ func writeJSONMessage(w http.ResponseWriter, r *http.Request, statusCode int, co
 
 	// Now try to write the data
 	if err := json.NewEncoder(w).Encode(mgs); err != nil {
-		slog.Error("failed to write JSON response", "error", err)
+		slog.ErrorContext(r.Context(), "failed to write JSON response", "error", err)
 		// Cannot change status code after headers are sent
 	}
 
@@ -76,8 +76,7 @@ func writeJSONMessage(w http.ResponseWriter, r *http.Request, statusCode int, co
 	mgs.RequestID = ""
 	httpMessagePool.Put(mgs)
 
-	slog.Debug(
-		message,
+	slog.DebugContext(r.Context(), message,
 		"status_code", statusCode,
 		"method", r.Method,
 		"url", r.URL.Path,

@@ -386,6 +386,19 @@ func setupLogger(logConfig *config.LogConfig) {
 		handler = slog.NewTextHandler(logConfig.Output.Value, opts)
 	}
 
+	// Stamp the trace on every stdout record too.
+	//
+	// The OpenTelemetry side gets trace_id and span_id from the bridge. The
+	// standard handler would not, and a deployment that collects stdout --
+	// which is most of them, and every deployment before a log store is set
+	// up -- would have the correlation on one sink and not the other. The two
+	// sinks should differ in exactly one way (the TRACE floor), and this is
+	// not it.
+	//
+	// It also means Loki's derived-field link works on lines that arrived by
+	// either route.
+	handler = &traceAttrsHandler{Handler: handler}
+
 	// Set the default logger.
 	//
 	// application and version are attached HERE, to this handler, and not to

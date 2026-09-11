@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/middleware"
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/payload"
@@ -73,27 +72,12 @@ func NewUsersHandler(conf UsersHandlerConf) (*UsersHandler, error) {
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -202,7 +186,7 @@ func (ref *UsersHandler) getByID(w http.ResponseWriter, r *http.Request) {
 		attribute.String("user.id", userID.String()),
 	)
 
-	slog.Debug("handler.Users.getByID", "user.email", out.Email)
+	slog.DebugContext(r.Context(), "handler.Users.getByID", "user.email", out.Email)
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, domain.UsersUserFound,
 		attribute.String("user.id", out.ID.String()),
 		attribute.String("user.email", out.Email),
@@ -869,7 +853,7 @@ func (ref *UsersHandler) linkRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Debug("handler.Users.linkRoles", "user.id", userID.String())
+	slog.DebugContext(r.Context(), "handler.Users.linkRoles", "user.id", userID.String())
 
 	// Location header is required for RESTful APIs
 	respond.SetLocation(w, r)
@@ -960,7 +944,7 @@ func (ref *UsersHandler) unlinkRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Debug("handler.Users.unlinkRoles", "user.id", userID.String())
+	slog.DebugContext(r.Context(), "handler.Users.unlinkRoles", "user.id", userID.String())
 
 	// Location header is required for RESTful APIs
 	respond.SetLocation(w, r)
@@ -1113,7 +1097,7 @@ func (ref *UsersHandler) unlinkProjects(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	slog.Debug("handler.Users.unlinkProjects", "user.id", userID.String())
+	slog.DebugContext(r.Context(), "handler.Users.unlinkProjects", "user.id", userID.String())
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, domain.UsersProjectsUnlinkedFromUserSuccessfully,
 		attribute.String("user.id", userID.String()))
@@ -1175,7 +1159,7 @@ func (ref *UsersHandler) selectAuthz(w http.ResponseWriter, r *http.Request) {
 	if typed, err := payload.NewUserAuthzResponse(outResponse); err == nil {
 		body = typed
 	} else {
-		slog.Warn("handler.Users.selectAuthz: unrecognised permission shape, sending it untyped",
+		slog.WarnContext(r.Context(), "handler.Users.selectAuthz: unrecognised permission shape, sending it untyped",
 			"user.id", userID.String(), "error", err)
 	}
 
@@ -1185,7 +1169,7 @@ func (ref *UsersHandler) selectAuthz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.Debug("handler.Users.selectAuthz", "user.id", userID.String())
+	slog.DebugContext(r.Context(), "handler.Users.selectAuthz", "user.id", userID.String())
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "User authorization retrieved",
 		attribute.String("user.id", userID.String()))

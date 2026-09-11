@@ -14,7 +14,6 @@ import (
 	"uuid"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/port/driven/cipher"
@@ -168,24 +167,12 @@ func NewAuthnIDPsService(conf AuthnIDPsServiceConf) (*AuthnIDPsService, error) {
 		ref.metricsPrefix = strings.ReplaceAll(conf.MetricsPrefix, "-", "_") + "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"),
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{Counter: callsCounter, Histogram: callsDuration}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -255,7 +242,7 @@ func (ref *AuthnIDPsService) GetLoginURL(ctx context.Context, idpID uuid.UUID, e
 		Data:          sealed,
 	})
 	if err != nil {
-		slog.Error("service.AuthnIDPs.GetLoginURL: could not sign the state", "error", err)
+		slog.ErrorContext(ctx, "usecase.AuthnIDPs.GetLoginURL: could not sign the state", "error", err)
 
 		return "", o11y.RecordError(ctx, span, start, &domain.InvalidIdentityProvidersError{Message: "failed to create the sign-in state"}, ref.metrics, attrs)
 	}
@@ -349,13 +336,13 @@ func (ref *AuthnIDPsService) signIn(ctx context.Context, idp *domain.IDP, info *
 	// Unknown identity. Provisioning has three conditions, and each failure
 	// is answered with the same wording -- see IDPIdentityNotLinkedError.
 	if !idp.AutoProvision {
-		slog.Info("service.AuthnIDPs: sign-in refused, auto-provisioning is off", "idp", idp.Name)
+		slog.InfoContext(ctx, "usecase.AuthnIDPs: sign-in refused, auto-provisioning is off", "idp", idp.Name)
 
 		return nil, &domain.IDPIdentityNotLinkedError{}
 	}
 
 	if !info.EmailVerified {
-		slog.Info("service.AuthnIDPs: sign-in refused, the provider does not vouch for the email", "idp", idp.Name)
+		slog.InfoContext(ctx, "usecase.AuthnIDPs: sign-in refused, the provider does not vouch for the email", "idp", idp.Name)
 
 		return nil, &domain.IDPIdentityNotLinkedError{}
 	}
@@ -363,7 +350,7 @@ func (ref *AuthnIDPsService) signIn(ctx context.Context, idp *domain.IDP, info *
 	if existing, err := ref.userService.GetByEmail(ctx, info.Email); err == nil && existing != nil {
 		// The one case the takeover lived in: an account with this email
 		// exists and nothing proves this identity belongs to its holder.
-		slog.Warn("service.AuthnIDPs: sign-in refused, an account with the provider's email exists and is not linked to this identity",
+		slog.WarnContext(ctx, "usecase.AuthnIDPs: sign-in refused, an account with the provider's email exists and is not linked to this identity",
 			"idp", idp.Name, "user.id", existing.ID.String())
 
 		return nil, &domain.IDPIdentityNotLinkedError{}
@@ -396,7 +383,7 @@ func (ref *AuthnIDPsService) signIn(ctx context.Context, idp *domain.IDP, info *
 		return nil, err
 	}
 
-	slog.Info("service.AuthnIDPs: account provisioned from a provider identity", "idp", idp.Name, "user.id", userID.String())
+	slog.InfoContext(ctx, "usecase.AuthnIDPs: account provisioned from a provider identity", "idp", idp.Name, "user.id", userID.String())
 
 	return &domain.IDPCallbackOutput{EventType: eventType, Login: login}, nil
 }
@@ -424,7 +411,7 @@ func (ref *AuthnIDPsService) link(ctx context.Context, idp *domain.IDP, info *do
 		return nil, err
 	}
 
-	slog.Info("service.AuthnIDPs: provider identity linked", "idp", idp.Name, "user.id", userID.String())
+	slog.InfoContext(ctx, "usecase.AuthnIDPs: provider identity linked", "idp", idp.Name, "user.id", userID.String())
 
 	return &domain.IDPCallbackOutput{EventType: domain.IDPEventTypeLink, Linked: userID}, nil
 }
@@ -533,7 +520,7 @@ func (ref *AuthnIDPsService) spendState(ctx context.Context, state string, idpID
 	if !firstUse {
 		// The same wording every other bad state gets. A caller learns their
 		// state was not accepted, never that it was accepted once already.
-		slog.Warn("service.AuthnIDPs: an OAuth state was presented twice; the callback was refused", "jti", jti)
+		slog.WarnContext(ctx, "usecase.AuthnIDPs: an OAuth state was presented twice; the callback was refused", "jti", jti)
 
 		return nil, data, "", &domain.InvalidJWTError{Message: "the state is not valid"}
 	}

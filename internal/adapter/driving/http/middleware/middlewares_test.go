@@ -797,7 +797,7 @@ func TestLogging(t *testing.T) {
 	t.Parallel()
 
 	called := false
-	h := Logging(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	h := Logging(nil)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusCreated)
 	}))

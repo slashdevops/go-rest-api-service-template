@@ -23,7 +23,6 @@ import (
 	"github.com/slashdevops/go-rest-api-service-template/pkg/cslog"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 )
 
 type UsersRepositoryConfig struct {
@@ -90,27 +89,12 @@ func NewUsersRepository(conf UsersRepositoryConfig) (*UsersRepository, error) {
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -160,12 +144,12 @@ func (ref *UsersRepository) Insert(ctx context.Context, input *domain.InsertUser
 		if txErr != nil {
 			if err := tx.Rollback(ctx); err != nil {
 				e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-				slog.Error("repository.Users.Insert", "error", e)
+				slog.ErrorContext(ctx, "repository.Users.Insert", "error", e)
 			}
 		} else {
 			if err := tx.Commit(ctx); err != nil {
 				e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
-				slog.Error("repository.Users.Insert", "error", e)
+				slog.ErrorContext(ctx, "repository.Users.Insert", "error", e)
 			}
 		}
 	}()
@@ -176,7 +160,7 @@ func (ref *UsersRepository) Insert(ctx context.Context, input *domain.InsertUser
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
     `
 
-	slog.Debug("repository.Users.Insert", "query",
+	slog.DebugContext(ctx, "repository.Users.Insert", "query",
 		prettyPrint(query1,
 			input.ID,
 			input.FirstName,
@@ -226,7 +210,7 @@ func (ref *UsersRepository) Insert(ctx context.Context, input *domain.InsertUser
 		return o11y.RecordError(ctx, span, start, txErr, ref.metrics, attrs)
 	}
 
-	slog.Debug("repository.Users.Insert", "user.id", input.ID)
+	slog.DebugContext(ctx, "repository.Users.Insert", "user.id", input.ID)
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "user inserted successfully", attribute.String("user.id", input.ID.String()))
 
 	return nil
@@ -356,7 +340,7 @@ func (ref *UsersRepository) DeleteByID(ctx context.Context, input *domain.Delete
 		errorType := &domain.UserNotFoundError{ID: input.ID}
 		e := o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
 		if e != nil {
-			slog.Error("repository.Users.DeleteByID", "error", e)
+			slog.ErrorContext(ctx, "repository.Users.DeleteByID", "error", e)
 		}
 
 		return nil

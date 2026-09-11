@@ -22,7 +22,6 @@ import (
 	"github.com/slashdevops/go-rest-api-service-template/pkg/cslog"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 )
 
 // RolesRepositoryConfig is the configuration for the RolesRepository.
@@ -92,27 +91,12 @@ func NewRolesRepository(conf RolesRepositoryConfig) (*RolesRepository, error) {
 		ref.metricsPrefix += "_"
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -170,7 +154,7 @@ func (ref *RolesRepository) Insert(ctx context.Context, input *domain.InsertRole
 		return o11y.RecordError(ctx, span, start, ref.handlePgError(err, input), ref.metrics, attrs)
 	}
 
-	slog.Debug("repository.Roles.Insert", "role.id", input.ID)
+	slog.DebugContext(ctx, "repository.Roles.Insert", "role.id", input.ID)
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "role inserted successfully",
 		attribute.String("role.id", input.ID.String()),
 	)
@@ -288,7 +272,7 @@ func (ref *RolesRepository) DeleteByID(ctx context.Context, input *domain.Delete
 		// grateful return user was deleted, security reason, but log and record error
 		errorType := &domain.RoleNotFoundError{RoleID: input.ID.String()}
 		e := o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
-		slog.Error("repository.Roles.DeleteByID", "error", e, "role.id", input.ID.String())
+		slog.ErrorContext(ctx, "repository.Roles.DeleteByID", "error", e, "role.id", input.ID.String())
 
 		return nil
 	}
@@ -670,7 +654,7 @@ func (ref *RolesRepository) SelectByPolicyID(ctx context.Context, policyID uuid.
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.Warn("repository.Roles.SelectByPolicyID", "what", "no roles found")
+		slog.WarnContext(ctx, "repository.Roles.SelectByPolicyID", "what", "no roles found")
 		return &domain.SelectRolesOutput{
 			Items:     make([]domain.Role, 0),
 			Paginator: domain.Paginator{},
@@ -869,7 +853,7 @@ func (ref *RolesRepository) SelectByUserID(ctx context.Context, userID uuid.UUID
 
 	outLen := len(displayItems)
 	if outLen == 0 {
-		slog.Warn("repository.Roles.SelectByUserID", "what", "no roles found")
+		slog.WarnContext(ctx, "repository.Roles.SelectByUserID", "what", "no roles found")
 		return &domain.SelectRolesOutput{
 			Items:     make([]domain.Role, 0),
 			Paginator: domain.Paginator{},

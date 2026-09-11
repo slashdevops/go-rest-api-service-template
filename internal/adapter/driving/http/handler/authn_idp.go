@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -10,7 +9,6 @@ import (
 	"uuid"
 
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/middleware"
@@ -72,27 +70,12 @@ func NewAuthnIDPsHandler(conf AuthnIDPsHandlerConf) (*AuthnIDPsHandler, error) {
 		Action: "NewAuthnIDPsHandler",
 	}
 
-	callsCounter, err := ref.ot.Metrics.Meter.Int64Counter(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricCallsCounterName),
-		metric.WithDescription(fmt.Sprintf("Total number of %s calls", AppLayer)),
-	)
+	metrics, err := o11y.NewLayerMetrics(ref.ot.Metrics.Meter, ref.metricsPrefix)
 	if err != nil {
 		return nil, err
 	}
 
-	callsDuration, err := ref.ot.Metrics.Meter.Float64Histogram(
-		fmt.Sprintf("%s%s", ref.metricsPrefix, MetricDurationHistogramName),
-		metric.WithDescription(fmt.Sprintf("Duration of %s calls", AppLayer)),
-		metric.WithUnit("s"), // Seconds
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	ref.metrics = &o11y.LayerMetrics{
-		Counter:   callsCounter,
-		Histogram: callsDuration,
-	}
+	ref.metrics = metrics
 
 	return ref, nil
 }
@@ -268,7 +251,7 @@ func (ref *AuthnIDPsHandler) callback(w http.ResponseWriter, r *http.Request) {
 	// cancelled, the app is misconfigured. Answered as a refusal in this
 	// service's words; the provider's description goes to the log.
 	if providerErr := q.Get("error"); providerErr != "" {
-		slog.Info("handler.AuthnIDPs.callback: the provider reported an error",
+		slog.InfoContext(r.Context(), "handler.AuthnIDPs.callback: the provider reported an error",
 			"idp.id", idpID.String(), "error", providerErr, "description", q.Get("error_description"))
 
 		e := o11y.RecordError(ctx, span, startedAt, &domain.InvalidAuthnServiceError{Message: "the identity provider did not complete the sign-in"}, ref.metrics, attrs)

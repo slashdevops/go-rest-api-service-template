@@ -260,8 +260,7 @@ func (ref *RateLimitRules) Loaded() bool { return ref.loaded.Load() }
 // which is a rolling deploy's worth of unlimited traffic.
 func (ref *RateLimitRules) Run(ctx context.Context) {
 	if err := ref.Reload(ctx); err != nil {
-		slog.Error(
-			"could not load the rate-limit rule set; nothing is being rate limited until a reload succeeds",
+		slog.ErrorContext(ctx, "could not load the rate-limit rule set; nothing is being rate limited until a reload succeeds",
 			"error", err,
 		)
 	}
@@ -272,7 +271,7 @@ func (ref *RateLimitRules) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Debug("stopping the rate-limit rule mirror", "cause", context.Cause(ctx))
+			slog.DebugContext(ctx, "stopping the rate-limit rule mirror", "cause", context.Cause(ctx))
 
 			return
 		case <-ticker.C:
@@ -280,8 +279,7 @@ func (ref *RateLimitRules) Run(ctx context.Context) {
 				// Loud, because every symptom is invisible: the mirror keeps
 				// answering from a set that is quietly getting older, and a rule
 				// written on another replica is never seen here.
-				slog.Error(
-					"could not reload the rate-limit rule set; serving from the previous copy",
+				slog.ErrorContext(ctx, "could not reload the rate-limit rule set; serving from the previous copy",
 					"error", err,
 					"staleness", ref.Staleness(),
 					"size", ref.Size(),
