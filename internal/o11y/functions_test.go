@@ -3,6 +3,8 @@ package o11y
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -590,5 +592,54 @@ func TestSetupTraceKeepsEachCallersActionSeparate(t *testing.T) {
 	// true rather than merely lucky.
 	if shared.Action != "" {
 		t.Errorf("the shared Metadata was mutated: Action = %q", shared.Action)
+	}
+}
+
+// errorType is the key a dashboard counts failures by, so it must not move
+// when the wording does.
+func TestErrorTypeIsTheCauseNotTheWrapper(t *testing.T) {
+	t.Parallel()
+
+	sentinel := errors.New("no rows in result set")
+
+	tests := []struct {
+		name string
+		err  error
+		want string
+	}{
+		{"nil", nil, ""},
+		{"bare", sentinel, "*errors.errorString"},
+
+		// The point of the whole function: every wrapped error in the service
+		// is a *fmt.wrapError at the top, so reporting the outermost type
+		// would give one value for every distinct failure there is.
+		{"wrapped once", fmt.Errorf("selecting the user: %w", sentinel), "*errors.errorString"},
+		{"wrapped twice", fmt.Errorf("a: %w", fmt.Errorf("b: %w", sentinel)), "*errors.errorString"},
+		{"typed", &net.AddrError{Err: "x", Addr: "y"}, "*net.AddrError"},
+		{"typed and wrapped", fmt.Errorf("dialling: %w", &net.AddrError{Err: "x"}), "*net.AddrError"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			if got := errorType(tt.err); got != tt.want {
+				t.Errorf("errorType(%v) = %q, want %q", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+// The same failure, worded two ways, must count as one thing.
+func TestErrorTypeIsStableAcrossWording(t *testing.T) {
+	t.Parallel()
+
+	cause := errors.New("connection refused")
+
+	first := fmt.Errorf("could not reach the store: %w", cause)
+	second := fmt.Errorf("the store is unreachable, and this message was reworded by a dependency bump: %w", cause)
+
+	if errorType(first) != errorType(second) {
+		t.Errorf("the same cause gave two types: %q and %q", errorType(first), errorType(second))
 	}
 }

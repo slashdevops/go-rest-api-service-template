@@ -64,6 +64,11 @@ func RequireProjectMembership(checker ProjectMembershipChecker) Middleware {
 				return
 			}
 
+			// The tenant boundary, for the access log and the span. It is the
+			// one dimension every RAG metric and log line was aggregated
+			// across, so a slow or failing project was invisible.
+			SetSubjectProject(r.Context(), projectID.String(), false)
+
 			membership, err := checker.Membership(r.Context(), projectID, userID)
 			if err != nil {
 				// Fail closed. An unreachable membership store must not admit
@@ -74,10 +79,12 @@ func RequireProjectMembership(checker ProjectMembershipChecker) Middleware {
 
 			switch membership {
 			case domain.ProjectMembershipAdmin:
+				SetSubjectProject(r.Context(), projectID.String(), true)
+
 				slog.InfoContext(r.Context(), "project membership bypassed by an administrator",
 					"request_id", respond.RequestIDFrom(r.Context()),
-					"project.id", projectID.String(),
-					"user.id", userID.String(),
+					"project_id", projectID.String(),
+					"user_id", userID.String(),
 					"method", r.Method,
 					"path", r.URL.Path,
 				)
@@ -85,8 +92,8 @@ func RequireProjectMembership(checker ProjectMembershipChecker) Middleware {
 			default:
 				slog.WarnContext(r.Context(), "project-scoped request refused: caller is not a member",
 					"request_id", respond.RequestIDFrom(r.Context()),
-					"project.id", projectID.String(),
-					"user.id", userID.String(),
+					"project_id", projectID.String(),
+					"user_id", userID.String(),
 					"method", r.Method,
 					"path", r.URL.Path,
 				)

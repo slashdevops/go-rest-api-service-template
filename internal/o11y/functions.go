@@ -2,6 +2,7 @@ package o11y
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -171,6 +172,41 @@ func RecordSuccess(ctx context.Context, span trace.Span, startTime time.Time, me
 	_ = RecordResult(ctx, span, startTime, metrics, baseAttrs, nil, msg)
 }
 
+// errorType is a stable key for "which failure is this".
+//
+// # Why the message is not one
+//
+// Counting failures needs something that does not change when the wording
+// does. The message is free text, it is often a wrapped vendor string, and a
+// dependency bump rewrites it -- at which point a dashboard counting "how many
+// times did THIS failure happen" silently starts counting two things, or
+// nothing. The concrete Go type does not move.
+//
+// It reports the type at the BOTTOM of the wrap chain, because that is where
+// the cause is: fmt.Errorf("selecting the user: %w", pgx.ErrNoRows) is a
+// *fmt.wrapError all the way up, and every distinct failure in the service
+// would share that one value.
+//
+// It is deliberately not put on the metrics. The set of error types is bounded
+// by the code rather than by traffic, but it is large, and the metric already
+// carries successful=false with the layer, domain and action -- which is the
+// question a metric should answer. "Which error" is a log question, and the log
+// line is joined to the metric by the trace id.
+func errorType(err error) string {
+	if err == nil {
+		return ""
+	}
+
+	for {
+		unwrapped := errors.Unwrap(err)
+		if unwrapped == nil {
+			return fmt.Sprintf("%T", err)
+		}
+
+		err = unwrapped
+	}
+}
+
 // LayerMetrics holds the metrics instruments for the handler package.
 type LayerMetrics struct {
 	Counter   metric.Int64Counter
@@ -221,9 +257,10 @@ func RecordResult(
 		// context_app_layer -- a name nobody guesses, and one that differs from
 		// the app_layer the metrics and the span carry, so the same fact could
 		// not be filtered on the same way in all three.
-		args := make([]any, 0, 8+len(baseAttrs)*2)
+		args := make([]any, 0, 10+len(baseAttrs)*2)
 		args = append(args,
 			"error", err,
+			"error_type", errorType(err),
 			"func", funcName,
 			"file", file,
 			"line", line,
