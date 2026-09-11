@@ -132,6 +132,51 @@ measures what every layer has, so a layer breakdown includes them instead of
 stopping at the repository and leaving a hole where a real dependency sits.
 Different instrument names, so nothing is double-counted.
 
+## What identifies a replica
+
+Four attributes are set once on the resource, so they reach all three signals
+at a time and cost nothing per record.
+
+| Attribute | Source | Loki promotes it? |
+| --- | --- | --- |
+| `service.name`, `service.version` | build metadata | `service_name` yes |
+| `service.instance.id` | a fresh uuid per process | yes |
+| `host.name`, `process.pid` | the SDK's detectors | no |
+| `deployment.environment.name` | `opentelemetry.environment` | yes |
+
+**`service.instance.id` was missing, and the gap was invisible.** The SDK only
+sets it behind an experimental flag. The dashboards carry an `instance`
+variable keyed on it, and a variable over a label nothing sets resolves to
+empty — while `service_instance_id=~""` still matches every series. So the
+panels worked, the variable was dead, and nothing said so. It was found by
+asking Prometheus which `service_*` labels it actually had, which is a question
+worth asking of any label a dashboard depends on.
+
+It is a fresh uuid per process because that is what the specification asks for:
+a restarted process **is** a new instance, and an id that survived a restart
+would make two processes' series look like one. `host.name` carries the
+friendly name alongside it — in Kubernetes, the pod.
+
+A consequence worth knowing: Loki promotes `service.instance.id` to a label, so
+**one process is one stream**. That is the intent, and a restart starting a new
+stream is correct. In the dev stack, where `air` rebuilds on every save, the
+24h retention is what bounds it.
+
+### There is no default environment
+
+`opentelemetry.environment` is empty by default, and empty means the attribute
+is not emitted at all. `development` would label a production replica wrongly
+until somebody noticed, and `production` would do the reverse. Both are worse
+than nothing, because **a wrong label is acted on and a missing one is asked
+about**. The dev stack sets it explicitly in `run.sh` and `.air.toml`.
+
+It is bounded to 63 characters because Loki makes it an index key, repeated on
+every stream.
+
+`resource.Default()` is merged in rather than replaced, which is what keeps
+`OTEL_RESOURCE_ATTRIBUTES` working — the way a deployment adds its own
+attributes with no code change.
+
 ## Logs are a second sink, never a replacement
 
 `opentelemetry.log.exporter` adds a destination. It never takes `log.output`

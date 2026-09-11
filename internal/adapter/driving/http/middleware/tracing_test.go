@@ -355,7 +355,7 @@ func TestTheServerSpanCarriesTheSubject(t *testing.T) {
 	var found bool
 
 	for _, kv := range spans[0].Attributes() {
-		if string(kv.Key) == "user.id" && kv.Value.Emit() == "019822af-b448-73fb-89a1-447e8f8d1cde" {
+		if string(kv.Key) == "user.id" && kv.Value.String() == "019822af-b448-73fb-89a1-447e8f8d1cde" {
 			found = true
 		}
 	}

@@ -27,6 +27,7 @@ go run cmd/go-rest-api-service-template/main.go \
   -opentelemetry.trace.exporter=otlp-http \
   -opentelemetry.metric.exporter=otlp-http \
   -opentelemetry.log.exporter=otlp-http \
+  -opentelemetry.environment=development \
   -authn.private.key.file=./certs/jwt.key \
   -authn.public.key.file=./certs/jwt.pub \
   -authn.symmetric.key.file=./certs/aes-256-symmetric-hex.key \

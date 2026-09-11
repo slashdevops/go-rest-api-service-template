@@ -140,6 +140,13 @@ before the setting existed, so an upgrade changes nothing until you ask it to.
   -opentelemetry.log.path=/v1/logs
 ```
 
+Set `opentelemetry.environment` when more than one deployment reports to the
+same Grafana. It becomes `deployment.environment.name` on every trace, metric
+and log, and Loki promotes it to a label, so it is the dimension that tells a
+staging replica from a production one. It is empty by default and then omitted
+entirely, because a wrong environment label is acted on while a missing one is
+asked about.
+
 Two things to know before turning it on in production:
 
 - **`-log.level=ctrace` is safe to leave alone**, because TRACE records are
