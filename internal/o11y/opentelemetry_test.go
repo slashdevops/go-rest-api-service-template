@@ -85,3 +85,90 @@ func TestOpenTelemetry_Start_and_Shutdown(t *testing.T) {
 	// Should not panic
 	ot.Shutdown()
 }
+
+// resourceAttrs flattens a resource for assertion.
+func resourceAttrs(t *testing.T, conf *config.OpenTelemetryConfig) map[string]string {
+	t.Helper()
+
+	res, err := newResource(t.Context(), conf)
+	if err != nil {
+		t.Fatalf("newResource: %v", err)
+	}
+
+	out := map[string]string{}
+	for _, kv := range res.Attributes() {
+		out[string(kv.Key)] = kv.Value.String()
+	}
+
+	return out
+}
+
+// The dashboards carry an `instance` variable keyed on service.instance.id, and
+// the SDK only sets it behind an experimental flag. Without this the variable
+// resolved to empty while `service_instance_id=~""` still matched every series,
+// so the panels worked and the variable was dead, with nothing saying so.
+func TestResourceIdentifiesTheReplica(t *testing.T) {
+	t.Parallel()
+
+	conf := config.NewOpenTelemetryConfig("test-service", "1.0.0")
+
+	attrs := resourceAttrs(t, conf)
+
+	if attrs["service.instance.id"] == "" {
+		t.Error("service.instance.id is not set; the instance dashboard variable has nothing to resolve")
+	}
+
+	if attrs["service.name"] != "test-service" {
+		t.Errorf("service.name = %q", attrs["service.name"])
+	}
+
+	if attrs["service.version"] != "1.0.0" {
+		t.Errorf("service.version = %q", attrs["service.version"])
+	}
+
+	if attrs["host.name"] == "" {
+		t.Error("host.name is not set; a line cannot be pinned to a machine or a pod")
+	}
+
+	// resource.Default()'s attributes must survive the merge, or
+	// OTEL_RESOURCE_ATTRIBUTES stops working and a deployment loses the way it
+	// adds its own attributes without a code change.
+	if attrs["telemetry.sdk.name"] != "opentelemetry" {
+		t.Errorf("the default resource was lost in the merge; telemetry.sdk.name = %q", attrs["telemetry.sdk.name"])
+	}
+}
+
+// A restarted process is a NEW instance. An id that survived a restart would
+// make two different processes' series look like one.
+func TestEachProcessGetsItsOwnInstanceID(t *testing.T) {
+	t.Parallel()
+
+	conf := config.NewOpenTelemetryConfig("test-service", "1.0.0")
+
+	first := resourceAttrs(t, conf)["service.instance.id"]
+	second := resourceAttrs(t, conf)["service.instance.id"]
+
+	if first == second {
+		t.Errorf("two resources share an instance id (%q); a restart must look like a new instance", first)
+	}
+}
+
+// There is no honest default environment: "development" would label a
+// production replica wrongly and "production" would do the reverse. Both are
+// worse than nothing, because a wrong label is acted on and a missing one is
+// asked about.
+func TestEnvironmentIsOmittedUntilItIsSet(t *testing.T) {
+	t.Parallel()
+
+	conf := config.NewOpenTelemetryConfig("test-service", "1.0.0")
+
+	if _, present := resourceAttrs(t, conf)["deployment.environment.name"]; present {
+		t.Error("deployment.environment.name is set by default; an unset environment must carry no label at all")
+	}
+
+	conf.Environment.Value = "production"
+
+	if got := resourceAttrs(t, conf)["deployment.environment.name"]; got != "production" {
+		t.Errorf("deployment.environment.name = %q, want production", got)
+	}
+}

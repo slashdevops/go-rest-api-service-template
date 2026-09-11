@@ -249,6 +249,7 @@ func setupFlags(configs *Configs) {
 	flag.StringVar(&configs.Telemetry.LogExporter.Value, configs.Telemetry.LogExporter.FlagName, config.DefaultLogExporter, configs.Telemetry.LogExporter.FlagDescription)
 	flag.StringVar(&configs.Telemetry.LogPath.Value, configs.Telemetry.LogPath.FlagName, config.DefaultLogPath, configs.Telemetry.LogPath.FlagDescription)
 	flag.DurationVar(&configs.Telemetry.LogExporterBatchTimeout.Value, configs.Telemetry.LogExporterBatchTimeout.FlagName, config.DefaultLogExporterBatchTimeout, configs.Telemetry.LogExporterBatchTimeout.FlagDescription)
+	flag.StringVar(&configs.Telemetry.Environment.Value, configs.Telemetry.Environment.FlagName, config.DefaultEnvironment, configs.Telemetry.Environment.FlagDescription)
 
 	// Authentication configuration values
 	flag.StringVar(&configs.Authn.Issuer.Value, configs.Authn.Issuer.FlagName, config.DefaultAuthnIssuer, configs.Authn.Issuer.FlagDescription)

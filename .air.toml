@@ -9,6 +9,7 @@ args_bin = [
   "-opentelemetry.trace.exporter=otlp-http",
   "-opentelemetry.metric.exporter=otlp-http",
   "-opentelemetry.log.exporter=otlp-http",
+  "-opentelemetry.environment=development",
   # The token lifetimes are not flags any more: they are a database row seeded
   # at 5m / 24h and edited through PUT /auth/token_lifetimes. Dev runs the seed,
   # for the reason the old 24h override was removed -- the access token's

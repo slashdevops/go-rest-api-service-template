@@ -78,6 +78,21 @@ const (
 	// makes them impossible to move apart, and the two pipelines have no
 	// reason to stay equal.
 	DefaultLogExporterBatchTimeout = 5 * time.Second
+
+	// DefaultEnvironment is empty, and empty means the attribute is not
+	// emitted at all.
+	//
+	// There is no honest default. "development" would label a production
+	// replica as development until somebody noticed, and "production" would do
+	// the reverse; both are worse than saying nothing, because a wrong label is
+	// acted on and a missing one is asked about. An operator who wants the
+	// dimension sets it, and until then every series simply lacks it.
+	DefaultEnvironment = ""
+
+	// ValidEnvironmentMaxLength bounds the value. It becomes a Loki LABEL, so
+	// it is an index key; a long one is a large index entry repeated on every
+	// stream.
+	ValidEnvironmentMaxLength = 63
 )
 
 type OpenTelemetryConfig struct {
@@ -90,6 +105,14 @@ type OpenTelemetryConfig struct {
 	LogEndpoint Field[string]
 	LogExporter Field[string]
 	LogPath     Field[string]
+
+	// Environment is deployment.environment.name: which deployment this is.
+	//
+	// It is a resource attribute, so it reaches all three signals at once, and
+	// Loki promotes it to a label -- which is the point. One Grafana serving a
+	// development stack and a production one cannot otherwise tell them apart,
+	// and their series are summed together with nothing saying so.
+	Environment Field[string]
 
 	AttributeServiceName      string
 	AttributeServiceVersion   string
@@ -123,6 +146,8 @@ func NewOpenTelemetryConfig(appName string, appVersion string) *OpenTelemetryCon
 		LogPath:                 NewField("opentelemetry.log.path", "OPENTELEMETRY_LOG_PATH", "OpenTelemetry HTTP path the logs exporter posts to. Loki serves /otlp/v1/logs, an OpenTelemetry Collector serves /v1/logs", DefaultLogPath),
 		LogExporterBatchTimeout: NewField("opentelemetry.log.exporter.batch.timeout", "OPENTELEMETRY_LOG_EXPORTER_BATCH_TIMEOUT", "OpenTelemetry Exporter Batch Timeout for logs", DefaultLogExporterBatchTimeout),
 
+		Environment: NewField("opentelemetry.environment", "OPENTELEMETRY_ENVIRONMENT", "Deployment environment reported as deployment.environment.name on every trace, metric and log. Empty means the attribute is omitted; there is no safe default, because a wrong one is acted on", DefaultEnvironment),
+
 		AttributeServiceVersion: appVersion,
 		AttributeServiceName:    appName,
 	}
@@ -141,6 +166,8 @@ func (c *OpenTelemetryConfig) ParseEnvVars() {
 	c.MetricPort.Value = GetEnv(c.MetricPort.EnVarName, c.MetricPort.Value)
 	c.MetricExporter.Value = GetEnv(c.MetricExporter.EnVarName, c.MetricExporter.Value)
 	c.MetricInterval.Value = GetEnv(c.MetricInterval.EnVarName, c.MetricInterval.Value)
+
+	c.Environment.Value = GetEnv(c.Environment.EnVarName, c.Environment.Value)
 
 	c.LogEndpoint.Value = GetEnv(c.LogEndpoint.EnVarName, c.LogEndpoint.Value)
 	c.LogPort.Value = GetEnv(c.LogPort.EnVarName, c.LogPort.Value)
@@ -196,6 +223,17 @@ func (c *OpenTelemetryConfig) Validate() error {
 			Field:   "opentelemetry.trace.port",
 			Value:   strconv.Itoa(c.TracePort.Value),
 			Message: "invalid trace port, must be between [" + strconv.Itoa(ValidTraceMinPort) + "] and [" + strconv.Itoa(ValidTraceMaxPort) + "]",
+		}
+	}
+
+	// Bounded because it becomes a Loki label, which is an index key repeated
+	// on every stream. An empty value is fine: it means the attribute is
+	// omitted.
+	if len(c.Environment.Value) > ValidEnvironmentMaxLength {
+		return &InvalidConfigurationError{
+			Field:   "opentelemetry.environment",
+			Value:   c.Environment.Value,
+			Message: "invalid environment, must be at most " + strconv.Itoa(ValidEnvironmentMaxLength) + " characters; it becomes an index label",
 		}
 	}
 
