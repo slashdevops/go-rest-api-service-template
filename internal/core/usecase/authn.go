@@ -617,19 +617,21 @@ func (ref *AuthnService) ReVerifyUser(ctx context.Context, email string) error {
 
 	// grateful answer when user not found, because security reason
 	if user == nil {
-		slog.WarnContext(ctx, "usecase.Authn.ReVerifyUser: user not found", "email", email)
+		// No id to log: there is no account. The address is deliberately not
+		// logged -- see the note on this function.
+		slog.WarnContext(ctx, "re-verification refused", "reason", "no account for that address")
 		return nil
 	}
 
 	// grateful answer when user is already verified, because security reason
 	if user.Verified != nil && *user.Verified {
-		slog.WarnContext(ctx, "usecase.Authn.ReVerifyUser: user already verified", "email", email)
+		slog.WarnContext(ctx, "re-verification refused", "reason", "account is already verified", "user_id", user.ID)
 		return nil
 	}
 
 	// if user is not a local account, do not send a verification email
 	if user.LocalAccount == nil || !*user.LocalAccount {
-		slog.WarnContext(ctx, "usecase.Authn.ReVerifyUser: user is not a local account, cannot re-verify", "email", email)
+		slog.WarnContext(ctx, "re-verification refused", "reason", "account authenticates through an identity provider", "user_id", user.ID)
 		return nil
 	}
 
@@ -733,7 +735,7 @@ func (ref *AuthnService) RefreshAccessToken(ctx context.Context, input *domain.R
 		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
 	}
 
-	slog.DebugContext(ctx, "usecase.Authn.RefreshAccessToken", "userID", userID)
+	slog.DebugContext(ctx, "usecase.Authn.RefreshAccessToken", "user_id", userID)
 
 	// Presence only. A refresh token carries an email claim and an access token
 	// does not, so this is part of telling the two apart — but the value is not
@@ -743,7 +745,7 @@ func (ref *AuthnService) RefreshAccessToken(ctx context.Context, input *domain.R
 		errorValue := &domain.InvalidRefreshTokenError{Message: "email claim is missing"}
 		return nil, o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
 	}
-	slog.DebugContext(ctx, "usecase.Authn.RefreshAccessToken", "claimEmail", claimEmail)
+	slog.DebugContext(ctx, "usecase.Authn.RefreshAccessToken", "claim_email", claimEmail)
 
 	tokenType, ok := rtClaims["token_type"].(string)
 	if !ok {
@@ -847,7 +849,7 @@ func (ref *AuthnService) resolveSpentRefreshToken(ctx context.Context, record *d
 
 		if successor == nil {
 			slog.InfoContext(ctx, "usecase.Authn.RefreshAccessToken: re-issuing the successor of an already-rotated refresh token",
-				"userID", record.UserID, "rotatedAgo", age)
+				"user_id", record.UserID, "rotated_ago", age)
 
 			return record.ReplacedBy, nil
 		}
@@ -856,7 +858,7 @@ func (ref *AuthnService) resolveSpentRefreshToken(ctx context.Context, record *d
 		// quick succession lands here, and ending its session over that would
 		// be the false alarm the grace window exists to avoid.
 		slog.InfoContext(ctx, "usecase.Authn.RefreshAccessToken: refusing an already-rotated refresh token whose successor is no longer live",
-			"userID", record.UserID, "rotatedAgo", age)
+			"user_id", record.UserID, "rotated_ago", age)
 
 		return uuid.Nil(), &domain.InvalidRefreshTokenError{Message: "this token has been revoked"}
 	}
@@ -872,7 +874,7 @@ func (ref *AuthnService) resolveSpentRefreshToken(ctx context.Context, record *d
 	}
 
 	slog.WarnContext(ctx, "usecase.Authn.RefreshAccessToken: a refresh token was replayed after it had been rotated; the session has been ended",
-		"userID", record.UserID, "jti", record.JTI, "chainTip", tip, "rotatedAgo", time.Since(record.RevokedAt))
+		"user_id", record.UserID, "jti", record.JTI, "chain_tip", tip, "rotated_ago", time.Since(record.RevokedAt))
 
 	return uuid.Nil(), &domain.InvalidRefreshTokenError{Message: "this token has been revoked"}
 }
@@ -1177,13 +1179,13 @@ func (ref *AuthnService) LogoutUser(ctx context.Context, input *domain.LogoutUse
 		// and refusing now would break callers. But the session does not end,
 		// so it should not pass silently either.
 		slog.WarnContext(ctx, "usecase.Authn.LogoutUser: no refresh token supplied, so the session was not ended",
-			"userID", input.UserID,
+			"user_id", input.UserID,
 			"effect", "the access token presented has been revoked, but the refresh token stays valid until it expires and can still mint new ones",
 		)
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Authn.LogoutUser: invalidating refresh token in cache", "userID", input.UserID)
+		slog.DebugContext(ctx, "usecase.Authn.LogoutUser: invalidating refresh token in cache", "user_id", input.UserID)
 
 		cacheKeys := []cache.Identifier{
 			{
@@ -1194,10 +1196,10 @@ func (ref *AuthnService) LogoutUser(ctx context.Context, input *domain.LogoutUse
 		}
 
 		for _, cacheKey := range cacheKeys {
-			slog.DebugContext(ctx, "usecase.Authn.LogoutUser: invalidating cache", "type", cacheKey.Type, "id", cacheKey.ID)
+			slog.DebugContext(ctx, "invalidating cache", "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-				slog.WarnContext(ctx, "usecase.Authn.LogoutUser: failed to invalidate cache", "type", cacheKey.Type, "id", cacheKey.ID, "error", err)
+				slog.WarnContext(ctx, "failed to invalidate cache", "cache_type", cacheKey.Type, "cache_key", cacheKey.ID, "error", err)
 			}
 		}
 	}
@@ -1351,7 +1353,7 @@ func (ref *AuthnService) revokeRefreshToken(ctx context.Context, userID uuid.UUI
 
 	if tip != uuid.Nil() {
 		slog.InfoContext(ctx, "usecase.Authn.LogoutUser: the token supplied to logout had already been rotated; ended the session at the live end of its chain",
-			"userID", userID, "chainTip", tip)
+			"user_id", userID, "chain_tip", tip)
 	}
 
 	return nil

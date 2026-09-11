@@ -424,7 +424,7 @@ func (ref *RolesHandler) deleteByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Roles.deleteByID", "id", input.ID.String())
+	slog.DebugContext(r.Context(), "handler.Roles.deleteByID", "role_id", input.ID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "Role deleted",
 		attribute.String("role.id", input.ID.String()))
 

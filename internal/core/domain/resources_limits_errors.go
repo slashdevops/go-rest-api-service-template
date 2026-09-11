@@ -10,7 +10,7 @@ type InvalidScopeTypeError struct {
 
 func (e *InvalidScopeTypeError) Error() string {
 	return (&BaseInvalidFieldError{
-		Field:  "scopeType",
+		Field:  "scope_type",
 		Value:  e.ScopeType,
 		Reason: e.Message,
 	}).Error()
@@ -24,7 +24,7 @@ type InvalidResourceTypeError struct {
 
 func (e *InvalidResourceTypeError) Error() string {
 	return (&BaseInvalidFieldError{
-		Field:  "resourceType",
+		Field:  "resource_type",
 		Value:  e.ResourceType,
 		Reason: e.Message,
 	}).Error()
@@ -173,12 +173,12 @@ func (e *ResourcesLimitsAlreadyExistsError) Error() string {
 	}
 
 	if e.ScopeType != "" {
-		base.Field = "scopeType"
+		base.Field = "scope_type"
 		base.Value = e.ScopeType
 	}
 
 	if e.ScopeID != "" {
-		base.Field = "scopeID"
+		base.Field = "scope_id"
 		base.Value = e.ScopeID
 	}
 

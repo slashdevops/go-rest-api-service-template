@@ -160,7 +160,7 @@ func (ref *UsersRepository) Insert(ctx context.Context, input *domain.InsertUser
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
     `
 
-	slog.DebugContext(ctx, "repository.Users.Insert", "query",
+	cslog.Trace(ctx, "repository.Users.Insert", "query",
 		prettyPrint(query1,
 			input.ID,
 			input.FirstName,
@@ -210,7 +210,7 @@ func (ref *UsersRepository) Insert(ctx context.Context, input *domain.InsertUser
 		return o11y.RecordError(ctx, span, start, txErr, ref.metrics, attrs)
 	}
 
-	slog.DebugContext(ctx, "repository.Users.Insert", "user.id", input.ID)
+	cslog.Trace(ctx, "repository.Users.Insert", "user.id", input.ID)
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "user inserted successfully", attribute.String("user.id", input.ID.String()))
 
 	return nil
