@@ -124,7 +124,7 @@ func (ref *UsersIdentitiesRepository) Link(ctx context.Context, input *domain.Li
         VALUES ($1, $2, $3, $4);
     `
 
-	cslog.Trace(ctx, "repository.UsersIdentities.Link", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	if _, err := ref.db.Exec(ctx, query, input.UserID, input.IDPID, input.Subject, input.Email); err != nil {
 		return o11y.RecordError(ctx, span, start, ref.handlePgError(err), ref.metrics, attrs)
@@ -152,7 +152,7 @@ func (ref *UsersIdentitiesRepository) Unlink(ctx context.Context, input *domain.
 
 	const query = `DELETE FROM users_identities WHERE users_id = $1 AND idps_id = $2;`
 
-	cslog.Trace(ctx, "repository.UsersIdentities.Unlink", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	result, err := ref.db.Exec(ctx, query, input.UserID, input.IDPID)
 	if err != nil {
@@ -187,7 +187,7 @@ func (ref *UsersIdentitiesRepository) SelectBySubject(ctx context.Context, idpID
         WHERE ui.idps_id = $1 AND ui.subject = $2;
     `
 
-	cslog.Trace(ctx, "repository.UsersIdentities.SelectBySubject", "query", prettyPrint(query, idpID, subject))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, idpID, subject))
 
 	var item domain.UserIdentity
 
@@ -227,7 +227,7 @@ func (ref *UsersIdentitiesRepository) SelectByUserID(ctx context.Context, userID
         ORDER BY ui.linked_at ASC;
     `
 
-	cslog.Trace(ctx, "repository.UsersIdentities.SelectByUserID", "query", prettyPrint(query, userID))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, userID))
 
 	rows, err := ref.db.Query(ctx, query, userID)
 	if err != nil {

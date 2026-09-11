@@ -60,6 +60,42 @@ func (m Metadata) ToAttributes() []attribute.KeyValue {
 	}
 }
 
+// operationKey carries the current operation, so a log record written anywhere
+// inside it can be attributed without the call site saying so.
+type operationKey struct{}
+
+// WithOperation puts meta on the context.
+//
+// # Why this exists
+//
+// app.layer, app.domain and app.action are on the span and on the metric.
+// On a LOG record they were on exactly one line -- operation_failed -- because
+// every other call site would have had to pass them by hand, and 368 call
+// sites passing three attributes each is a rule nobody keeps.
+//
+// So the operation travels on the context instead, put there once by the
+// function that already knows it, and a handler adds the attributes to every
+// record written while it is in scope. The result is that a log store can
+// filter on layer, domain and action the same way the metrics do, and no call
+// site mentions them.
+//
+// It is deliberately NOT read from the span. A span name is not readable from
+// a SpanContext -- only the SDK's ReadOnlySpan has it -- and reaching for the
+// SDK from a log handler would tie the two pipelines together for a string
+// this package already has in hand.
+func WithOperation(ctx context.Context, meta Metadata) context.Context {
+	return context.WithValue(ctx, operationKey{}, meta)
+}
+
+// OperationFrom returns the operation in scope, and whether there was one.
+// A line written outside any instrumented operation -- during startup, say --
+// has none, and gets no attributes rather than empty ones.
+func OperationFrom(ctx context.Context) (Metadata, bool) {
+	meta, ok := ctx.Value(operationKey{}).(Metadata)
+
+	return meta, ok
+}
+
 // SetupTrace starts a span for an in-process operation (service or repository
 // layer). It is created with SpanKindInternal; the HTTP entrypoint span (see
 // SetupTraceHTTP) is the SpanKindServer root of the trace.
@@ -78,6 +114,10 @@ func SetupTrace(ctx context.Context, tracer trace.Tracer, meta Metadata, action 
 	attrs := meta.ToAttributes()
 	span.SetAttributes(attrs...)
 
+	// And on the context, so every log record written inside this operation
+	// carries them too -- see [WithOperation].
+	ctx = WithOperation(ctx, meta)
+
 	return ctx, span, attrs
 }
 
@@ -88,6 +128,8 @@ func SetupTraceHTTP(r *http.Request, tracer trace.Tracer, meta Metadata, action 
 	meta.Action = action
 
 	ctx, span := tracer.Start(r.Context(), meta.FullName(), trace.WithSpanKind(trace.SpanKindServer))
+
+	ctx = WithOperation(ctx, meta)
 
 	baseAttrs := meta.ToAttributes()
 
@@ -252,22 +294,17 @@ func RecordResult(
 		// nothing and is the difference between "an operation failed somewhere"
 		// and the failing span of a known request.
 		//
-		// The layer, domain and action are flat attributes rather than a
-		// slog.Group. Grouped, they arrive at a log store as
-		// context_app_layer -- a name nobody guesses, and one that differs from
-		// the app_layer the metrics and the span carry, so the same fact could
-		// not be filtered on the same way in all three.
-		args := make([]any, 0, 10+len(baseAttrs)*2)
-		args = append(args,
+		// The layer, domain and action are NOT repeated here: they are on the
+		// context from [SetupTrace], and the handler adds them to every record
+		// written inside the operation. Passing them again would put each one
+		// on the line twice.
+		slog.ErrorContext(ctx, "operation_failed",
 			"error", err,
 			"error_type", errorType(err),
 			"func", funcName,
 			"file", file,
 			"line", line,
 		)
-		args = append(args, attrsToAny(baseAttrs)...)
-
-		slog.ErrorContext(ctx, "operation_failed", args...)
 	} else {
 		mgs := "operation_successful"
 		if len(message) != 0 {

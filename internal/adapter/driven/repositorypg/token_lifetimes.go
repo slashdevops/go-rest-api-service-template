@@ -146,7 +146,7 @@ func (ref *TokenLifetimesRepository) Get(ctx context.Context) (*domain.TokenLife
         WHERE singleton = TRUE;
     `
 
-	cslog.Trace(ctx, "repository.TokenLifetimes.Get", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	item, err := scanTokenLifetimes(ref.db.QueryRow(ctx, query))
 	if err != nil {
@@ -202,7 +202,7 @@ func (ref *TokenLifetimesRepository) Update(ctx context.Context, input *domain.U
                   updated_at;
     `
 
-	cslog.Trace(ctx, "repository.TokenLifetimes.Update", "query",
+	cslog.Trace(ctx, "sql", "query",
 		prettyPrint(query, int64(input.AccessTokenDuration.Seconds()), int64(input.RefreshTokenDuration.Seconds()), input.UpdatedBy.String()))
 
 	item, err := scanTokenLifetimes(ref.db.QueryRow(ctx, query,

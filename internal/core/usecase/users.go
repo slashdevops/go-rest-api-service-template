@@ -108,7 +108,7 @@ func (ref *UsersService) GetByID(ctx context.Context, id uuid.UUID) (*domain.Use
 	}
 
 	if ref.cacheService == nil {
-		slog.DebugContext(ctx, "usecase.Users.GetByID", "cache", "disabled")
+		slog.DebugContext(ctx, "cache lookup", "cache", "disabled")
 
 		// Through the same fetcher, so the value a caller receives does not
 		// depend on whether caching happens to be enabled.
@@ -123,7 +123,7 @@ func (ref *UsersService) GetByID(ctx context.Context, id uuid.UUID) (*domain.Use
 			ID:   id.String(),
 		}
 
-		slog.DebugContext(ctx, "usecase.Users.GetByID", "cache", "enabled", "user_id", id)
+		slog.DebugContext(ctx, "cache lookup", "cache", "enabled", "user_id", id)
 		out, err = cache.GetTyped[*domain.User](ctx, ref.cacheService, cacheKey, userFetcher)
 		if err != nil {
 			return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
@@ -352,7 +352,7 @@ func (ref *UsersService) UpdateByID(ctx context.Context, input *domain.UpdateUse
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Users.UpdateByID", "what", "invalidate cache", "user_id", input.ID)
+		slog.DebugContext(ctx, "invalidate cache", "user_id", input.ID)
 
 		cacheKey := cache.Identifier{
 			Type: "user",
@@ -360,7 +360,7 @@ func (ref *UsersService) UpdateByID(ctx context.Context, input *domain.UpdateUse
 		}
 
 		if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-			slog.WarnContext(ctx, "usecase.Users.UpdateByID", "what", "failed to invalidate cache", slog.Any("error", err), "user_id", input.ID)
+			slog.WarnContext(ctx, "failed to invalidate cache", slog.Any("error", err), "user_id", input.ID)
 		}
 	}
 
@@ -396,7 +396,7 @@ func (ref *UsersService) DeleteByID(ctx context.Context, input *domain.DeleteUse
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Users.DeleteByID", "what", "invalidate cache", "user_id", input.ID)
+		slog.DebugContext(ctx, "invalidate cache", "user_id", input.ID)
 
 		cacheKey := cache.Identifier{
 			Type: "user",
@@ -404,7 +404,7 @@ func (ref *UsersService) DeleteByID(ctx context.Context, input *domain.DeleteUse
 		}
 
 		if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-			slog.WarnContext(ctx, "usecase.Users.DeleteByID", "what", "failed to invalidate cache", slog.Any("error", err), "user_id", input.ID)
+			slog.WarnContext(ctx, "failed to invalidate cache", slog.Any("error", err), "user_id", input.ID)
 		}
 	}
 
@@ -467,7 +467,7 @@ func (ref *UsersService) LinkRoles(ctx context.Context, input *domain.LinkRolesT
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Users.LinkRoles", "what", "invalidate cache", "user_id", input.UserID.String())
+		slog.DebugContext(ctx, "invalidate cache", "user_id", input.UserID.String())
 
 		cacheKeys := []cache.Identifier{
 			{
@@ -487,10 +487,10 @@ func (ref *UsersService) LinkRoles(ctx context.Context, input *domain.LinkRolesT
 		}
 
 		for _, cacheKey := range cacheKeys {
-			slog.DebugContext(ctx, "usecase.Users.LinkRoles", "what", "invalidate cache", "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
+			slog.DebugContext(ctx, "invalidate cache", "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-				slog.WarnContext(ctx, "usecase.Users.LinkRoles", "what", "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
+				slog.WarnContext(ctx, "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 			}
 		}
 	}
@@ -522,7 +522,7 @@ func (ref *UsersService) UnlinkRoles(ctx context.Context, input *domain.UnlinkRo
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Users.UnlinkRoles", "what", "invalidate cache", "user_id", input.UserID.String())
+		slog.DebugContext(ctx, "invalidate cache", "user_id", input.UserID.String())
 
 		cacheKeys := []cache.Identifier{
 			{
@@ -542,10 +542,10 @@ func (ref *UsersService) UnlinkRoles(ctx context.Context, input *domain.UnlinkRo
 		}
 
 		for _, cacheKey := range cacheKeys {
-			slog.DebugContext(ctx, "usecase.Users.UnlinkRoles", "what", "invalidate cache", "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
+			slog.DebugContext(ctx, "invalidate cache", "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-				slog.WarnContext(ctx, "usecase.Users.UnlinkRoles", "what", "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
+				slog.WarnContext(ctx, "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 			}
 		}
 	}
@@ -577,7 +577,7 @@ func (ref *UsersService) LinkProjects(ctx context.Context, input *domain.LinkPro
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Users.LinkProjects", "what", "invalidate cache", "user_id", input.UserID.String())
+		slog.DebugContext(ctx, "invalidate cache", "user_id", input.UserID.String())
 
 		cacheKeys := []cache.Identifier{
 			{
@@ -588,10 +588,10 @@ func (ref *UsersService) LinkProjects(ctx context.Context, input *domain.LinkPro
 		}
 
 		for _, cacheKey := range cacheKeys {
-			slog.DebugContext(ctx, "usecase.Users.LinkProjects", "what", "invalidate cache", "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
+			slog.DebugContext(ctx, "invalidate cache", "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-				slog.WarnContext(ctx, "usecase.Users.LinkProjects", "what", "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
+				slog.WarnContext(ctx, "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 			}
 		}
 	}
@@ -623,7 +623,7 @@ func (ref *UsersService) UnlinkProjects(ctx context.Context, input *domain.Unlin
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Users.UnlinkProjects", "what", "invalidate cache", "user_id", input.UserID.String())
+		slog.DebugContext(ctx, "invalidate cache", "user_id", input.UserID.String())
 
 		cacheKeys := []cache.Identifier{
 			{
@@ -634,10 +634,10 @@ func (ref *UsersService) UnlinkProjects(ctx context.Context, input *domain.Unlin
 		}
 
 		for _, cacheKey := range cacheKeys {
-			slog.DebugContext(ctx, "usecase.Users.UnlinkProjects", "what", "invalidate cache", "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
+			slog.DebugContext(ctx, "invalidate cache", "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 
 			if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-				slog.WarnContext(ctx, "usecase.Users.UnlinkProjects", "what", "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
+				slog.WarnContext(ctx, "failed to invalidate cache", slog.Any("error", err), "cache_type", cacheKey.Type, "cache_key", cacheKey.ID)
 			}
 		}
 	}
@@ -749,7 +749,7 @@ func (ref *UsersService) SelectAuthz(ctx context.Context, userID uuid.UUID) (map
 
 	// Get the user Authz from the database, cache is disabled
 	if ref.cacheService == nil {
-		slog.DebugContext(ctx, "usecase.Users.IsAuthorized", "cache", "disabled")
+		slog.DebugContext(ctx, "cache lookup", "cache", "disabled")
 
 		userAuthPermissions, _, err = userAuthFetcher(ctx)
 		if err != nil {
@@ -759,7 +759,7 @@ func (ref *UsersService) SelectAuthz(ctx context.Context, userID uuid.UUID) (map
 
 		cacheKey := authzCacheKey(userID)
 
-		slog.DebugContext(ctx, "usecase.Users.IsAuthorized", "cache", "enabled", "key", cacheKey)
+		slog.DebugContext(ctx, "cache lookup", "cache", "enabled", "key", cacheKey)
 
 		userAuthPermissions, err = cache.GetTyped[map[string]any](ctx, ref.cacheService, cacheKey, userAuthFetcher)
 		if err != nil {

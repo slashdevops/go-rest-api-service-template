@@ -214,7 +214,7 @@ func (ref *ResourcesLimitsRepository) Select(ctx context.Context, input *domain.
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.ResourcesLimits.Select", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	// execute the query
 	rows, err := ref.db.Query(ctx, query)
@@ -361,7 +361,7 @@ func (ref *ResourcesLimitsRepository) buildScanFields(item *domain.ResourcesLimi
 			scanFields = append(scanFields, &item.UpdatedAt)
 
 		default:
-			slog.Warn("repository.ResourcesLimits.buildScanFields", "what", "field not found", "field", field)
+			slog.Warn("field not found while building the scan list", "field", field)
 		}
 	}
 
@@ -550,7 +550,7 @@ func (ref *ResourcesLimitsRepository) mutateUsage(
 	}
 	defer func() {
 		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			slog.ErrorContext(ctx, "repository.ResourcesLimits.mutateUsage", "what", "rollback failed", "error", err)
+			slog.ErrorContext(ctx, "rollback failed", "error", err)
 		}
 	}()
 
@@ -632,7 +632,7 @@ func (ref *ResourcesLimitsRepository) ReserveUsage(
 	}
 	defer func() {
 		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			slog.ErrorContext(ctx, "repository.ResourcesLimits.ReserveUsage", "what", "rollback failed", "error", err)
+			slog.ErrorContext(ctx, "rollback failed", "error", err)
 		}
 	}()
 
@@ -644,7 +644,7 @@ func (ref *ResourcesLimitsRepository) ReserveUsage(
         SELECT soft_limit, hard_limit FROM resolved;
     `
 
-	cslog.Trace(ctx, "repository.ResourcesLimits.ReserveUsage", "query",
+	cslog.Trace(ctx, "sql", "query",
 		prettyPrint(resolveQuery, scope.Type.String(), resourceType.String(), scope.ID.String()))
 
 	var softLimit, hardLimit int
@@ -792,7 +792,7 @@ func (ref *ResourcesLimitsRepository) RecountUsage(
 	}
 	defer func() {
 		if err := tx.Rollback(ctx); err != nil && !errors.Is(err, pgx.ErrTxClosed) {
-			slog.ErrorContext(ctx, "repository.ResourcesLimits.RecountUsage", "what", "rollback failed", "error", err)
+			slog.ErrorContext(ctx, "rollback failed", "error", err)
 		}
 	}()
 
@@ -820,7 +820,7 @@ func (ref *ResourcesLimitsRepository) RecountUsage(
 		countArgs = append(countArgs, scope.ID)
 	}
 
-	cslog.Trace(ctx, "repository.ResourcesLimits.RecountUsage", "query", prettyPrint(countQuery.sql, countArgs...))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(countQuery.sql, countArgs...))
 
 	if err := tx.QueryRow(ctx, countQuery.sql, countArgs...).Scan(&out.Actual); err != nil {
 		return nil, o11y.RecordError(ctx, span, start, ref.handlePgError(err, nil), ref.metrics, attrs)
@@ -932,7 +932,7 @@ func (ref *ResourcesLimitsRepository) IncrementUsage(ctx context.Context, scope 
         RETURNING usage;
     `
 
-	cslog.Trace(ctx, "repository.ResourcesLimits.IncrementUsage", "query", prettyPrint(query, scope.Type.String(), scope.ID.String(), resourceType.String()))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, scope.Type.String(), scope.ID.String(), resourceType.String()))
 
 	newUsage, err := ref.mutateUsage(ctx, scope, resourceType, sign, query,
 		[]any{scope.Type.String(), scope.ID, resourceType.String()})
@@ -967,7 +967,7 @@ func (ref *ResourcesLimitsRepository) DecrementUsage(ctx context.Context, scope 
         RETURNING usage;
     `
 
-	cslog.Trace(ctx, "repository.ResourcesLimits.DecrementUsage", "query", prettyPrint(query, scope.Type.String(), resourceType.String(), scope.ID.String()))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, scope.Type.String(), resourceType.String(), scope.ID.String()))
 
 	newUsage, err := ref.mutateUsage(ctx, scope, resourceType, sign, query,
 		[]any{scope.Type.String(), resourceType.String(), scope.ID})
@@ -1009,7 +1009,7 @@ func (ref *ResourcesLimitsRepository) CheckUsage(ctx context.Context, scope doma
         SELECT usage, soft_limit, hard_limit, signature, has_usage_row FROM resolved;
     `
 
-	cslog.Trace(ctx, "repository.ResourcesLimits.CheckUsage", "query", prettyPrint(query, scope.Type.String(), resourceType.String(), scope.ID.String()))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, scope.Type.String(), resourceType.String(), scope.ID.String()))
 
 	// Check the usage in the database
 	var check domain.ResourcesLimitsCheckUsageOutput

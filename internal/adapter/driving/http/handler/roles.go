@@ -164,7 +164,7 @@ func (ref *RolesHandler) getByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Roles.getByID: called", "role.id", outResponse.ID.String())
+	slog.DebugContext(r.Context(), "called", "role.id", outResponse.ID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "get role",
 		attribute.String("role.id", outResponse.ID.String()))
 }
@@ -520,7 +520,7 @@ func (ref *RolesHandler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Roles.list: called", "roles.count", len(outResponse.Items))
+	slog.DebugContext(r.Context(), "called", "roles.count", len(outResponse.Items))
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "list role",
 		attribute.Int("roles.count", len(outResponse.Items)))
 }
@@ -972,7 +972,7 @@ func (ref *RolesHandler) listByUserID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Roles.listByUserID: called", "roles.count", len(outResponse.Items))
+	slog.DebugContext(r.Context(), "called", "roles.count", len(outResponse.Items))
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "list role by user ID",
 		attribute.Int("roles.count", len(outResponse.Items)),
 		attribute.String("user.id", userID.String()))
@@ -1075,7 +1075,7 @@ func (ref *RolesHandler) listByPolicyID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Roles.listByPolicyID: called", "roles.count", len(outResponse.Items))
+	slog.DebugContext(r.Context(), "called", "roles.count", len(outResponse.Items))
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "list role by policy ID",
 		attribute.Int("roles.count", len(out.Items)),
 		attribute.String("policy.id", policyID.String()))

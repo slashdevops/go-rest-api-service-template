@@ -145,7 +145,7 @@ func (ref *IDPTypesRepository) SelectByID(ctx context.Context, id uuid.UUID) (*d
         WHERE id=$1;
     `
 
-	cslog.Trace(ctx, "repository.IDPTypes.SelectByID", "query", prettyPrint(query, id))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, id))
 
 	row := ref.db.QueryRow(ctx, query, id)
 
@@ -199,7 +199,7 @@ func (ref *IDPTypesRepository) SelectByName(ctx context.Context, name string) (*
         WHERE name=$1;
     `
 
-	cslog.Trace(ctx, "repository.IDPTypes.SelectByName", "query", prettyPrint(query, name))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, name))
 
 	row := ref.db.QueryRow(ctx, query, name)
 
@@ -314,7 +314,7 @@ func (ref *IDPTypesRepository) Select(ctx context.Context, input *domain.SelectI
 	}
 
 	query := tpl.String()
-	cslog.Trace(ctx, "repository.IDPTypes.Select", "query", prettyPrint(query))
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query))
 
 	// execute the query
 	rows, err := ref.db.Query(ctx, query)
@@ -464,7 +464,7 @@ func (ref *IDPTypesRepository) buildScanFields(item *domain.IDPTypes, requestedF
 			scanFields = append(scanFields, &item.UpdatedAt)
 
 		default:
-			slog.Warn("repository.IDPTypes.buildScanFields", "what", "field not found", "field", field)
+			slog.Warn("field not found while building the scan list", "field", field)
 		}
 	}
 

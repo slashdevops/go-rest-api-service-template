@@ -81,7 +81,7 @@ func (ref *ResourcesService) GetByID(ctx context.Context, id uuid.UUID) (*domain
 
 	if !domain.IsUUIDV7(id) {
 		errorType := &domain.InvalidResourceIDError{ID: id.String(), Message: "ID is empty"}
-		slog.ErrorContext(ctx, "usecase.Resources.GetByID", "error", errorType)
+		slog.ErrorContext(ctx, "operation failed", "error", errorType)
 		return nil, o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
 	}
 
@@ -101,7 +101,7 @@ func (ref *ResourcesService) GetByID(ctx context.Context, id uuid.UUID) (*domain
 	}
 
 	if ref.cacheService == nil {
-		slog.DebugContext(ctx, "usecase.Resources.GetByID", "cache", "disabled")
+		slog.DebugContext(ctx, "cache lookup", "cache", "disabled")
 
 		out, _, err = resourceFetcher(ctx)
 		if err != nil {
@@ -114,7 +114,7 @@ func (ref *ResourcesService) GetByID(ctx context.Context, id uuid.UUID) (*domain
 			ID:   id.String(),
 		}
 
-		slog.DebugContext(ctx, "usecase.Resources.GetByID", "cache", "enabled")
+		slog.DebugContext(ctx, "cache lookup", "cache", "enabled")
 		out, err = cache.GetTyped[*domain.Resource](ctx, ref.cacheService, cacheKey, resourceFetcher)
 		if err != nil {
 			return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)

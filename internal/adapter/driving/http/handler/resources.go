@@ -245,7 +245,7 @@ func (ref *ResourcesHandler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Resources.list: called", "resources", len(outResponse.Items))
+	slog.DebugContext(r.Context(), "called", "resources", len(outResponse.Items))
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "list resources",
 		attribute.Int("resources.count", len(outResponse.Items)))
 }
@@ -376,7 +376,7 @@ func (ref *ResourcesHandler) listMatches(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Resources.listMatches: called", "resources", len(outResponse.Items))
+	slog.DebugContext(r.Context(), "called", "resources", len(outResponse.Items))
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "list resources by action and resource",
 		attribute.Int("resources.count", len(outResponse.Items)),
 		attribute.String("action", action),

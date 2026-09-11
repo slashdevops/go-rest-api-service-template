@@ -164,7 +164,7 @@ func (ref *PoliciesHandler) getByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Policies.getByID: called", "policy.id", ourResponse.ID)
+	slog.DebugContext(r.Context(), "called", "policy.id", ourResponse.ID)
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "get policy",
 		attribute.String("policy.id", ourResponse.ID.String()))
 }
@@ -267,7 +267,7 @@ func (ref *PoliciesHandler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Policies.create: called", "policy.id", input.ID.String())
+	slog.DebugContext(r.Context(), "called", "policy.id", input.ID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "create policy",
 		attribute.String("policy.id", input.ID.String()))
 
@@ -380,7 +380,7 @@ func (ref *PoliciesHandler) updateByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Policies.updateByID: called", "policy.id", input.ID.String())
+	slog.DebugContext(r.Context(), "called", "policy.id", input.ID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "update policy",
 		attribute.String("policy.id", input.ID.String()))
 
@@ -450,7 +450,7 @@ func (ref *PoliciesHandler) deleteByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Policies.deleteByID: called", "policy.id", input.ID.String())
+	slog.DebugContext(r.Context(), "called", "policy.id", input.ID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "delete policy",
 		attribute.String("policy.id", input.ID.String()))
 
@@ -551,7 +551,7 @@ func (ref *PoliciesHandler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Policies.list: called", "policies.count", len(outResponse.Items))
+	slog.DebugContext(r.Context(), "called", "policies.count", len(outResponse.Items))
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "list policy",
 		attribute.Int("policies.count", len(outResponse.Items)))
 }
@@ -646,7 +646,7 @@ func (ref *PoliciesHandler) linkRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Policies.linkRoles: called", "policy_id", policyID.String())
+	slog.DebugContext(r.Context(), "called", "policy_id", policyID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "link roles to policy",
 		attribute.String("policy.id", policyID.String()))
 
@@ -728,7 +728,7 @@ func (ref *PoliciesHandler) unlinkRoles(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Policies.unlinkRoles: called", "policy_id", policyID.String())
+	slog.DebugContext(r.Context(), "called", "policy_id", policyID.String())
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "unlink roles from policy",
 		attribute.String("policy.id", policyID.String()))
 
@@ -846,7 +846,7 @@ func (ref *PoliciesHandler) listByRoleID(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	slog.DebugContext(r.Context(), "handler.Policies.listByRoleID: called", "policies.count", len(outResponse.Items))
+	slog.DebugContext(r.Context(), "called", "policies.count", len(outResponse.Items))
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "list policies by role ID",
 		attribute.Int("policies.count", len(outResponse.Items)),
 		attribute.String("role.id", roleID.String()))

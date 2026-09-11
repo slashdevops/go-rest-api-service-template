@@ -240,8 +240,7 @@ func (ref *ProductsService) DeleteByIDByProjectID(ctx context.Context, input *do
 		}
 
 		if err := ref.resourcesLimits.DecrementUsage(ctx, rlScope, domain.ResourcesLimitsResourceTypeProducts); err != nil {
-			slog.WarnContext(ctx, "usecase.Products.DeleteByIDByProjectID",
-				"what", "failed to decrement usage", slog.Any("error", err),
+			slog.WarnContext(ctx, "failed to decrement usage", slog.Any("error", err),
 				"project_id", input.ProjectID.String())
 		}
 	}

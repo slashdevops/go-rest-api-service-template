@@ -68,9 +68,13 @@ func (a *App) composeLogger() {
 		return
 	}
 
-	slog.SetDefault(slog.New(
-		slog.NewMultiHandler(slog.Default().Handler(), a.telemetry.Logs.Handler),
-	))
+	// The operation attributes wrap the COMPOSED handler, so they reach both
+	// sinks. The trace ids do not need to: the bridge puts those on the
+	// exported record itself, and traceAttrsHandler supplies them for the
+	// standard one.
+	slog.SetDefault(slog.New(&operationAttrsHandler{
+		Handler: slog.NewMultiHandler(slog.Default().Handler(), a.telemetry.Logs.Handler),
+	}))
 }
 
 // startPprofServer starts the pprof server for debugging if enabled.

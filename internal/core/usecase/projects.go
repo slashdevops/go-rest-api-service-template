@@ -158,10 +158,10 @@ func (ref *ProjectsService) UpdateByID(ctx context.Context, input *domain.Update
 			ID:   input.ID.String(),
 		}
 
-		slog.DebugContext(ctx, "usecase.Projects.UpdateByID", "what", "invalidate cache", "cache_key", cacheKey.String())
+		slog.DebugContext(ctx, "invalidate cache", "cache_key", cacheKey.String())
 
 		if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-			slog.WarnContext(ctx, "usecase.Projects.UpdateByID", "what", "failed to invalidate cache", slog.Any("error", err), "project.id", input.ID.String(), "cache_key", cacheKey.String())
+			slog.WarnContext(ctx, "failed to invalidate cache", slog.Any("error", err), "project.id", input.ID.String(), "cache_key", cacheKey.String())
 		}
 	}
 
@@ -212,14 +212,14 @@ func (ref *ProjectsService) DeleteByID(ctx context.Context, input *domain.Delete
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Projects.DeleteByID", "what", "invalidate cache", "project.id", input.ID.String())
+		slog.DebugContext(ctx, "invalidate cache", "project.id", input.ID.String())
 
 		cacheKey := cache.Identifier{
 			Type: "project",
 			ID:   input.ID.String(),
 		}
 		if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-			slog.WarnContext(ctx, "usecase.Projects.DeleteByID", "what", "failed to invalidate cache", slog.Any("error", err), "project.id", input.ID.String())
+			slog.WarnContext(ctx, "failed to invalidate cache", slog.Any("error", err), "project.id", input.ID.String())
 		}
 	}
 
@@ -290,7 +290,7 @@ func (ref *ProjectsService) GetByIDByUserID(ctx context.Context, id, userID uuid
 	}
 
 	if ref.cacheService == nil {
-		slog.DebugContext(ctx, "usecase.Projects.GetByIDByUserID", "cache", "disabled")
+		slog.DebugContext(ctx, "cache lookup", "cache", "disabled")
 
 		out, err = ref.repository.SelectByIDByUserID(ctx, id, userID)
 		if err != nil {
@@ -301,7 +301,7 @@ func (ref *ProjectsService) GetByIDByUserID(ctx context.Context, id, userID uuid
 			Type: "project",
 			ID:   id.String(),
 		}
-		slog.DebugContext(ctx, "usecase.Projects.GetByIDByUserID", "cache", "enabled")
+		slog.DebugContext(ctx, "cache lookup", "cache", "enabled")
 		out, err = cache.GetTyped[*domain.Project](ctx, ref.cacheService, cacheKey, projectFetcher)
 		if err != nil {
 			return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
@@ -382,14 +382,14 @@ func (ref *ProjectsService) LinkUsers(ctx context.Context, input *domain.LinkUse
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Projects.LinkUsers", "what", "invalidate cache", "project.id", input.ProjectID.String())
+		slog.DebugContext(ctx, "invalidate cache", "project.id", input.ProjectID.String())
 
 		cacheKey := cache.Identifier{
 			Type: "project",
 			ID:   input.ProjectID.String(),
 		}
 		if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-			slog.WarnContext(ctx, "usecase.Projects.LinkUsers", "what", "failed to invalidate cache", slog.Any("error", err), "project.id", input.ProjectID.String())
+			slog.WarnContext(ctx, "failed to invalidate cache", slog.Any("error", err), "project.id", input.ProjectID.String())
 		}
 	}
 
@@ -418,14 +418,14 @@ func (ref *ProjectsService) UnlinkUsers(ctx context.Context, input *domain.Unlin
 	}
 
 	if ref.cacheService != nil {
-		slog.DebugContext(ctx, "usecase.Projects.UnlinkUsers", "what", "invalidate cache", "project.id", input.ProjectID.String())
+		slog.DebugContext(ctx, "invalidate cache", "project.id", input.ProjectID.String())
 
 		cacheKey := cache.Identifier{
 			Type: "project",
 			ID:   input.ProjectID.String(),
 		}
 		if err := ref.cacheService.Invalidate(ctx, cacheKey); err != nil {
-			slog.WarnContext(ctx, "usecase.Projects.UnlinkUsers", "what", "failed to invalidate cache", slog.Any("error", err), "project.id", input.ProjectID.String())
+			slog.WarnContext(ctx, "failed to invalidate cache", slog.Any("error", err), "project.id", input.ProjectID.String())
 		}
 	}
 
