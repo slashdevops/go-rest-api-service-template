@@ -408,6 +408,35 @@ check-alerts: ## Validate and unit-test the Prometheus alert rules
 	$(call exec_cmd, $(CONTAINER_ENGINE) run --rm -v $(CURDIR)/dev-env/configuration/prometheus:/rules:ro -w /rules --entrypoint promtool docker.io/prom/prometheus:latest check rules alerts.yaml)
 	$(call exec_cmd, $(CONTAINER_ENGINE) run --rm -v $(CURDIR)/dev-env/configuration/prometheus:/rules:ro -w /rules --entrypoint promtool docker.io/prom/prometheus:latest test rules alerts_test.yaml)
 
+# How far the podman VM's clock may drift from the host before the dev stack
+# is considered broken. Seconds.
+DEV_ENV_CLOCK_MAX_SKEW ?= 5
+
+.PHONY: dev-env-clock-check
+dev-env-clock-check: ## Report the clock skew between this host and the podman VM (every backend lives in the VM)
+	@host=$$(date -u +%s); \
+	vm=$$(podman machine ssh 'date -u +%s' 2>/dev/null) || { printf "👉 No podman machine is running; nothing to compare\n"; exit 0; }; \
+	skew=$$(( host - vm )); abs=$${skew#-}; \
+	if [ "$$abs" -gt "$(DEV_ENV_CLOCK_MAX_SKEW)" ]; then \
+		printf "   VM clock is %ss behind the host (host=%s vm=%s) ❌ 🖕\n" "$$skew" "$$(date -u -r $$host +%T 2>/dev/null || date -u -d @$$host +%T)" "$$(date -u -r $$vm +%T 2>/dev/null || date -u -d @$$vm +%T)"; \
+		printf "   Loki refuses every log as 'timestamp too new', Prometheus drops the samples, and Postgres NOW() disagrees with the service.\n"; \
+		printf "   Run: make dev-env-clock-sync\n"; \
+		exit 1; \
+	else \
+		printf "  🤞  VM clock within %ss of the host (skew %ss) ✅\n" "$(DEV_ENV_CLOCK_MAX_SKEW)" "$$skew"; \
+	fi
+
+.PHONY: dev-env-clock-sync
+dev-env-clock-sync: ## Step the podman VM's clock to the host's. Run it after the laptop sleeps
+	@printf "👉 Syncing the podman VM clock to the host...\n"
+	@vm=$$(podman machine ssh 'date -u +%s' 2>/dev/null) || { printf "   no podman machine is running ❌ 🖕\n"; exit 1; }; \
+	skew=$$(( $$(date -u +%s) - vm )); abs=$${skew#-}; \
+	if [ "$$abs" -le "$(DEV_ENV_CLOCK_MAX_SKEW)" ]; then printf "  🤞  already in sync (skew %ss) ✅\n" "$$skew"; exit 0; fi; \
+	podman machine ssh "sudo date -u -s @$$(date -u +%s) >/dev/null && sudo chronyc makestep >/dev/null 2>&1 || true" \
+		&& printf "  🤞  stepped the VM clock by %ss ✅\n" "$$skew" \
+		|| { printf "   could not set the VM clock ❌ 🖕\n"; exit 1; }
+	@$(MAKE) --no-print-directory dev-env-clock-check
+
 .PHONY: check-loki-config
 check-loki-config: ## Validate the dev Loki configuration
 	@printf "👉 Checking the Loki configuration...\n"
@@ -578,6 +607,7 @@ start-dev-env: stop-dev-env dev-certs install-air install-swag install-goose ## 
 		$(call exec_cmd, cp ./dev-env/configuration/loki/loki-local-config.yaml $(HOME)/tmp/$(PROJECT_NAME)/dev-env/loki-local-config.yaml )
 
 		$(call exec_cmd, podman play kube ./dev-env/provisioning/dev-service-pod.yaml )
+		@$(MAKE) --no-print-directory dev-env-clock-sync
 	@printf "👉 Development environment is up. Data lives under $(HOME)/tmp/$(PROJECT_NAME). Next: air\n"
 
 .PHONY: rm-dev-env

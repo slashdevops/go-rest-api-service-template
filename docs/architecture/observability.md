@@ -583,7 +583,15 @@ destinations of the three signals.
 | Grafana | 3000 | — | queries all three |
 
 `run.sh` and `.air.toml` set all three exporters to `otlp-http`, so the dev
-stack runs the shipped posture. The Loki image is **pinned** for the reason
+stack runs the shipped posture.
+
+**The VM's clock is the one thing that silently breaks all three at once.** It
+freezes while the laptop sleeps, and everything the service sends afterwards
+is stamped by a host clock the backends think is hours ahead: Loki refuses
+logs as too new, Prometheus refuses samples as too far in the future (and has
+no grace setting), and Grafana's "last hour" is Loki's future. `make
+dev-env-clock-sync` steps it back; `start-dev-env` runs it. See
+[dev-stack.md](../development/dev-stack.md#after-the-laptop-sleeps-make-dev-env-clock-sync). The Loki image is **pinned** for the reason
 Tempo is: `:latest` is a moving target, and a log store that quietly changes
 its schema or its OTLP behaviour breaks the one signal whose failure is
 hardest to notice.

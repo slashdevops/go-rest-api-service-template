@@ -67,10 +67,16 @@ limits_config:
   # only because /health/detailed reports the SDK's export errors -- which is
   # the reason that check exists.
   #
-  # An hour absorbs any plausible drift. The real fix is `podman machine stop`
-  # and `start` to resynchronise the VM, and this keeps the stack usable until
-  # somebody does that.
-  creation_grace_period: 1h
+  # An hour was the first guess and it was not enough: a laptop closed for an
+  # afternoon put the VM 1h50m behind, and Loki refused an entire integration
+  # run -- 261 entries -- as "too new". Every one of those lines was lost, and
+  # the only symptom was an empty Logs dashboard.
+  #
+  # A day covers any sleep short of a weekend. It costs nothing in a store
+  # whose retention is also a day. The real fix is `make dev-env-clock-sync`,
+  # which start-dev-env runs and which is the thing to run after a sleep; this
+  # setting is what keeps logs arriving until somebody does.
+  creation_grace_period: 24h
 
   retention_period: 24h
 
