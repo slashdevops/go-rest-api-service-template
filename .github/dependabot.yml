@@ -12,8 +12,8 @@ updates:
     groups:
       go-dependencies:
         patterns: ["*"]
-    # go get -u has broken the build once through a transitive bump (see
-    # go.mod's exclude of gobwas/glob); a grouped PR still runs the full gate.
+    # go get -u has broken the build once through a transitive bump
+    # (gobwas/glob vs. OPA); a grouped PR still runs the full gate.
   - package-ecosystem: github-actions
     directory: /
     schedule:
