@@ -104,8 +104,8 @@ engine error or a non-boolean answer is a 500 and a refusal; a denial is a
 403 logged at `Warn` with the request id and counted with an `authorized`
 label on the metric.
 
-**Tests that run.** `make lint` runs `opa check --strict`, `opa fmt` and
-`opa test --coverage --threshold 100` on the bundle; `policyopa.TestEngineDecisions`
+**Tests that run.** `make lint` runs `opa check --strict`, `opa fmt`,
+`opa test --coverage --threshold 100` and `regal lint` on the bundle; `policyopa.TestEngineDecisions`
 is the Go twin of `policy_test.rego`, driving the same cases through the
 port with the wire-shaped map; `usecase.TestIsAuthorized` covers the use
 case's failure paths. The Rego tests existed before and were never run.

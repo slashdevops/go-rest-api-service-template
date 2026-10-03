@@ -275,7 +275,7 @@ make tools               # rebuild any tool missing or built by an older Go
 go fix -diff ./...       # must stay clean; `go fix ./...` applies
 make go-fmt
 make go-betteralign      # rewrites source; deliberately not part of build
-make lint                # gofmt + vet + staticcheck + errcheck + gosec + opa check/fmt/test
+make lint                # gofmt + vet + staticcheck + errcheck + gosec + opa check/fmt/test + regal lint
 make build               # also swag fmt + swag init → docs/api
 make test                # unit, race, coverage
 make vulncheck
