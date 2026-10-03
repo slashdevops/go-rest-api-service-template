@@ -119,6 +119,43 @@ func TestPrettyPrint(t *testing.T) {
 		args     []any
 		expected string
 	}{
+		// $N is argument N. The arguments used to be put, in order, on the
+		// first placeholder still in the text, which is right only when a
+		// statement writes $1, $2, $3 once each and in that order.
+		{
+			name: "Placeholders out of numeric order",
+			query: `UPDATE users SET name = $2
+                  WHERE id = $1`,
+			args:     []any{7, "John"},
+			expected: "UPDATE users SET name = 'John' WHERE id = 7",
+		},
+		{
+			name: "A placeholder used twice",
+			query: `SELECT * FROM users
+                  WHERE name = $1 OR nickname = $1 OR id = $2`,
+			args:     []any{"John", 7},
+			expected: "SELECT * FROM users WHERE name = 'John' OR nickname = 'John' OR id = 7",
+		},
+		{
+			name:     "A placeholder with no argument stays as written",
+			query:    `SELECT * FROM users WHERE id = $1 AND name = $2 AND city = $3`,
+			args:     []any{7, "John"},
+			expected: "SELECT * FROM users WHERE id = 7 AND name = 'John' AND city = $3",
+		},
+		{
+			// One pass: a value is not a statement, and is not substituted into.
+			name:     "A value that contains a placeholder is left alone",
+			query:    `SELECT * FROM users WHERE note = $1 AND id = $2`,
+			args:     []any{"costs $2", 7},
+			expected: "SELECT * FROM users WHERE note = 'costs $2' AND id = 7",
+		},
+		{
+			// $1 is not the start of $12.
+			name:     "Two-digit placeholders",
+			query:    `SELECT $12, $1, $10`,
+			args:     []any{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
+			expected: "SELECT 12, 1, 10",
+		},
 		{
 			name: "Simple query without args",
 			query: `SELECT *
