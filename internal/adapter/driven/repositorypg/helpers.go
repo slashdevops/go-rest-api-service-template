@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 
 	"uuid"
@@ -15,7 +16,7 @@ import (
 )
 
 // prettyPrint removes comments and extra spaces from a query.
-// It also replaces parameter placeholders ($1, $2, etc.) with their respective values.
+// It also replaces each parameter placeholder ($1, $2, etc.) with the argument of its number.
 func prettyPrint(query string, arg ...any) string {
 	// Check for empty query
 	if query == "" {
@@ -40,16 +41,11 @@ func prettyPrint(query string, arg ...any) string {
 	out = strings.TrimSpace(out)
 
 	if len(arg) > 0 {
-		// Replace the pattern $1,$2,..., $n with the corresponding arguments
-		re := regexp.MustCompile(`\$\d{1,2}`)
+		re := regexp.MustCompile(`\$\d+`)
 
-		for _, a := range arg {
+		// literal renders one argument the way it would read in SQL.
+		literal := func(a any) string {
 			var placeholder string
-
-			loc := re.FindStringIndex(out)
-			if loc == nil {
-				break
-			}
 
 			switch v := a.(type) {
 			case nil:
@@ -170,8 +166,28 @@ func prettyPrint(query string, arg ...any) string {
 				}
 			}
 
-			out = out[:loc[0]] + placeholder + out[loc[1]:]
+			return placeholder
 		}
+
+		// $N is argument N, wherever it is written and however often.
+		//
+		// The arguments used to be taken in order and put, each, on the first
+		// placeholder still in the text. That is right only for a statement
+		// that writes $1, $2, $3 once each and in that order: `SET name = $2
+		// ... WHERE id = $1` was traced as setting the name to the id, and a
+		// placeholder used twice gave its second use to the next argument.
+		// The statement Postgres received was right; the line a person reads
+		// to learn what was sent was not. One pass over the statement, so a
+		// value that itself contains "$2" is left as it is.
+		out = re.ReplaceAllStringFunc(out, func(ph string) string {
+			n, err := strconv.Atoi(ph[1:])
+			if err != nil || n < 1 || n > len(arg) {
+				// No such argument: the placeholder is shown as written.
+				return ph
+			}
+
+			return literal(arg[n-1])
+		})
 	}
 
 	return out

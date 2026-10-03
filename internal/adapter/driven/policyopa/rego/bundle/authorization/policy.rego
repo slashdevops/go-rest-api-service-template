@@ -20,6 +20,11 @@ package authorization
 # concrete path alike. It used to mean that only on the global resource, so a
 # policy granting "*" on /roles validated, inserted and admitted nothing.
 
+# METADATA
+# description: >-
+#   Whether input.user_id may perform input.action on input.resource. The one
+#   rule the service queries (policyopa.Engine, data.authorization.allow).
+# entrypoint: true
 default allow := false
 
 # Global grants: the "*" resource.
