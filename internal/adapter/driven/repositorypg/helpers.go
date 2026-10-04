@@ -6,7 +6,6 @@ import (
 	"html/template"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -402,9 +401,7 @@ func rewriteFilterFields(filter string, allowedFields []string, write func(field
 	// To prevent ambiguous matches where one allowed field is a substring of another
 	// (e.g., "id" and "user_id"), we sort the fields by length in descending order.
 	// The regex engine will then try to match longer fields first.
-	sort.Slice(allowedFields, func(i, j int) bool {
-		return len(allowedFields[i]) > len(allowedFields[j])
-	})
+	allowedFields = longestFirst(allowedFields)
 
 	escapedFields := make([]string, len(allowedFields))
 	for i, field := range allowedFields {
@@ -445,9 +442,7 @@ func injectPrefixToSortFields(prefix, sortQuery string, allowedFields []string) 
 	// To prevent ambiguous matches where one allowed field is a substring of another
 	// (e.g., "id" and "user_id"), we sort the fields by length in descending order.
 	// The regex engine will then try to match longer fields first.
-	sort.Slice(allowedFields, func(i, j int) bool {
-		return len(allowedFields[i]) > len(allowedFields[j])
-	})
+	allowedFields = longestFirst(allowedFields)
 
 	escapedFields := make([]string, len(allowedFields))
 	for i, field := range allowedFields {
@@ -483,4 +478,15 @@ func injectPrefixToSortFields(prefix, sortQuery string, allowedFields []string) 
 		// If field not found in allowed fields, return unchanged
 		return match
 	})
+}
+
+// longestFirst returns a copy of fields sorted by length, longest first. It
+// is a copy because the callers pass the domain's package-level allow-lists,
+// which every request shares: sorting them in place was a data race between
+// concurrent list requests.
+func longestFirst(fields []string) []string {
+	out := slices.Clone(fields)
+	slices.SortStableFunc(out, func(a, b string) int { return len(b) - len(a) })
+
+	return out
 }

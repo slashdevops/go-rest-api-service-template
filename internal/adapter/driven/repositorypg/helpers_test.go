@@ -2,6 +2,7 @@ package repositorypg
 
 import (
 	"slices"
+	"sync"
 	"testing"
 
 	"uuid"
@@ -812,4 +813,37 @@ func TestAFilterFieldThatIsNotAColumnIsWrittenAsItsExpression(t *testing.T) {
 
 		assert.Equal(t, "COALESCE(rl.soft_limit, -1) = -1 AND COALESCE(rl.hard_limit, -1) > 5 AND rls.usage = 0", got)
 	})
+}
+
+// TestTheAllowListIsNotSortedInPlace: the filter and sort helpers put the
+// longest field first so that "user_id" is matched before "id". They are
+// given the domain's package-level allow-lists, which every request shares,
+// and they used to sort them in place: two list requests at once raced on
+// the slice, and a caller's list changed order under it.
+//
+// Run with -race: the concurrent half fails there on the old code.
+func TestTheAllowListIsNotSortedInPlace(t *testing.T) {
+	shared := []string{"id", "name", "resource_type", "scope_id", "created_at"}
+	before := slices.Clone(shared)
+
+	_ = injectPrefixToFields("t.", "scope_id = 'x' AND id = 'y'", shared)
+	_ = injectPrefixToSortFields("t.", "resource_type ASC, id DESC", shared)
+
+	assert.Equal(t, before, shared, "the caller's allow-list changed order")
+
+	var wg sync.WaitGroup
+
+	for range 8 {
+		wg.Go(func() {
+			for range 200 {
+				_ = injectPrefixToFields("t.", "scope_id = 'x' AND id = 'y'", shared)
+				_ = injectPrefixToSortFields("t.", "resource_type ASC, id DESC", shared)
+				_ = injectFieldExpressions("t.", "name = 'a'", shared, nil)
+			}
+		})
+	}
+
+	wg.Wait()
+
+	assert.Equal(t, before, shared)
 }
