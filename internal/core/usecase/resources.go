@@ -81,7 +81,6 @@ func (ref *ResourcesService) GetByID(ctx context.Context, id uuid.UUID) (*domain
 
 	if !domain.IsUUIDV7(id) {
 		errorType := &domain.InvalidResourceIDError{ID: id.String(), Message: "ID is empty"}
-		slog.ErrorContext(ctx, "operation failed", "error", errorType)
 		return nil, o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
 	}
 

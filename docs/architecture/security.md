@@ -109,7 +109,7 @@ sequenceDiagram
     C->>M: POST, Transfer-Encoding: chunked
     M->>H: r.Body = http.MaxBytesReader(w, r.Body, bound)
     H->>H: json.Decode reads up to the bound
-    H-->>C: 400 (decode failed at the bound; connection closed)
+    H-->>C: 400 (decode failed at the bound, connection closed)
 ```
 
 | Setting | Default | Applies to |
@@ -173,13 +173,17 @@ flowchart LR
     DE -- http.MaxBytesError --> R413[413 request body too large]
     DE -- anything else --> R400[400 failed to decode request body]
     T -- anything else --> IE[respond.WriteInternalError]
-    IE --> LOG[slog.Error with request_id, method, path, cause]
+    IE --> HOLD[the cause handed to the request's failure holder, o11y.NoteFailure]
+    HOLD --> LOG[the access line 'request' at ERROR: request_id, method, path, the cause and where it arose]
     IE --> R500[500 internal server error + request_id]
 ```
 
 - **`respond.WriteInternalError`** answers `"internal server error"` and
-  logs the cause under the request id. A 500 is by definition an error the
-  caller cannot act on; the operator can, and joins the two by the id.
+  hands the cause to the request's failure holder; the access line, written
+  at ERROR for a 5xx, carries it under the request id
+  ([observability.md](observability.md#a-failed-request-is-one-line-at-the-level-of-its-answer)).
+  A 500 is by definition an error the caller cannot act on; the operator
+  can, and joins the two by the id.
 - **`respond.WriteDecodeError`** answers one 400 wording for any decode
   failure, and 413 when the body was cut by the size bound, so a client
   learns to send less rather than to fix its JSON.

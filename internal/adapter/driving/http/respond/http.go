@@ -30,7 +30,10 @@ var httpMessagePool = sync.Pool{
 	},
 }
 
-// WriteJSONMessage writes a success log and response to the client with the given status code and message.
+// WriteJSONMessage writes the standard message body with the given status
+// code. It logs nothing: the access line is the record of the request, and a
+// DEBUG record per response repeated it with the response text -- error
+// strings included -- as its message.
 func WriteJSONMessage(w http.ResponseWriter, r *http.Request, statusCode int, message string) {
 	writeJSONMessage(w, r, statusCode, "", message)
 }
@@ -75,12 +78,4 @@ func writeJSONMessage(w http.ResponseWriter, r *http.Request, statusCode int, co
 	mgs.Path = ""
 	mgs.RequestID = ""
 	httpMessagePool.Put(mgs)
-
-	slog.DebugContext(r.Context(), message,
-		"status_code", statusCode,
-		"method", r.Method,
-		"url", r.URL.Path,
-		"user_agent", r.UserAgent(),
-		"remote_addr", r.RemoteAddr,
-	)
 }

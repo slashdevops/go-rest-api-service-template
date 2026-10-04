@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
+	"github.com/slashdevops/go-rest-api-service-template/internal/o11y"
 )
 
 const (
@@ -24,16 +25,25 @@ const (
 	DecodeErrorMessage = "failed to decode request body"
 )
 
-// WriteInternalError answers 500 with a fixed message and logs the cause
-// under the request id, so an operator can join the two and a caller cannot
-// read the first.
+// WriteInternalError answers 500 with a fixed message and has the cause
+// logged under the request id, so an operator can join the two and a caller
+// cannot read the first.
+//
+// The cause goes on the request's access line, which is written at ERROR for
+// a 5xx with what failed and where (middleware.Logging): the cause is handed
+// to the request's failure holder, where a handler's RecordError has usually
+// put it already. It used to be logged here as well, a second ERROR line for
+// one failure. With no holder -- a handler driven directly, outside the
+// middleware chain -- it is logged here, as before.
 func WriteInternalError(w http.ResponseWriter, r *http.Request, err error) {
-	slog.ErrorContext(r.Context(), "internal server error",
-		"request_id", RequestIDFrom(r.Context()),
-		"method", r.Method,
-		"path", r.URL.Path,
-		"error", err,
-	)
+	if !o11y.NoteFailure(r.Context(), err) {
+		slog.ErrorContext(r.Context(), "internal server error",
+			"request_id", RequestIDFrom(r.Context()),
+			"method", r.Method,
+			"path", r.URL.Path,
+			"error", err,
+		)
+	}
 
 	writeJSONMessage(w, r, http.StatusInternalServerError, "", InternalServerErrorMessage)
 }

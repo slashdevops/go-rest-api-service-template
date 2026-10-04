@@ -169,9 +169,15 @@ func attrsToAny(attrs []attribute.KeyValue) []any {
 	return args
 }
 
-// RecordError records err on the span (status + RecordError), logs it, and
-// updates the duration/outcome metrics. It centralizes error handling to reduce
+// RecordError records err on the span (status + RecordError) and updates the
+// duration/outcome metrics. It centralizes error handling to reduce
 // duplication across layers.
+//
+// It does not log a failure that happens inside a request: it hands it to the
+// request's failure holder, and the access log writes one line for the
+// request once it knows the status it was answered with (see failureHolder).
+// Outside a request -- a reloader, startup -- it logs
+// `operation_failed` at ERROR itself, because nothing else will.
 //
 // Parameters:
 //   - ctx: request context (used for metric recording)
@@ -285,26 +291,29 @@ func RecordResult(
 
 		funcName := runtime.FuncForPC(pc).Name()
 
-		// The most useful log line this service writes, so it is the one that
-		// most needs its trace.
-		//
-		// It takes ctx -- ErrorContext, not Error -- because the OpenTelemetry
-		// bridge reads the span out of the context and from nowhere else. Every
-		// caller already has the ctx it just traced with; passing it costs
-		// nothing and is the difference between "an operation failed somewhere"
-		// and the failing span of a known request.
-		//
-		// The layer, domain and action are NOT repeated here: they are on the
-		// context from [SetupTrace], and the handler adds them to every record
-		// written inside the operation. Passing them again would put each one
-		// on the line twice.
-		slog.ErrorContext(ctx, "operation_failed",
-			"error", err,
-			"error_type", errorType(err),
-			"func", funcName,
-			"file", file,
-			"line", line,
-		)
+		failure := Failure{Err: err, Type: errorType(err), Func: funcName, File: file, Line: line}
+		failure.Operation, _ = OperationFrom(ctx)
+
+		// Inside a request the failure is held, not logged: the access log
+		// writes one line for it once it knows how the request was answered
+		// (see failureHolder). Outside one, or once that line is written,
+		// there is nobody to write it later.
+		if !holdFailure(ctx, failure) {
+			// It takes ctx -- ErrorContext, not Error -- because the
+			// OpenTelemetry bridge reads the span out of the context and from
+			// nowhere else.
+			//
+			// The layer, domain and action are NOT repeated here: they are on
+			// the context from [SetupTrace], and the handler adds them to
+			// every record written inside the operation.
+			slog.ErrorContext(ctx, "operation_failed",
+				"error", err,
+				"error_type", failure.Type,
+				"func", funcName,
+				"file", file,
+				"line", line,
+			)
+		}
 	} else {
 		mgs := "operation_successful"
 		if len(message) != 0 {

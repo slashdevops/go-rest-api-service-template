@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"uuid"
@@ -13,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/middleware"
+	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/respond"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
 )
 
@@ -449,5 +452,47 @@ func TestGetJWTExpiration(t *testing.T) {
 				assert.False(t, expTime.IsZero(), "Expected non-zero time for success case")
 			}
 		})
+	}
+}
+
+// TestABodyIDThatIsNotAUUIDHasAType: an id in a request body that is not a
+// uuid is refused by the standard library with a bare errors.New("invalid
+// uuid"), which the decoder returns as it is. Recorded like that, the access
+// log names the refusal `*errors.errorString` -- 34 such lines in one
+// integration run of svc-qu3ry-core, where this was found. It is a domain
+// error now, and what the caller reads has not changed.
+func TestABodyIDThatIsNotAUUIDHasAType(t *testing.T) {
+	var body struct {
+		ID uuid.UUID `json:"id"`
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/things", strings.NewReader(`{"id":"not-a-uuid"}`))
+
+	err := decodeJSONBody(req, &body)
+
+	invalid, ok := errors.AsType[*domain.InvalidRequestError](err)
+	if !ok {
+		t.Fatalf("got %T (%v), want *domain.InvalidRequestError", err, err)
+	}
+
+	if invalid.Message != "invalid uuid" {
+		t.Errorf("message %q", invalid.Message)
+	}
+
+	rec := httptest.NewRecorder()
+	respond.WriteDecodeError(rec, req, err)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status %d, want 400", rec.Code)
+	}
+
+	if want := respond.DecodeErrorMessage + ": invalid uuid"; !strings.Contains(rec.Body.String(), want) {
+		t.Errorf("the caller reads %s, want it to say %q as before", rec.Body.String(), want)
+	}
+
+	// A body that decodes is untouched.
+	ok2 := httptest.NewRequest(http.MethodPost, "/things", strings.NewReader(`{"id":"01990000-0000-7000-8000-000000000001"}`))
+	if err := decodeJSONBody(ok2, &body); err != nil {
+		t.Fatalf("a uuid was refused: %v", err)
 	}
 }

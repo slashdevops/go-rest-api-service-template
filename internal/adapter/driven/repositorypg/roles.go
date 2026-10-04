@@ -271,8 +271,11 @@ func (ref *RolesRepository) DeleteByID(ctx context.Context, input *domain.Delete
 	if result.RowsAffected() == 0 {
 		// grateful return user was deleted, security reason, but log and record error
 		errorType := &domain.RoleNotFoundError{RoleID: input.ID.String()}
-		e := o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
-		slog.ErrorContext(ctx, "operation failed", "error", e, "role.id", input.ID.String())
+		// The delete answers as if it had deleted, on purpose. What is
+		// recorded goes to the request's access line (DEBUG
+		// request_failure_not_answered); it was also logged here at ERROR,
+		// a second line for a request the service answered correctly.
+		_ = o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
 
 		return nil
 	}
