@@ -142,8 +142,8 @@ func (ref *ResourcesLimitsRepository) Select(ctx context.Context, input *domain.
 		"scope_id",
 		"resource_type",
 		"COALESCE(rls.usage, 0) AS usage",
-		"COALESCE(rl.soft_limit, -1) AS soft_limit",
-		"COALESCE(rl.hard_limit, -1) AS hard_limit",
+		resourcesLimitsSoftLimit + " AS soft_limit",
+		resourcesLimitsHardLimit + " AS hard_limit",
 		"created_at",
 		"updated_at",
 		"serial_id",
@@ -153,7 +153,7 @@ func (ref *ResourcesLimitsRepository) Select(ctx context.Context, input *domain.
 
 	var filterQuery string
 	if input.Filter != "" {
-		filterSentence := injectPrefixToFields(sqlFieldsPrefix, input.Filter, domain.ResourcesLimitsFilterFields)
+		filterSentence := injectFieldExpressions(sqlFieldsPrefix, input.Filter, domain.ResourcesLimitsFilterFields, resourcesLimitsFilterExpressions)
 		filterQuery = fmt.Sprintf("WHERE (%s)", filterSentence)
 	}
 
@@ -1056,4 +1056,19 @@ func (ref *ResourcesLimitsRepository) handlePgError(err error, input any) error 
 	}
 
 	return err
+}
+
+// The two limits as the list shows them: a column of the joined limits
+// relation, -1 when the scope has no limit. One spelling for the column and
+// for a filter on it, so that `soft_limit < 0` finds the rows that show -1.
+const (
+	resourcesLimitsSoftLimit = "COALESCE(rl.soft_limit, -1)"
+	resourcesLimitsHardLimit = "COALESCE(rl.hard_limit, -1)"
+)
+
+// resourcesLimitsFilterExpressions are the filter fields that are not
+// columns of the listed relation (resources_usage AS rls).
+var resourcesLimitsFilterExpressions = map[string]string{
+	domain.FieldSoftLimit: resourcesLimitsSoftLimit,
+	domain.FieldHardLimit: resourcesLimitsHardLimit,
 }

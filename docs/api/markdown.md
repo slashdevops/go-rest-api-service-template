@@ -6629,7 +6629,7 @@ Retrieve paginated list of Identity Providers with optional filtering and sortin
 | Name | Source | Type | Go type | Separator | Required | Default | Description |
 |------|--------|------|---------|-----------| :------: |---------|-------------|
 | fields | `query` | string | `string` |  |  |  | Comma-separated fields to return (e.g., id,name,idp_type) |
-| filter | `query` | string | `string` |  |  |  | Filter expression (e.g., idp_type='oauth2' AND name LIKE 'Google%') |
+| filter | `query` | string | `string` |  |  |  | Filter expression (e.g., name LIKE 'Google%') |
 | limit | `query` | integer | `int64` |  |  |  | Maximum number of items per page (default: system-defined) |
 | next_token | `query` | string | `string` |  |  |  | Pagination token for next page |
 | prev_token | `query` | string | `string` |  |  |  | Pagination token for previous page |

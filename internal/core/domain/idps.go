@@ -46,8 +46,11 @@ func (e IDPEventType) String() string {
 }
 
 var (
-	IDPsFilterFields  = []string{FieldID, FieldName, FieldSystem, FieldCreatedAt, FieldUpdatedAt}
-	IDPsSortFields    = []string{FieldID, FieldName, FieldSystem, FieldCreatedAt, FieldUpdatedAt}
+	// Neither list has `system`: identity providers have no such column, and
+	// a filter or a sort on it was refused by the database for "a field that
+	// does not exist" after the validator had allowed it.
+	IDPsFilterFields  = []string{FieldID, FieldName, FieldCreatedAt, FieldUpdatedAt}
+	IDPsSortFields    = []string{FieldID, FieldName, FieldCreatedAt, FieldUpdatedAt}
 	IDPsPartialFields = []string{
 		FieldID, FieldName, FieldDescription, FieldCallbackURL, FieldIssuerURL, FieldLogo,
 		FieldClientID, FieldEnabled, FieldAutoProvision, FieldCreatedAt, FieldUpdatedAt,

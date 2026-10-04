@@ -1,6 +1,7 @@
 package repositorypg
 
 import (
+	"slices"
 	"testing"
 
 	"uuid"
@@ -768,4 +769,47 @@ func TestBuildPaginationCriteria(t *testing.T) {
 			assert.Equal(t, tt.expectedSort, internalSort)
 		})
 	}
+}
+
+// TestAFilterFieldThatIsNotAColumnIsWrittenAsItsExpression: the resource
+// limits list reads usage rows and joins their limits, so `soft_limit` and
+// `hard_limit` are not columns of the listed relation. Prefixed like the
+// others they became `rls.soft_limit`, no column at all, and a filter the
+// contract allows was refused for "a field that does not exist".
+func TestAFilterFieldThatIsNotAColumnIsWrittenAsItsExpression(t *testing.T) {
+	fields := []string{"id", "scope_type", "usage", "soft_limit", "hard_limit"}
+	expressions := map[string]string{
+		"soft_limit": "COALESCE(rl.soft_limit, -1)",
+		"hard_limit": "COALESCE(rl.hard_limit, -1)",
+	}
+
+	for _, tt := range []struct {
+		name, filter, want string
+	}{
+		{"a_field_with_an_expression", "soft_limit = 10", "COALESCE(rl.soft_limit, -1) = 10"},
+		{"both", "soft_limit > 0 AND hard_limit > 0", "COALESCE(rl.soft_limit, -1) > 0 AND COALESCE(rl.hard_limit, -1) > 0"},
+		{"beside_a_column", "scope_type = 'user' AND hard_limit = -1", "rls.scope_type = 'user' AND COALESCE(rl.hard_limit, -1) = -1"},
+		{"a_column_is_prefixed_as_before", "usage > 3 OR id = 'x'", "rls.usage > 3 OR rls.id = 'x'"},
+		{"a_quoted_field_name_is_a_value", "scope_type = 'soft_limit'", "rls.scope_type = 'soft_limit'"},
+		{"part_of_another_word_is_not_the_field", "scope_type = 'x' AND soft_limits = 1", "rls.scope_type = 'x' AND soft_limits = 1"},
+		{"an_empty_filter", "", ""},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, injectFieldExpressions("rls.", tt.filter, slices.Clone(fields), expressions))
+		})
+	}
+
+	t.Run("no_expressions_is_the_plain_prefix", func(t *testing.T) {
+		filter := "usage > 3 AND scope_type = 'user'"
+		assert.Equal(t, injectPrefixToFields("rls.", filter, slices.Clone(fields)), injectFieldExpressions("rls.", filter, slices.Clone(fields), nil))
+	})
+
+	// The list's own table: both limits are written with the expression the
+	// list selects, so that a filter matches what a row shows.
+	t.Run("the_resource_limits_list", func(t *testing.T) {
+		got := injectFieldExpressions("rls.", "soft_limit = -1 AND hard_limit > 5 AND usage = 0",
+			slices.Clone(domain.ResourcesLimitsFilterFields), resourcesLimitsFilterExpressions)
+
+		assert.Equal(t, "COALESCE(rl.soft_limit, -1) = -1 AND COALESCE(rl.hard_limit, -1) > 5 AND rls.usage = 0", got)
+	})
 }
