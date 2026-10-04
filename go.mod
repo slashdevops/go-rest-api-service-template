@@ -13,7 +13,7 @@ require (
 	github.com/slashdevops/c3e v0.0.2
 	github.com/slashdevops/httpx v0.0.5
 	github.com/slashdevops/mailer v1.1.0
-	github.com/slashdevops/qfv v1.0.2
+	github.com/slashdevops/qfv v1.0.3
 	github.com/slashdevops/ratelimiter v1.2.0
 	github.com/stretchr/testify v1.12.1
 	github.com/swaggo/http-swagger/v2 v2.0.2
