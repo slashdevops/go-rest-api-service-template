@@ -10,6 +10,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/respond"
+	"github.com/slashdevops/go-rest-api-service-template/internal/o11y"
 )
 
 // Tracing starts the span that represents the whole request.
@@ -82,6 +83,12 @@ func Tracing(tracer trace.Tracer, clientIP *ClientIPResolver) Middleware {
 			// pointer as the chain descends, and Logging reads it on the way
 			// back out. See [WithSubject].
 			ctx = WithSubject(ctx)
+
+			// And the same for the request's first failure: every layer below
+			// records into this holder instead of logging, and Logging, which
+			// knows how the request was answered, writes the one line. See
+			// o11y.WithFailure.
+			ctx = o11y.WithFailure(ctx)
 
 			wrapped := newWrappedResponseWriter(w)
 

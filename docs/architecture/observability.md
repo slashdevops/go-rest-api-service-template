@@ -441,6 +441,154 @@ account for an operator without putting a person's e-mail in a retained,
 searchable store. An anonymous request contributes no subject fields at all,
 rather than a line padded with empty strings that read as "the empty user".
 
+## A failed request is one line, at the level of its answer
+
+The level of a line says whether someone has to act.
+
+| The request was answered | What is written | Level |
+| --- | --- | --- |
+| 2xx, 3xx | the access line, `request` | INFO |
+| **4xx**: the service refused it on purpose (a bad field, a row that is not there, a wrong password, a limit) | the access line with `error_type`; and one line `request_refused` with the error and where it arose | **INFO**; the detail at **DEBUG** |
+| **5xx**: the service, or something it depends on, failed | the access line with `error_type`, the error, and where it arose (`func`, `file`, `line`, `app_layer`, `app_domain`, `app_action`). Nothing else | **ERROR** |
+| not a request (a reloader, startup) | `operation_failed`, where the failure is handled | ERROR |
+
+A refusal is the service working. It is never ERROR, and never WARN either:
+at the volume of bad requests WARN would be the same noise one level lower,
+and the WARN lines an operator should see -- a rule skipped, a count given up,
+`authorization refused` for a caller who is not a member -- would be buried.
+A spike of 401s or 429s is caught by a metric, not by a level.
+
+**Every layer used to log.** `o11y.RecordError` is called by the repository
+that raises an error, by the use-case that returns it and by the handler that
+answers it -- 1 152 call sites -- and each call wrote an ERROR line,
+`operation_failed`. Measured in svc-qu3ry-core, the service this template is
+kept in step with and where the change was built, on the log of two runs of
+its integration suite: 3 090 such lines, **98% of them for requests refused
+on purpose and answered with a 4xx**, one refusal logged up to four times,
+and eight requests answered with a 5xx -- whose access lines were INFO, like
+every other. The ERROR level held refusals, and the failed requests were at
+INFO.
+
+Neither fault can be put right inside a layer, because no layer knows how the
+request will be answered: a "not found" is a 404 on one route and a 400 on
+another, where the missing thing was named in the body. Only the handler
+decides, and only the middleware sees what it decided. So:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant M as Tracing + Logging
+    participant H as handler
+    participant U as use-case
+    participant R as repository
+
+    M->>M: o11y.WithFailure, a holder in the context
+    M->>H: request
+    H->>U: call
+    U->>R: call
+    R--xU: error
+    Note over R: RecordError, span and metric.<br/>The holder takes the error and where it arose
+    U--xH: the same error
+    Note over U: RecordError, span and metric.<br/>The same error: the holder keeps where it arose, nothing is logged.<br/>Another error (the caller recovered from the first) replaces it
+    H--xM: writes the answer, status S
+    Note over H: RecordError, span and metric. Nothing is logged
+    alt S is 5xx
+        M->>M: `request` at ERROR, with the cause and its origin
+    else S is 4xx
+        M->>M: `request` at INFO with error_type, and `request_refused` at DEBUG
+    else a failure was recorded and S is below 400
+        M->>M: `request` at INFO, and `request_failure_not_answered` at DEBUG
+    else nothing failed
+        M->>M: `request` at INFO, as always
+    end
+    M->>M: the holder is sealed
+    Note over R: a failure recorded after this, by work that outlived<br/>the request, is logged by its layer: `operation_failed`
+```
+
+- **The holder is the mechanism the subject already uses** to reach the access
+  line: a context flows down and never back up, but a pointer placed in it
+  once, above everything, is reachable from both ends. `Tracing` installs it;
+  `o11y.recordResult` writes into it; `middleware.Logging` reads it.
+- **The failure kept is the one travelling up, where it arose.** The
+  repository returns before the use-case does, and the layers above record
+  the same error or a wrap of it, which does not replace it: the function,
+  file and line that were logged three times are logged once.
+- **A failure the caller recovered from does not mask the next one.** A first
+  sign-in through an identity provider looks the identity up, is told "not
+  found" and goes on to create the account; that lookup was recorded. An
+  error that is *not* the held one or a wrap of it replaces it, so when the
+  insert then fails and the request is answered 500, the line names the
+  insert. With "the first one wins" it named the lookup, and the real cause
+  was written nowhere (found in review, before this shipped).
+  The same rule makes `error_type` the error the request was *answered* with
+  where a layer answers with another error than the one below it recorded: a
+  login for an address nobody has is a "not found" in the repository and an
+  `InvalidCredentialsError` in the use-case, and the line says the second,
+  from the use-case.
+- **A 500 written for an error no layer recorded** -- a handler calling
+  `respond.WriteInternalError` directly -- hands its cause to the same holder
+  (`o11y.NoteFailure`), so that line too is the access line, with the cause.
+- **The holder is sealed when the line is written.** A context outlives its
+  request: the cache refreshes a stale entry on `context.WithoutCancel`,
+  which keeps the context's values and so the holder. `Logging` *takes* the
+  failure (`o11y.TakeFailure`), and from then on the holder is no holder: a
+  failure recorded by work that outlived the request is logged by its layer,
+  not held for a line already written. What a refresh records *while* its
+  request is still being answered can land on that request's line; the
+  window is the few milliseconds between the stale hit and the response.
+- **A panicking request has its line.** A panic used to leave `Logging`
+  before the line was written, and what the layers had recorded went with
+  it. `Logging` writes the line as the 500 `Recovery` is about to answer,
+  with the panic as the cause, and lets the panic go on up; `Recovery`, above
+  everything, logs `panic recovered` as before.
+- **A middleware that answers 500 writes no line of its own.** The
+  authorization check logged an ERROR and answered 500 for an error its
+  use-case had already recorded: with the access line at ERROR that was the
+  same failure twice. It logs only when there is no access line to carry it.
+- **A response writes no line of its own either.** `respond.WriteJSONMessage`
+  wrote a DEBUG record per response, with the response's text as its
+  message: the access line again, and for a refusal a second detail line
+  beside `request_refused`. It is gone.
+- **`error_type` is the type of the error the request was answered with.** A
+  request answered 2xx carries none, whatever a layer recorded on the way;
+  what was recorded is the DEBUG line `request_failure_not_answered`.
+- **No holder, no change.** Work that is not a request has no access line to
+  wait for, and `RecordError` logs it itself, in each layer as before: a
+  failure outside a request is still one `operation_failed` line for each
+  layer it passes. That is left alone on purpose. A background job may
+  recover from what a layer below it reported, and a failure held for an
+  outer line that is then never written would be a failure nobody logged.
+- **A middleware's refusal names no failure.** A 401 for a missing token, a
+  403 from the policy, a 429: nothing below the middleware ran, nothing was
+  recorded, and the status on the access line is the whole story.
+- **None of the call sites changed.**
+
+**Measured again in svc-qu3ry-core, on the same two runs of its suite.** ERROR
+lines went from 3 096 to **28**, and each of them is something to act on:
+the access line of each of the eight requests answered with a 5xx, with the
+cause and where it arose, and twenty lines for faults that suite causes on
+purpose outside a request or in a use-case's own words. Its 1 843 requests
+answered with a 4xx are 1 843 INFO lines; 1 534 of them carry an `error_type`
+and have their `request_refused` line at DEBUG, and the other 309 were
+refused by a middleware.
+
+**Measured here, on one run of this repository's integration suite, after the
+change:** four ERROR lines, each the access line of a request answered 500
+(three for a usage counter the suite tampers with on purpose, one for an
+unlink of policies that the database refuses), 345 requests answered 4xx at
+INFO, 266 of them with an `error_type`, and fifteen requests answered 2xx
+that had recorded a failure on the way, each with its DEBUG
+`request_failure_not_answered`. Those fifteen are deletes of a row that is
+not there, which this service answers as done: the repositories used to log
+each at ERROR by hand ("operation failed"), twelve such lines in two runs,
+and no longer do.
+
+`TestARefusedRequestIsNotAnError`, `TestAFailedRequestIsOneErrorLine` and their
+neighbours in `middleware/request_level_test.go` drive a request through three
+layers and count the lines, the recovered failure, the panic and the work
+that outlives its request among them;
+`o11y/failure_test.go` holds the holder.
+
 ## What the key rules caught
 
 The two rules above are tests rather than review habits because the failure
@@ -472,7 +620,8 @@ the id as its value).
 
 ## `error_type`, and why the message is not a key
 
-`operation_failed` carries `error_type` as well as the message. Counting
+The line of a failed request carries `error_type` as well as the message
+(the access line `request`; `operation_failed` outside a request). Counting
 failures needs something that does not change when the wording does: the
 message is free text, it is often a wrapped vendor string, and a dependency
 bump rewrites it — at which point a panel counting "how many times did *this*
@@ -489,10 +638,13 @@ already carries `successful=false` with the layer, domain and action — which i
 the question a metric should answer. "Which error" is a log question, and the
 log line is joined to the metric by the trace id.
 
-That is also why the HTTP status is not on `operation_failed`. Putting it there
-would mean plumbing the response writer into `internal/core`, which is the one
-thing the hexagon forbids; and the access log already carries `status` and
-shares a trace id with the failure, so the two are one click apart.
+The HTTP status and the failure are on the same line, and the core was not
+given the response writer to put them there, which is the one thing the
+hexagon forbids. The layers hand the failure up, through a holder in the
+context, to the middleware that knows the status (see "A failed request is
+one line" above). They used to be two lines joined by a trace id: the
+failure at ERROR whatever the status, and the status at INFO whatever the
+failure.
 
 ## The operation reaches every record without a call site saying so
 

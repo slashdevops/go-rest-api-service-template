@@ -258,6 +258,10 @@ func getJWTExpiration(tokenString string) (time.Time, error) {
 	return exp.Time, nil
 }
 
+// uuidDecodeFailure is the one text the standard library's uuid fails with
+// when a JSON string is not a uuid.
+const uuidDecodeFailure = "invalid uuid"
+
 // decodeJSONBody decodes one JSON value from the request body into dst.
 //
 // Unknown fields are refused. A field the API dropped -- the IdP redirect
@@ -277,6 +281,17 @@ func decodeJSONBody(r *http.Request, dst any) error {
 			// The field name is the caller's, quoted by the decoder; the
 			// wording that goes out is ours.
 			return &domain.InvalidRequestError{Message: "unknown field " + name}
+		}
+
+		// An id in the body that is not a uuid. The standard library's uuid
+		// fails with one bare errors.New("invalid uuid") and the decoder
+		// returns it as it is: an error with no type of ours, which the
+		// access log could only name `*errors.errorString` -- "some error" --
+		// for a request refused for a reason this service knows exactly. The
+		// wording that goes out is unchanged: WriteDecodeError already wrote
+		// "invalid uuid" for it.
+		if err.Error() == uuidDecodeFailure {
+			return &domain.InvalidRequestError{Message: uuidDecodeFailure}
 		}
 
 		return err

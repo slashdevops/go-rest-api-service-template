@@ -20,6 +20,7 @@ import (
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/respond"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/domain"
 	"github.com/slashdevops/go-rest-api-service-template/internal/core/usecase"
+	"github.com/slashdevops/go-rest-api-service-template/internal/o11y"
 )
 
 // ContextKey is a type for context keys
@@ -129,44 +130,156 @@ func Logging(clientIP *ClientIPResolver) Middleware {
 			start := time.Now()
 			wrapped := newWrappedResponseWriter(w)
 
+			// A panic leaves through here before the line below is written,
+			// and with it went whatever the layers had recorded: the request
+			// had no access line at all. It gets one, as the 500 Recovery is
+			// about to answer, and the panic goes on up to Recovery, which
+			// sits above everything and logs it with what it knows.
+			defer func() {
+				if rec := recover(); rec != nil {
+					o11y.NoteFailure(r.Context(), fmt.Errorf("panic: %v", rec))
+					logRequest(r.Context(), http.StatusInternalServerError,
+						accessLine(r, clientIP, start, http.StatusInternalServerError, wrapped.written))
+
+					panic(rec)
+				}
+			}()
+
 			next.ServeHTTP(wrapped, r)
 
-			address := r.RemoteAddr
-			if clientIP != nil {
-				address = clientIP.ClientIP(r)
-			}
-
-			// Read AFTER the handler: the mux sets the pattern while routing,
-			// so before this point there is nothing to read.
-			route := r.Pattern
-			if route == "" {
-				route = "unmatched"
-			}
-
-			// The subject, when the request had one. "Who was doing this" is
-			// the first question after "what failed", and the access log could
-			// not answer it: the identity the authentication middleware
-			// verified lives on a request further down the chain, so it is
-			// carried back through the holder [WithSubject] installed above.
-			//
-			// An anonymous request contributes nothing here rather than a set
-			// of empty strings that read as "the empty user".
-			args := []any{
-				"request_id", respond.RequestIDFrom(r.Context()),
-				"method", r.Method,
-				"path", r.URL.Path,
-				"route", route,
-				"client_ip", address,
-				"status", wrapped.status,
-				"duration_ms", time.Since(start).Milliseconds(),
-				"bytes", wrapped.written,
-				"user_agent", r.UserAgent(),
-			}
-			args = append(args, subjectOf(r).logAttrs()...)
-
-			slog.InfoContext(r.Context(), "request", args...)
+			logRequest(r.Context(), wrapped.status,
+				accessLine(r, clientIP, start, wrapped.status, wrapped.written))
 		})
 	}
+}
+
+// accessLine is what the access log says about a request, whatever its
+// answer.
+func accessLine(r *http.Request, clientIP *ClientIPResolver, start time.Time, status int, written int64) []any {
+	address := r.RemoteAddr
+	if clientIP != nil {
+		address = clientIP.ClientIP(r)
+	}
+
+	// Read AFTER the handler: the mux sets the pattern while routing,
+	// so before this point there is nothing to read.
+	route := r.Pattern
+	if route == "" {
+		route = "unmatched"
+	}
+
+	// The subject, when the request had one. "Who was doing this" is
+	// the first question after "what failed", and the access log could
+	// not answer it: the identity the authentication middleware
+	// verified lives on a request further down the chain, so it is
+	// carried back through the holder [WithSubject] installed above.
+	//
+	// An anonymous request contributes nothing here rather than a set
+	// of empty strings that read as "the empty user".
+	args := []any{
+		"request_id", respond.RequestIDFrom(r.Context()),
+		"method", r.Method,
+		"path", r.URL.Path,
+		"route", route,
+		"client_ip", address,
+		"status", status,
+		"duration_ms", time.Since(start).Milliseconds(),
+		"bytes", written,
+		"user_agent", r.UserAgent(),
+	}
+	args = append(args, subjectOf(r).logAttrs()...)
+
+	return args
+}
+
+// logRequest writes the access line at the level the answer calls for, with
+// what failed when something did.
+//
+// # The level says whether someone must act
+//
+// Every layer used to log its own ERROR line for a failure it returned, and
+// this line was INFO whatever the status. So the ERROR level held the
+// requests the service refused on purpose -- a bad field, a row that is not
+// there, a wrong password -- up to three times each, and the requests that
+// really failed were here, at INFO.
+//
+//   - 5xx: ERROR. The service, or something it depends on, failed. This line
+//     is the record: it carries the cause and where it arose, and it is the
+//     only line written about the failure. The response says nothing but
+//     "internal server error".
+//   - 4xx: INFO, as it always was, now with error_type. A refusal is the
+//     service working, and at the volume of bad requests WARN would be the
+//     same noise one level lower. What exactly was refused -- which field,
+//     where -- is one DEBUG line, there when a client's complaint has to be
+//     traced.
+//   - the rest: INFO.
+//
+// The layers do not log because none of them knows the status: a
+// NotFoundError is a 404 on one route and a 400 on another. They record into
+// the holder Tracing installed (o11y.WithFailure) and this, which knows, reads
+// it.
+func logRequest(ctx context.Context, status int, args []any) {
+	// Taken, not read: the holder is sealed, so that a failure recorded
+	// after this line (work that outlives the request) is logged by its
+	// layer instead of waiting for a line already written.
+	failure, failed := o11y.TakeFailure(ctx)
+
+	// error_type is the type of the error the request was answered with. A
+	// request answered 2xx was not answered with one, whatever a layer
+	// recorded on the way, and its line does not say otherwise.
+	if failed && status >= http.StatusBadRequest {
+		args = append(args, "error_type", failure.Type)
+	}
+
+	if status < http.StatusInternalServerError {
+		slog.InfoContext(ctx, "request", args...)
+
+		if failed {
+			message := "request_refused"
+			if status < http.StatusBadRequest {
+				// A failure the handler chose not to answer with: a
+				// re-verification that says 200 so that accounts cannot be
+				// enumerated, a best-effort step that did not work.
+				message = "request_failure_not_answered"
+			}
+
+			slog.DebugContext(ctx, message, failureAttrs(failure, status)...)
+		}
+
+		return
+	}
+
+	if failed {
+		args = append(args, failureAttrs(failure, 0)...)
+	}
+
+	slog.ErrorContext(ctx, "request", args...)
+}
+
+// failureAttrs is where a failure arose and what it was. The operation's
+// layer, domain and action are spelled as on every other record
+// (operationAttrsHandler), so one filter finds both.
+func failureAttrs(f o11y.Failure, status int) []any {
+	attrs := []any{
+		"error", f.Err,
+		"func", f.Func,
+		"file", f.File,
+		"line", f.Line,
+	}
+
+	if status != 0 {
+		attrs = append(attrs, "status", status, "error_type", f.Type)
+	}
+
+	if f.Operation.Layer != "" {
+		attrs = append(attrs,
+			o11y.AttrLayer, f.Operation.Layer,
+			o11y.AttrDomain, f.Operation.Domain,
+			o11y.AttrAction, f.Operation.Action,
+		)
+	}
+
+	return attrs
 }
 
 // OtelTextMapPropagation middleware propagates the OpenTelemetry context
@@ -570,12 +683,19 @@ func CheckAuthz(authz *usecase.AuthzService) Middleware {
 
 			ok, err = authz.IsAuthorized(r.Context(), sub, action, r.URL.Path)
 			if err != nil {
-				slog.ErrorContext(r.Context(), "authorization service error",
-					"error", err,
-					"sub", subStr,
-					"method", r.Method,
-					"path", r.URL.Path,
-				)
+				// The use-case recorded this, and the access line, which is
+				// ERROR for the 500 below, carries it with where it arose.
+				// A second ERROR line here said the same thing again. It is
+				// written only when there is no access line to carry it.
+				if !o11y.NoteFailure(r.Context(), err) {
+					slog.ErrorContext(r.Context(), "authorization service error",
+						"error", err,
+						"sub", subStr,
+						"method", r.Method,
+						"path", r.URL.Path,
+					)
+				}
+
 				respond.WriteJSONMessage(w, r, http.StatusInternalServerError, "authorization service unavailable")
 				return
 			}

@@ -69,7 +69,9 @@
 // at every return site:
 //
 //   - [RecordResult]  — the core function. Computes duration, sets the
-//     span status (Ok or Error), logs errors with caller information,
+//     span status (Ok or Error), hands an error and where it was recorded
+//     to the request's failure holder -- the access log writes the one
+//     line for it, see [WithFailure] -- or, outside a request, logs it,
 //     and records both the counter and histogram metrics.
 //   - [RecordError]   — convenience wrapper around RecordResult for
 //     error paths. Returns the original error so callers can chain
