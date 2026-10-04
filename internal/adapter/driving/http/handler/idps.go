@@ -478,7 +478,7 @@ func (ref *IDPsHandler) deleteByID(w http.ResponseWriter, r *http.Request) {
 //	@Accept			json
 //	@Produce		json
 //	@Param			sort		query		string						false	"Sort order (e.g., name ASC, created_at DESC)"
-//	@Param			filter		query		string						false	"Filter expression (e.g., idp_type='oauth2' AND name LIKE 'Google%')"
+//	@Param			filter		query		string						false	"Filter expression (e.g., name LIKE 'Google%')"
 //	@Param			fields		query		string						false	"Comma-separated fields to return (e.g., id,name,idp_type)"
 //	@Param			next_token	query		string						false	"Pagination token for next page"
 //	@Param			prev_token	query		string						false	"Pagination token for previous page"

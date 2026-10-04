@@ -364,7 +364,38 @@ func buildPaginationCriteria(
 // It uses a regular expression that identifies and ignores matches within quoted strings
 // to prevent incorrectly modifying string literals.
 func injectPrefixToFields(prefix, filter string, allowedFields []string) string {
-	if prefix == "" || filter == "" || len(allowedFields) == 0 {
+	if prefix == "" {
+		return filter
+	}
+
+	return rewriteFilterFields(filter, allowedFields, func(field string) string { return prefix + field })
+}
+
+// injectFieldExpressions writes a filter's fields as the list's statement
+// knows them: a field with an expression becomes that expression, and any
+// other allowed field gets the prefix, as injectPrefixToFields gives it.
+//
+// A list's field is not always a column of the listed relation. The resource
+// limits list reads usage rows and joins their limits: `soft_limit` is
+// `COALESCE(rl.soft_limit, -1)`, a column of the joined relation shown as -1
+// when there is no limit. Prefixed like the others it became `rls.soft_limit`,
+// which is no column at all, and a filter the contract allows was refused
+// for "a field that does not exist".
+func injectFieldExpressions(prefix, filter string, allowedFields []string, expressions map[string]string) string {
+	return rewriteFilterFields(filter, allowedFields, func(field string) string {
+		if expression, ok := expressions[field]; ok {
+			return expression
+		}
+
+		return prefix + field
+	})
+}
+
+// rewriteFilterFields replaces every allowed field of a filter by what write
+// returns for it. A field is a whole word outside a quoted literal: the
+// literal 'id' in `name = 'id'` is a value, and is left as it is.
+func rewriteFilterFields(filter string, allowedFields []string, write func(field string) string) string {
+	if filter == "" || len(allowedFields) == 0 {
 		return filter
 	}
 
@@ -398,9 +429,8 @@ func injectPrefixToFields(prefix, filter string, allowedFields []string) string 
 			return match
 		}
 
-		// Otherwise, the match must be one of our target fields.
-		// We prepend the prefix and return the new string.
-		return prefix + match
+		// Otherwise, the match is one of the list's fields.
+		return write(match)
 	})
 }
 

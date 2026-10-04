@@ -540,7 +540,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter expression (e.g., idp_type='oauth2' AND name LIKE 'Google%')",
+                        "description": "Filter expression (e.g., name LIKE 'Google%')",
                         "name": "filter",
                         "in": "query"
                     },
