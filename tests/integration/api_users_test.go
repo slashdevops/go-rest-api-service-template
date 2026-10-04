@@ -614,16 +614,16 @@ func TestUserDelete(t *testing.T) {
 		assert.NoError(t, err, "Failed to send request to delete non-existent user")
 		defer deleteResponse.Body.Close()
 
-		// 3. Check the response - this should still return StatusOK even though the user doesn't exist
-		// This is because deleting a non-existent resource is considered idempotent in RESTful APIs
-		assert.Equal(t, http.StatusOK, deleteResponse.StatusCode, "Expected status code 200 OK for deleting non-existent user")
+		// 3. Nothing was deleted, and the answer says so. It was a 200 with the
+		// success message, and the use-case gave a usage slot back for it.
+		assert.Equal(t, http.StatusNotFound, deleteResponse.StatusCode, "Expected status code 404 for deleting a user that does not exist")
 
-		// 4. Parse and verify the success response
+		// 4. Parse the response
 		deleteAPIResp, err := parserResponseBody[payload.HTTPMessage](t, deleteResponse)
 		assert.NoError(t, err, "Failed to parse response body")
 
-		// 5. Verify success message for deletion
-		assert.Equal(t, domain.UsersUserDeletedSuccessfully, deleteAPIResp.Message, "Expected success message")
+		// 5. Not the success message
+		assert.NotEqual(t, domain.UsersUserDeletedSuccessfully, deleteAPIResp.Message, "a delete that deleted nothing answered with the success message")
 		assert.Equal(t, deleteEndpoint.method, deleteAPIResp.Method, "Expected method to be set")
 		assert.Equal(t, deleteEndpoint.Path(), deleteAPIResp.Path, "Expected path to be set")
 
