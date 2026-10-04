@@ -336,15 +336,14 @@ func (ref *UsersRepository) DeleteByID(ctx context.Context, input *domain.Delete
 	}
 
 	if result.RowsAffected() == 0 {
-		// grateful return user was deleted, security reason, but log and record error
+		// Nothing was deleted, and the caller is told so. This returned nil,
+		// "for security", and the use-case went on as after a real delete:
+		// it gave a usage slot back, so deleting ids that do not exist
+		// lowered the counter the limit is checked against. The handler has
+		// always had the 404 arm.
 		errorType := &domain.UserNotFoundError{ID: input.ID}
-		// The delete answers as if it had deleted, on purpose. What is
-		// recorded goes to the request's access line (DEBUG
-		// request_failure_not_answered); it was also logged here at ERROR,
-		// a second line for a request the service answered correctly.
-		_ = o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
 
-		return nil
+		return o11y.RecordError(ctx, span, start, errorType, ref.metrics, attrs)
 	}
 
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "user deleted successfully", attribute.String("user.id", input.ID.String()))

@@ -562,16 +562,16 @@ func TestIDPDelete(t *testing.T) {
 		assert.NoError(t, err, "Failed to send request")
 		defer response.Body.Close()
 
-		// 4. Check the response - this should still return StatusOK even though the IDP doesn't exist
-		// This is because deleting a non-existent resource is considered idempotent in RESTful APIs
-		assert.Equal(t, http.StatusOK, response.StatusCode, "Expected status code 200")
+		// 4. Nothing was deleted, and the answer says so. It was a 200 with the
+		// success message, and the use-case gave a usage slot back for it.
+		assert.Equal(t, http.StatusNotFound, response.StatusCode, "Expected status code 404")
 
-		// 5. Parse and verify the success response
+		// 5. Parse the response
 		apiResp, err := parserResponseBody[payload.HTTPMessage](t, response)
 		assert.NoError(t, err, "Failed to parse response body")
 
-		// 6. Verify success message for deletion
-		assert.Equal(t, "IDP deleted successfully", apiResp.Message, "Expected success message for idempotent deletion")
+		// 6. Not the success message
+		assert.NotEqual(t, "IDP deleted successfully", apiResp.Message, "a delete that deleted nothing answered with the success message")
 
 		// 7. Cleanup
 		t.Cleanup(func() {
