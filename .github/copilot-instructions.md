@@ -63,7 +63,7 @@ Two things about it are worth reading before you copy it:
 
 ## Stack
 
-- Language: Go 1.27+ (`go 1.27.1` in `go.mod`; the patch version is load-bearing, CI and `govulncheck` resolve the toolchain from it)
+- Language: Go 1.27+ (`go 1.27.2` in `go.mod`; the patch version is load-bearing, CI and `govulncheck` resolve the toolchain from it)
 - Framework: standard library (`net/http`, `slog`, `testing`)
 - Build: `make` — every target is in the Makefile
 - Live reload: `air`
@@ -144,6 +144,7 @@ Small functions, meaningful names, dependency injection through ports.
 - Generic methods exist but cannot satisfy an interface, so ports stay non-generic.
 - `go fix ./...` runs in the **same commit** as a `go` directive bump (the `embedlit` modernizer fires on `tokenjwt/adapter.go`).
 - Every source-processing tool must be built by the running toolchain. `make tools` reinstalls what is missing or older; `betteralign` fails **silently** when stale.
+- **A local Go newer than the `go` directive is not the gate's toolchain.** `govulncheck` judges the Go it runs on, so it hides the directive's standard-library advisories, and a patch release has changed how coverage counts statements (1.27.2 did). Bump the directive first, or run the gate with `GOTOOLCHAIN` set to it.
 
 The full list, with what each 1.27 change means here and the uuid API
 differences, is in [`docs/development/go-127-baseline.md`](../docs/development/go-127-baseline.md).

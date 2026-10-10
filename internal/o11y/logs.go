@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"go.opentelemetry.io/contrib/bridges/otelslog"
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/stdout/stdoutlog"
 	otelLog "go.opentelemetry.io/otel/log"
-	"go.opentelemetry.io/otel/log/global"
 	sdkLog "go.opentelemetry.io/otel/sdk/log"
 	"go.opentelemetry.io/otel/sdk/resource"
 
@@ -161,7 +161,7 @@ func (ref *OpenTelemetryLogger) SetupLogs() error {
 	)
 	ref.lp = lp
 
-	global.SetLoggerProvider(lp)
+	otel.SetLoggerProvider(lp)
 
 	ref.Handler = otelslog.NewHandler(ref.name,
 		otelslog.WithLoggerProvider(lp),

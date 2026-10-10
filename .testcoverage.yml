@@ -30,8 +30,16 @@ threshold:
 
   # Minimum overall project coverage percentage required.
   #
-  # 19, against a measured 19.4%. This is a RATCHET, not an aspiration: its job
-  # is to fail when coverage DROPS.
+  # 22, against a measured 22.4% on a runner without a Valkey (22.7% with one).
+  # This is a RATCHET, not an aspiration: its job is to fail when coverage
+  # DROPS.
+  #
+  # It was set again, 19 -> 22, with Go 1.27.2, and so were the per-package
+  # floors below. Until 1.27.1 a region the compiler split into several blocks
+  # gave EACH block the whole region's statement count; 1.27.2 counts a
+  # statement once. The same tests over the same code read differently: six
+  # packages fell under their floor. A profile written by an older Go is not
+  # comparable with these numbers.
   #
   # It moved 13 -> 19 when the RAG/LLM layer was removed from this template.
   # That code was largely exercised by the integration suite rather than by unit
@@ -44,7 +52,7 @@ threshold:
   # profiles in `profile` above. Merging the integration test binary's own
   # profile does not work -- it records what ran inside the test process, and
   # the handlers and use-cases run in the other one.
-  total: 19
+  total: 22
 
 # Per-package floors, generated from measured coverage and rounded DOWN to a
 # ten so ordinary churn does not trip them. These are the packages unit tests
@@ -59,48 +67,48 @@ override:
   - path: ^pkg/cslog$
     threshold: 100 # measured 100.0%
   - path: ^internal/adapter/driving/http/respond$
-    threshold: 90 # measured 97.1%
+    threshold: 90 # measured 94.2%
   - path: ^internal/adapter/driven/ratelimitbreaker$
-    threshold: 90 # measured 96.3%
+    threshold: 90 # measured 93.9%
   - path: ^internal/adapter/driving/http/jwtvalidator$
-    threshold: 90 # measured 96.2%
+    threshold: 90 # measured 95.1%
   - path: ^internal/adapter/driven/throttlememory$
-    threshold: 90 # measured 95.8%
+    threshold: 90 # measured 92.9%
   - path: ^internal/core/port/driven/cache$
-    threshold: 90 # measured 91.7%
+    threshold: 80 # measured 87.5%
   - path: ^internal/o11y$
-    threshold: 90 # measured 91.2%
+    threshold: 80 # measured 86.8%
   - path: ^internal/adapter/driven/tokenjwt$
-    threshold: 90 # measured 90.9%
+    threshold: 80 # measured 87.1%
   # LOWERED from 80 because CI no longer runs a Valkey service.
   #
   # These tests connect to Valkey and SKIP when they cannot, and a skip reports
-  # `ok` -- so the package measures 17.6% here and 84.3% against a real one. 15
+  # `ok` -- so the package measures 28.9% here and 86.7% against a real one. 20
   # is the floor for the skipped shape: it still catches a regression that
   # deletes tests, and it does not fail a runner that was never given a Valkey.
   #
   # Re-enable the service block in .github/workflows/pr.yaml and this goes back
   # to 80. The two carry the same note for that reason.
   - path: ^internal/adapter/driven/ratelimitvalkey$
-    threshold: 15 # measured 17.6% skipped / 84.3% against a real Valkey
+    threshold: 20 # measured 28.9% skipped / 86.7% against a real Valkey
   - path: ^internal/adapter/driven/cipheraes$
     threshold: 80 # measured 82.1%
   - path: ^internal/config$
-    threshold: 80 # measured 80.6%
+    threshold: 70 # measured 78.7%
   - path: ^internal/adapter/driven/ratelimitmemory$
-    threshold: 80 # measured 80.5%
+    threshold: 70 # measured 73.5%
   - path: ^internal/adapter/driving/http/middleware$
-    threshold: 70 # measured 79.7%
+    threshold: 80 # measured 86.7%
   # changenotifyvalkey: NO floor, for the same reason ratelimitvalkey's is
   # lowered -- its tests need a Valkey and the PR runner deliberately has none,
-  # so CI measures 4.7% where a developer machine with the dev stack measures
-  # 76.7%. Re-enable the service in pr.yaml and this becomes 70.
+  # so CI measures 6.1% where a developer machine with the dev stack measures
+  # 75.8%. Re-enable the service in pr.yaml and this becomes 70.
   - path: ^internal/app$
-    threshold: 40 # measured 47.1%
+    threshold: 20 # measured 26.0%
   - path: ^internal/adapter/driven/notifieremail/templates$
-    threshold: 30 # measured 34.2%
+    threshold: 30 # measured 33.3%
   - path: ^internal/adapter/driven/notifieremail$
-    threshold: 30 # measured 32.1%
+    threshold: 30 # measured 36.6%
 
 exclude:
   # Exclude files or packages matching these paths.

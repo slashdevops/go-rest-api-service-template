@@ -31,7 +31,7 @@ in step 2.
 
 | Tool | Version | Why | macOS | Debian / Ubuntu |
 | --- | --- | --- | --- | --- |
-| **Go** | `1.27.1` or later, the `go` directive in `go.mod` | builds and runs the service; the `uuid` package comes from its standard library | `brew install go` | <https://go.dev/dl/> |
+| **Go** | `1.27.2` or later, the `go` directive in `go.mod` | builds and runs the service; the `uuid` package comes from its standard library | `brew install go` | <https://go.dev/dl/> |
 | **podman** | any recent | runs the development stack and builds the container image | `brew install podman` | `apt install podman` |
 | **make** | GNU make 3.81 or later | every command in this guide is a Make target | ships with the Xcode command line tools | `apt install make` |
 | **git** | any | `rename-project` reads your repository name from it | ships with the Xcode command line tools | `apt install git` |
@@ -61,7 +61,7 @@ repository is cloned somewhere under `$HOME`. If it is not, see
 **Check:**
 
 ```bash
-go version          # go1.27.1 or later
+go version          # go1.27.2 or later
 podman info >/dev/null && echo podman ok
 make --version | head -1
 git --version
