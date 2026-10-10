@@ -97,7 +97,7 @@ type BuildInfo struct {
 	BuildDate     string `json:"build_date" example:"2021-01-01T00:00:00Z" format:"string"`
 	GitCommit     string `json:"git_commit" example:"abcdef123456" format:"string"`
 	GitBranch     string `json:"git_branch" example:"main" format:"string"`
-	GoVersion     string `json:"go_version" example:"go1.27.1" format:"string"`
+	GoVersion     string `json:"go_version" example:"go1.27.2" format:"string"`
 	GoVersionArch string `json:"go_version_arch" example:"arm64" format:"string"`
 	GoVersionOS   string `json:"go_version_os" example:"linux" format:"string"`
 }

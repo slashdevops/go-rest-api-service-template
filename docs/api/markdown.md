@@ -9534,7 +9534,7 @@ Status: Internal Server Error
 | build_date | string (formatted string)| `string` |  | |  | `2021-01-01T00:00:00Z` |
 | git_branch | string (formatted string)| `string` |  | |  | `main` |
 | git_commit | string (formatted string)| `string` |  | |  | `abcdef123456` |
-| go_version | string (formatted string)| `string` |  | |  | `go1.27.1` |
+| go_version | string (formatted string)| `string` |  | |  | `go1.27.2` |
 | go_version_arch | string (formatted string)| `string` |  | |  | `arm64` |
 | go_version_os | string (formatted string)| `string` |  | |  | `linux` |
 | version | string (formatted string)| `string` |  | |  | `1.0.0` |

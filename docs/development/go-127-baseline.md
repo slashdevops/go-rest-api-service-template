@@ -1,11 +1,11 @@
 # Go 1.27 baseline
 
-The module is `go 1.27.1`. This page records what the toolchain bump changed
+The module is `go 1.27.2`. This page records what the toolchain bump changed
 and the API differences the standard-library `uuid` migration had to absorb.
 It is the long form of the "Go 1.27 baseline" bullets in `CLAUDE.md`.
 
 
-The module is `go 1.27.1` and `go fix -diff ./...` is **clean** — the codebase is
+The module is `go 1.27.2` and `go fix -diff ./...` is **clean** — the codebase is
 already modernised, so do not introduce pre-1.21 idioms.
 
 > The patch version in `go.mod` is load-bearing, not cosmetic. CI resolves its
@@ -14,6 +14,23 @@ already modernised, so do not introduce pre-1.21 idioms.
 > _reachable_ stdlib vulnerabilities in this codebase — including `GO-2026-6089`
 > on the `http.Server.ListenAndServe` path — all fixed in 1.26.6. When
 > `make vulncheck` flags stdlib entries, bump this directive before anything else.
+>
+> It happened again with 1.27.1: twelve standard-library advisories (`net/http`,
+> its HTTP/2 implementation, `html/template`), all fixed in 1.27.2, in the
+> same week as five in `golang.org/x/net` v0.59.0. A machine whose Go had
+> already moved to 1.27.2 did not show the twelve, because `govulncheck`
+> judges the toolchain it runs on: the module, CI and the released binary
+> were still on 1.27.1. Check with `GOTOOLCHAIN=go<the go.mod version>
+> govulncheck ./...` when the local Go is newer than the directive.
+
+**A patch release can move the coverage numbers.** Until Go 1.27.1 a region
+the compiler split into several coverage blocks gave each block the whole
+region's statement count; 1.27.2 counts a statement once. With the same
+tests over the same code, six packages read below their floor in
+`.testcoverage.yml`. The floors were measured again on 1.27.2. A local Go
+newer than the directive therefore fails `make test-coverage` on an untouched
+`main`: run the gate with the module's version (`GOTOOLCHAIN`), or bump the
+directive first.
 
 **Every source-processing tool must be rebuilt against the running toolchain.**
 A binary built by Go 1.26 cannot parse a 1.27 stdlib, and the two tools this

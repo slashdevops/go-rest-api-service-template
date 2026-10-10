@@ -15,7 +15,7 @@ definitions:
         format: string
         type: string
       go_version:
-        example: go1.27.1
+        example: go1.27.2
         format: string
         type: string
       go_version_arch:
