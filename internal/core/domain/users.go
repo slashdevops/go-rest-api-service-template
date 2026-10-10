@@ -224,30 +224,10 @@ func (ref *SelectUsersInput) Validate() error {
 	var errs ValidationErrors
 
 	errs.Add(ref.Paginator.Validate())
-	errs.Add(ValidateSortExpression(ref.Sort, FieldSort))
-	errs.Add(ValidateFilterExpression(ref.Filter, FieldFilter))
-	errs.Add(ValidateFieldsExpression(ref.Fields, FieldFields))
 
-	if ref.Sort != "" {
-		_, err := UsersSortParser.Parse(ref.Sort)
-		if err != nil {
-			errs.AddError("sort", err.Error(), "INVALID_SORT_FIELD")
-		}
-	}
-
-	if ref.Filter != "" {
-		_, err := UsersFilterParser.Parse(ref.Filter)
-		if err != nil {
-			errs.AddError("filter", err.Error(), "INVALID_FILTER_FIELD")
-		}
-	}
-
-	if ref.Fields != "" {
-		_, err := UsersFieldsParser.Parse(ref.Fields)
-		if err != nil {
-			errs.AddError("fields", err.Error(), "INVALID_FIELD")
-		}
-	}
+	parseSortExpression(&errs, UsersSortParser, ref.Sort, "INVALID_SORT_FIELD")
+	parseFilterExpression(&errs, UsersFilterParser, ref.Filter, "INVALID_FILTER_FIELD")
+	parseFieldsExpression(&errs, UsersFieldsParser, ref.Fields, "INVALID_FIELD")
 
 	if errs.HasErrors() {
 		return &errs
