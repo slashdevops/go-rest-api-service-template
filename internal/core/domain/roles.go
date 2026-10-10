@@ -154,33 +154,9 @@ func (ref *SelectRolesInput) Validate() error {
 		errs.Add(err)
 	}
 
-	if err := ValidateSortExpression(ref.Sort, FieldSort); err != nil {
-		errs.Add(err)
-	}
-	if err := ValidateFilterExpression(ref.Filter, FieldFilter); err != nil {
-		errs.Add(err)
-	}
-	if err := ValidateFieldsExpression(ref.Fields, FieldFields); err != nil {
-		errs.Add(err)
-	}
-
-	if ref.Sort != "" {
-		if _, err := RolesSortParser.Parse(ref.Sort); err != nil {
-			errs.Add(&ValidationError{Field: FieldSort, Message: err.Error(), Code: "INVALID_SORT_FIELD"})
-		}
-	}
-
-	if ref.Filter != "" {
-		if _, err := RolesFilterParser.Parse(ref.Filter); err != nil {
-			errs.Add(&ValidationError{Field: FieldFilter, Message: err.Error(), Code: "INVALID_FILTER_FIELD"})
-		}
-	}
-
-	if ref.Fields != "" {
-		if _, err := RolesFieldsParser.Parse(ref.Fields); err != nil {
-			errs.Add(&ValidationError{Field: FieldFields, Message: err.Error(), Code: "INVALID_FIELD"})
-		}
-	}
+	parseSortExpression(&errs, RolesSortParser, ref.Sort, "INVALID_SORT_FIELD")
+	parseFilterExpression(&errs, RolesFilterParser, ref.Filter, "INVALID_FILTER_FIELD")
+	parseFieldsExpression(&errs, RolesFieldsParser, ref.Fields, "INVALID_FIELD")
 
 	if errs.HasErrors() {
 		return &errs

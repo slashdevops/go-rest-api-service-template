@@ -95,38 +95,9 @@ func (ref *SelectIDPTypesInput) Validate() error {
 	// Validate paginator
 	errs.Add(ref.Paginator.Validate())
 
-	// Validate sort expression
-	errs.Add(ValidateSortExpression(ref.Sort, FieldSort))
-
-	// Validate filter expression
-	errs.Add(ValidateFilterExpression(ref.Filter, FieldFilter))
-
-	// Validate fields expression
-	errs.Add(ValidateFieldsExpression(ref.Fields, FieldFields))
-
-	// Additional business logic validation for sort fields
-	if ref.Sort != "" {
-		_, err := IDPTypesSortParser.Parse(ref.Sort)
-		if err != nil {
-			errs.AddError(FieldSort, err.Error(), "INVALID_SORT_FIELD")
-		}
-	}
-
-	// Additional business logic validation for filter fields
-	if ref.Filter != "" {
-		_, err := IDPTypesFilterParser.Parse(ref.Filter)
-		if err != nil {
-			errs.AddError(FieldFilter, err.Error(), "INVALID_FILTER_FIELD")
-		}
-	}
-
-	// Additional business logic validation for fields
-	if ref.Fields != "" {
-		_, err := IDPTypesFieldsParser.Parse(ref.Fields)
-		if err != nil {
-			errs.AddError(FieldFields, err.Error(), "INVALID_FIELD")
-		}
-	}
+	parseSortExpression(&errs, IDPTypesSortParser, ref.Sort, "INVALID_SORT_FIELD")
+	parseFilterExpression(&errs, IDPTypesFilterParser, ref.Filter, "INVALID_FILTER_FIELD")
+	parseFieldsExpression(&errs, IDPTypesFieldsParser, ref.Fields, "INVALID_FIELD")
 
 	if errs.HasErrors() {
 		return &errs

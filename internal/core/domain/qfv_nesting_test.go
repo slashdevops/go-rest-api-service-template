@@ -8,33 +8,31 @@ import (
 )
 
 // TestADeeplyNestedFilterIsRefused: the filter parser is recursive, and until
-// qfv v1.0.3 the input chose how deep it recursed. A filter of a few hundred
-// kilobytes of opening parentheses -- a query string may be as long as the
-// header limit, 1 MiB -- ended the process with a stack overflow, a fatal
-// error that Recovery does not catch. v1.0.3 refuses nesting past 100 levels.
+// qfv v1.0.3 the input chose how deep it recursed: a deeply nested filter
+// overflowed the stack, a fatal error that Recovery does not catch. v1.0.3
+// refuses nesting past 100 levels.
 //
-// On the older parser this test does not fail: it kills the test binary.
+// The filters here are inside the length limit, which is refused first
+// (list_expressions.go): it is the depth that is tested. On the older parser
+// the last case is accepted.
 func TestADeeplyNestedFilterIsRefused(t *testing.T) {
 	t.Parallel()
 
-	deep := strings.Repeat("(", 1<<19)
+	nested := func(levels int) error {
+		filter := strings.Repeat("(", levels) + "name = 'a'" + strings.Repeat(")", levels)
+		if len(filter) > MaxFilterExpressionLength {
+			t.Fatalf("%d levels are %d characters, over the length limit: this would test the length", levels, len(filter))
+		}
 
-	for name, input := range map[string]interface{ Validate() error }{
-		"users":    &SelectUsersInput{Filter: deep, Paginator: Paginator{Limit: 10}},
-		"products": &SelectProductsInput{Filter: deep, Paginator: Paginator{Limit: 10}},
-	} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-
-			if err := input.Validate(); err == nil {
-				t.Fatal("half a megabyte of parentheses was accepted as a filter")
-			}
-		})
+		return (&SelectProductsInput{Filter: filter, Paginator: Paginator{Limit: 10}}).Validate()
 	}
 
-	// Depth, not length: a hundred levels still parse.
-	nested := strings.Repeat("(", 100) + "name = 'a'" + strings.Repeat(")", 100)
-	if _, err := ProductsFilterParser.Parse(nested); err != nil {
+	if err := nested(100); err != nil {
 		t.Errorf("a hundred levels of parentheses: %v", err)
+	}
+
+	err := nested(101)
+	if got := refusals(err, FieldFilter); len(got) != 1 || got[0] != "INVALID_FILTER_FIELD" {
+		t.Errorf("a hundred and one levels were refused with %v (%v), want the parser's refusal alone", got, err)
 	}
 }

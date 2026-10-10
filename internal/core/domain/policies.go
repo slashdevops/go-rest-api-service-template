@@ -151,26 +151,9 @@ func (ref *SelectPoliciesInput) Validate() error {
 
 	errs.Add(ref.Paginator.Validate())
 
-	if ref.Sort != "" {
-		_, err := PoliciesSortParser.Parse(ref.Sort)
-		if err != nil {
-			errs.Add(&ValidationError{Field: FieldSort, Message: err.Error(), Code: "INVALID_SORT_FIELD"})
-		}
-	}
-
-	if ref.Filter != "" {
-		_, err := PoliciesFilterParser.Parse(ref.Filter)
-		if err != nil {
-			errs.Add(&ValidationError{Field: FieldFilter, Message: err.Error(), Code: "INVALID_FILTER_FIELD"})
-		}
-	}
-
-	if ref.Fields != "" {
-		_, err := PoliciesFieldsParser.Parse(ref.Fields)
-		if err != nil {
-			errs.Add(&ValidationError{Field: FieldFields, Message: err.Error(), Code: "INVALID_FIELD"})
-		}
-	}
+	parseSortExpression(&errs, PoliciesSortParser, ref.Sort, "INVALID_SORT_FIELD")
+	parseFilterExpression(&errs, PoliciesFilterParser, ref.Filter, "INVALID_FILTER_FIELD")
+	parseFieldsExpression(&errs, PoliciesFieldsParser, ref.Fields, "INVALID_FIELD")
 
 	if errs.HasErrors() {
 		return &errs

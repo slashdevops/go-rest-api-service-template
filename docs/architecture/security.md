@@ -122,6 +122,45 @@ The ingest route also caps **work**, not just bytes:
 may carry, because each chunk is an embedding call and a row. A larger corpus
 is sent in batches.
 
+### List expressions
+
+A list's `sort`, `filter` and `fields` arrive in the query string, which
+`MaxBody` does not bound: a request line may be as long as
+`http.server.max.header.bytes` allows, 1 MiB by default. Each expression has
+its own limit (`filter` 2 048 bytes, `sort` and `fields` 1 024), and **an
+expression over its limit is refused before any parser sees it**.
+
+It was not. The length check recorded `TOO_LONG` and the expression was parsed
+anyway, on six lists, so the caller heard the length and then the parser's
+complaint about the same text; four lists had no length check at all, and an
+expression of any size was parsed there.
+
+The filter parser is recursive, and until qfv `v1.0.3` its depth was the
+caller's to choose: a deeply nested filter overflowed the stack. That is a
+fatal error of the runtime, not a panic: `Recovery` does not catch it and no
+handler can. The parser bounds its own depth now, a hundred levels. The
+length bound stays in front of it: it is the cheaper refusal, it covers the
+sort and the fields, and it does not depend on what a library does with a
+megabyte of input.
+
+```mermaid
+flowchart TD
+    Q["?sort / ?filter / ?fields"] --> V["the list input's Validate"]
+    V --> B["parseSortExpression, parseFilterExpression,<br/>parseFieldsExpression:<br/>is the expression over its limit?"]
+    B -->|yes| R["400 TOO_LONG, recorded once<br/>no parser is called"]
+    B -->|no| P["qfv parser"]
+    P -->|refuses| R2["400, under the code the list has always used"]
+    P -->|accepts| OK["the repository"]
+```
+
+The bound is in the three functions of `domain/list_expressions.go`, the one
+place the parsers are used (`TestListExpressionsAreParsedInOnePlace`), and no
+longer in each input's `Validate`, where four of ten had forgotten it.
+`TestAnOverLongExpressionIsNotParsed` hands every list input a sort, a filter
+and fields one character over their limit, and malformed, and holds one
+`TOO_LONG` for each and nothing else; `TestEveryListInputIsListed` fails when
+a new list input is not among them.
+
 ### Content type
 
 `middleware.RequireJSONBody` refuses a request that carries a body without

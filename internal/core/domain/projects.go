@@ -253,41 +253,9 @@ func (ref *SelectProjectsInput) Validate() error {
 		}
 	}
 
-	if err := ValidateSortExpression(ref.Sort, FieldSort); err != nil {
-		if ve, ok := err.(*ValidationError); ok {
-			validationErrors.Errors = append(validationErrors.Errors, *ve)
-		}
-	}
-
-	if ref.Sort != "" {
-		if _, err := ProjectSortParser.Parse(ref.Sort); err != nil {
-			validationErrors.AddError(FieldSort, err.Error(), "INVALID_SORT")
-		}
-	}
-
-	if err := ValidateFilterExpression(ref.Filter, FieldFilter); err != nil {
-		if ve, ok := err.(*ValidationError); ok {
-			validationErrors.Errors = append(validationErrors.Errors, *ve)
-		}
-	}
-
-	if ref.Filter != "" {
-		if _, err := ProjectFilterParser.Parse(ref.Filter); err != nil {
-			validationErrors.AddError(FieldFilter, err.Error(), "INVALID_FILTER")
-		}
-	}
-
-	if err := ValidateFieldsExpression(ref.Fields, FieldFields); err != nil {
-		if ve, ok := err.(*ValidationError); ok {
-			validationErrors.Errors = append(validationErrors.Errors, *ve)
-		}
-	}
-
-	if ref.Fields != "" {
-		if _, err := ProjectFieldsParser.Parse(ref.Fields); err != nil {
-			validationErrors.AddError(FieldFields, err.Error(), "INVALID_FIELDS")
-		}
-	}
+	parseSortExpression(&validationErrors, ProjectSortParser, ref.Sort, "INVALID_SORT")
+	parseFilterExpression(&validationErrors, ProjectFilterParser, ref.Filter, "INVALID_FILTER")
+	parseFieldsExpression(&validationErrors, ProjectFieldsParser, ref.Fields, "INVALID_FIELDS")
 
 	if validationErrors.HasErrors() {
 		return &validationErrors

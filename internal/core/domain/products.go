@@ -188,23 +188,9 @@ func (ref *SelectProductsInput) Validate() error {
 
 	errs.Add(ref.Paginator.Validate())
 
-	if ref.Sort != "" {
-		if _, err := ProductsSortParser.Parse(ref.Sort); err != nil {
-			errs.Add(&ValidationError{Field: FieldSort, Message: err.Error(), Code: "INVALID_SORT_FIELD"})
-		}
-	}
-
-	if ref.Filter != "" {
-		if _, err := ProductsFilterParser.Parse(ref.Filter); err != nil {
-			errs.Add(&ValidationError{Field: FieldFilter, Message: err.Error(), Code: "INVALID_FILTER_FIELD"})
-		}
-	}
-
-	if ref.Fields != "" {
-		if _, err := ProductsFieldsParser.Parse(ref.Fields); err != nil {
-			errs.Add(&ValidationError{Field: FieldFields, Message: err.Error(), Code: "INVALID_FIELD"})
-		}
-	}
+	parseSortExpression(&errs, ProductsSortParser, ref.Sort, "INVALID_SORT_FIELD")
+	parseFilterExpression(&errs, ProductsFilterParser, ref.Filter, "INVALID_FILTER_FIELD")
+	parseFieldsExpression(&errs, ProductsFieldsParser, ref.Fields, "INVALID_FIELD")
 
 	if errs.HasErrors() {
 		return &errs

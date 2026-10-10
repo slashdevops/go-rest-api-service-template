@@ -231,38 +231,9 @@ func (ref *SelectResourcesLimitsInput) Validate() error {
 	// Validate paginator
 	errs.Add(ref.Paginator.Validate())
 
-	// Validate sort expression
-	errs.Add(ValidateSortExpression(ref.Sort, FieldSort))
-
-	// Validate filter expression
-	errs.Add(ValidateFilterExpression(ref.Filter, FieldFilter))
-
-	// Validate fields expression
-	errs.Add(ValidateFieldsExpression(ref.Fields, FieldFields))
-
-	// Additional business logic validation for sort fields
-	if ref.Sort != "" {
-		_, err := ResourcesLimitsSortParser.Parse(ref.Sort)
-		if err != nil {
-			errs.AddError(FieldSort, err.Error(), "INVALID_SORT_FIELD")
-		}
-	}
-
-	// Additional business logic validation for filter fields
-	if ref.Filter != "" {
-		_, err := ResourcesLimitsFilterParser.Parse(ref.Filter)
-		if err != nil {
-			errs.AddError(FieldFilter, err.Error(), "INVALID_FILTER_FIELD")
-		}
-	}
-
-	// Additional business logic validation for fields
-	if ref.Fields != "" {
-		_, err := ResourcesLimitsFieldsParser.Parse(ref.Fields)
-		if err != nil {
-			errs.AddError(FieldFields, err.Error(), "INVALID_FIELDS_FIELD")
-		}
-	}
+	parseSortExpression(&errs, ResourcesLimitsSortParser, ref.Sort, "INVALID_SORT_FIELD")
+	parseFilterExpression(&errs, ResourcesLimitsFilterParser, ref.Filter, "INVALID_FILTER_FIELD")
+	parseFieldsExpression(&errs, ResourcesLimitsFieldsParser, ref.Fields, "INVALID_FIELDS_FIELD")
 
 	if errs.HasErrors() {
 		return &errs

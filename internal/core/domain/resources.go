@@ -47,41 +47,9 @@ func (ref *SelectResourcesInput) Validate() error {
 		errs.Add(err)
 	}
 
-	// Additional business logic validation for sort fields
-	if ref.Sort != "" {
-		_, err := ResourcesSortParser.Parse(ref.Sort)
-		if err != nil {
-			errs.Add(&ValidationError{
-				Field:   FieldSort,
-				Message: err.Error(),
-				Code:    "INVALID_SORT_FIELD",
-			})
-		}
-	}
-
-	// Additional business logic validation for filter fields
-	if ref.Filter != "" {
-		_, err := ResourcesFilterParser.Parse(ref.Filter)
-		if err != nil {
-			errs.Add(&ValidationError{
-				Field:   FieldFilter,
-				Message: err.Error(),
-				Code:    "INVALID_FILTER_FIELD",
-			})
-		}
-	}
-
-	// Additional business logic validation for fields
-	if ref.Fields != "" {
-		_, err := ResourcesFieldsParser.Parse(ref.Fields)
-		if err != nil {
-			errs.Add(&ValidationError{
-				Field:   FieldFields,
-				Message: err.Error(),
-				Code:    "INVALID_FIELD",
-			})
-		}
-	}
+	parseSortExpression(&errs, ResourcesSortParser, ref.Sort, "INVALID_SORT_FIELD")
+	parseFilterExpression(&errs, ResourcesFilterParser, ref.Filter, "INVALID_FILTER_FIELD")
+	parseFieldsExpression(&errs, ResourcesFieldsParser, ref.Fields, "INVALID_FIELD")
 
 	if errs.HasErrors() {
 		return &errs
