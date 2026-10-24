@@ -41,8 +41,11 @@ the reachable injection each one was written against.
 
 ## A filter Postgres refuses is a 400, in our words
 
-The filter parser checks an expression's shape and its field names; it does
-not know a column's type. So `GET /users?filter=id = 'nope'`, `disabled =
+The filter parser checks an expression's shape and its field names, in
+PostgreSQL 18's grammar: qfv's default dialect, and the service's database, so
+the parser accepts what the statement will run (`first_name LIKE 'a!_b'
+ESCAPE '!'` since qfv v1.1.0, and what PostgreSQL refuses of that clause is
+refused as an invalid expression). It does not know a column's type. So `GET /users?filter=id = 'nope'`, `disabled =
 'maybe'` and `id = 1` passed it, Postgres refused the cast or found no
 operator, and the driver's error went up unmapped: a 500 that said nothing,
 and an ERROR line for a caller's mistake.
