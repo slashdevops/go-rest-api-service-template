@@ -8,12 +8,12 @@ require (
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/jackc/pgx/v5 v5.11.0
-	github.com/open-policy-agent/opa v1.21.3
+	github.com/open-policy-agent/opa v1.21.4
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/slashdevops/c3e v0.0.3
 	github.com/slashdevops/httpx v0.0.5
 	github.com/slashdevops/mailer v1.1.0
-	github.com/slashdevops/qfv v1.1.1
+	github.com/slashdevops/qfv v1.2.0
 	github.com/slashdevops/ratelimiter v1.2.0
 	github.com/stretchr/testify v1.12.1
 	github.com/swaggo/http-swagger/v2 v2.0.2
@@ -79,6 +79,7 @@ require (
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/prometheus/client_golang v1.25.0 // indirect
 	github.com/prometheus/common v0.72.1 // indirect
+	github.com/prometheus/procfs v0.23.0 // indirect
 	github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/sethvargo/go-retry v0.5.0 // indirect

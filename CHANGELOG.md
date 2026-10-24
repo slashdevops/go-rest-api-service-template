@@ -20,6 +20,12 @@ Reporting a vulnerability: [`SECURITY.md`](./SECURITY.md).
 
 ### Changed
 
+- **qfv v1.2.0, OPA 1.21.4** (`make go-mod-update`). qfv adds a MySQL 8.4
+  dialect, which the service does not use: the filter grammar stays
+  PostgreSQL 18's. A filter whose `ESCAPE` string holds a byte that is not
+  UTF-8 is refused by the parser, where PostgreSQL refused the statement: a
+  `400` either way.
+  ([#181](https://github.com/slashdevops/go-rest-api-service-template/pull/181))
 - **qfv v1.1.1: a filter can carry an `ESCAPE` clause.**
   `first_name LIKE 'a!_b' ESCAPE '!'` lists, where it was a `400`; what
   PostgreSQL refuses of the clause (two characters, the clause after `~~`)
