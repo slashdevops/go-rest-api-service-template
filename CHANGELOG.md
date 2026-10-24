@@ -206,6 +206,11 @@ Since `v0.0.3`.
 
 ### Upgrade notes
 
+- **A new route, `GET /auth/idps/{idp_id}/identities`, has its `resources`
+  row** in `00008_roles_policies_tables_upsert.sql`, edited in place. A
+  database created from an earlier version does not list it among the
+  resources until it is recreated, or the row is inserted by hand; the
+  route answers whoever the policies allow either way. (#176)
 - **Four 400 bodies that quoted Postgres say a fixed sentence**: "the
   request refers to a field that does not exist", "a value has the wrong
   type for its field", "the request contains a byte sequence that is not
@@ -291,6 +296,17 @@ Since `v0.0.3`.
   payload, while the database is unreachable: the account check in front of
   it needs the database. A probe still sees a failure. (#124)
 - Go 1.27.2. (#122)
+
+### Added
+
+- **`GET /auth/idps/{idp_id}/identities` lists the accounts linked to a
+  provider**, each with when it was linked and `only_way_in`: true for the
+  accounts with no password and an identity at no other provider, which are
+  exactly the ones a 409 on the provider's delete is about. The 409 told an
+  administrator to delete those accounts or make them local, and no route
+  said which they were. Under the users' sort, filter and fields; a provider
+  that is not there is a 404; the subject is not shown.
+  ([#176](https://github.com/slashdevops/go-rest-api-service-template/pull/176))
 
 ### Changed
 

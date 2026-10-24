@@ -18,6 +18,7 @@ type Users interface {
 
 	List(ctx context.Context, input *domain.ListUsersInput) (*domain.ListUsersOutput, error)
 	ListByRoleID(ctx context.Context, roleID uuid.UUID, input *domain.ListUsersInput) (*domain.ListUsersOutput, error)
+	ListByIDPID(ctx context.Context, idpID uuid.UUID, input *domain.ListUsersInput) (*domain.SelectIDPAccountsOutput, error)
 	ListByProjectID(ctx context.Context, projectID uuid.UUID, input *domain.ListUsersInput) (*domain.ListUsersOutput, error)
 
 	SelectAuthz(ctx context.Context, userID uuid.UUID) (map[string]any, error)

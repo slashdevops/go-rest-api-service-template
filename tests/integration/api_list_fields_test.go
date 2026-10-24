@@ -29,6 +29,7 @@ type listFields struct {
 var listFieldsByRoute = map[string]listFields{
 	"/auth/idp_types":                 {domain.IDPTypesFilterFields, domain.IDPTypesSortFields},
 	"/auth/idps":                      {domain.IDPsFilterFields, domain.IDPsSortFields},
+	"/auth/idps/{idp_id}/identities":  {domain.UsersFilterFields, domain.UsersSortFields},
 	"/policies":                       {domain.PoliciesFilterFields, domain.PoliciesSortFields},
 	"/policies/{policy_id}/roles":     {domain.RolesFilterFields, domain.RolesSortFields},
 	"/products":                       {domain.ProductsFilterFields, domain.ProductsSortFields},
@@ -76,7 +77,11 @@ func TestEveryListFieldCanBeFilteredAndSortedBy(t *testing.T) {
 	project := createProjectInDB(t, generateRandomName(t, "list-fields"), "a project for the list fields sweep")
 	t.Cleanup(func() { deleteProjectByIDFromDB(t, project.ID) })
 
-	ids := map[string]string{"{project_id}": project.ID.String()}
+	// A provider, for the list under one; none is seeded.
+	idp := createIDPInDB(t, getIDPTypeFromDBByName(t, "Google").ID, generateRandomName(t, "list-fields"), "a provider for the list fields sweep")
+	t.Cleanup(func() { deleteIDPByIDFromDB(t, idp.ID) })
+
+	ids := map[string]string{"{project_id}": project.ID.String(), "{idp_id}": idp.ID.String()}
 	for slug, list := range map[string]string{"{policy_id}": "/policies", "{role_id}": "/roles", "{user_id}": "/users"} {
 		ids[slug] = firstID(t, list, headers)
 	}

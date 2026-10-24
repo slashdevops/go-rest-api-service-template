@@ -171,6 +171,7 @@ The ordinary credential: `Bearer <access_token>`, from `POST /auth/login` or `PO
 | POST | /auth/password/recover | [01991917 2720 7589 971b cce23bf8a74b](#01991917-2720-7589-971b-cce23bf8a74b) | Initiate password recovery |
 | POST | /auth/password/reset | [01991917 2720 758d 8104 94a0368acecb](#01991917-2720-758d-8104-94a0368acecb) | Reset password |
 | POST | /auth/verify/confirm | [01a02dbb bc41 7287 9cfd 7ac08bf882ae](#01a02dbb-bc41-7287-9cfd-7ac08bf882ae) | Confirm email verification |
+| GET | /auth/idps/{idp_id}/identities | [01a15479 0c52 7737 a03d 3910bf262442](#01a15479-0c52-7737-a03d-3910bf262442) | List a provider's accounts |
   
 
 
@@ -9535,6 +9536,109 @@ Status: Internal Server Error
 
 [PayloadHTTPMessage](#payload-http-message)
 
+### <span id="01a15479-0c52-7737-a03d-3910bf262442"></span> List a provider's accounts (*01a15479-0c52-7737-a03d-3910bf262442*)
+
+```
+GET /auth/idps/{idp_id}/identities
+```
+
+Retrieve paginated list of the accounts linked to an Identity Provider, each with when it was linked and only_way_in: true for the accounts with no password and an identity at no other provider, which keep it from being deleted (409). The subject is not shown.
+
+#### Produces
+  * application/json
+
+#### Security Requirements
+  * AccessToken
+
+#### Parameters
+
+| Name | Source | Type | Go type | Separator | Required | Default | Description |
+|------|--------|------|---------|-----------| :------: |---------|-------------|
+| idp_id | `path` | uuid (formatted string) | `strfmt.UUID` |  | ✓ |  | Identity Provider UUID |
+| fields | `query` | string | `string` |  |  |  | The account's fields to return (comma-separated); linked_at and only_way_in are always returned. Example: id,email |
+| filter | `query` | string | `string` |  |  |  | Filter expression on the account's fields. Example: first_name='John' AND disabled=false |
+| limit | `query` | integer | `int64` |  |  |  | Maximum number of results per page |
+| next_token | `query` | string | `string` |  |  |  | Next page cursor for pagination |
+| prev_token | `query` | string | `string` |  |  |  | Previous page cursor for pagination |
+| sort | `query` | string | `string` |  |  |  | Sort fields of the account (comma-separated). Example: first_name ASC, created_at DESC |
+
+#### All responses
+| Code | Status | Description | Has headers | Schema |
+|------|--------|-------------|:-----------:|--------|
+| [200](#01a15479-0c52-7737-a03d-3910bf262442-200) | OK | Paginated list of the accounts linked to the provider |  | [schema](#01a15479-0c52-7737-a03d-3910bf262442-200-schema) |
+| [400](#01a15479-0c52-7737-a03d-3910bf262442-400) | Bad Request | Invalid provider ID or query parameters |  | [schema](#01a15479-0c52-7737-a03d-3910bf262442-400-schema) |
+| [401](#01a15479-0c52-7737-a03d-3910bf262442-401) | Unauthorized | Missing or invalid authentication token |  | [schema](#01a15479-0c52-7737-a03d-3910bf262442-401-schema) |
+| [403](#01a15479-0c52-7737-a03d-3910bf262442-403) | Forbidden | Insufficient permissions |  | [schema](#01a15479-0c52-7737-a03d-3910bf262442-403-schema) |
+| [404](#01a15479-0c52-7737-a03d-3910bf262442-404) | Not Found | IDP not found |  | [schema](#01a15479-0c52-7737-a03d-3910bf262442-404-schema) |
+| [429](#01a15479-0c52-7737-a03d-3910bf262442-429) | Too Many Requests | Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store |  | [schema](#01a15479-0c52-7737-a03d-3910bf262442-429-schema) |
+| [500](#01a15479-0c52-7737-a03d-3910bf262442-500) | Internal Server Error | Internal server error |  | [schema](#01a15479-0c52-7737-a03d-3910bf262442-500-schema) |
+
+#### Responses
+
+
+##### <span id="01a15479-0c52-7737-a03d-3910bf262442-200"></span> 200 - Paginated list of the accounts linked to the provider
+Status: OK
+
+###### <span id="01a15479-0c52-7737-a03d-3910bf262442-200-schema"></span> Schema
+   
+  
+
+[PayloadListIDPAccountsResponse](#payload-list-id-p-accounts-response)
+
+##### <span id="01a15479-0c52-7737-a03d-3910bf262442-400"></span> 400 - Invalid provider ID or query parameters
+Status: Bad Request
+
+###### <span id="01a15479-0c52-7737-a03d-3910bf262442-400-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a15479-0c52-7737-a03d-3910bf262442-401"></span> 401 - Missing or invalid authentication token
+Status: Unauthorized
+
+###### <span id="01a15479-0c52-7737-a03d-3910bf262442-401-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a15479-0c52-7737-a03d-3910bf262442-403"></span> 403 - Insufficient permissions
+Status: Forbidden
+
+###### <span id="01a15479-0c52-7737-a03d-3910bf262442-403-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a15479-0c52-7737-a03d-3910bf262442-404"></span> 404 - IDP not found
+Status: Not Found
+
+###### <span id="01a15479-0c52-7737-a03d-3910bf262442-404-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a15479-0c52-7737-a03d-3910bf262442-429"></span> 429 - Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store
+Status: Too Many Requests
+
+###### <span id="01a15479-0c52-7737-a03d-3910bf262442-429-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
+##### <span id="01a15479-0c52-7737-a03d-3910bf262442-500"></span> 500 - Internal server error
+Status: Internal Server Error
+
+###### <span id="01a15479-0c52-7737-a03d-3910bf262442-500-schema"></span> Schema
+   
+  
+
+[PayloadHTTPMessage](#payload-http-message)
+
 ## Models
 
 ### <span id="domain-build-info"></span> domain.BuildInfo
@@ -10024,6 +10128,36 @@ Status: Internal Server Error
 
 
 
+### <span id="payload-id-p-account-response"></span> payload.IDPAccountResponse
+
+
+> An account linked to an identity provider: the account, when it was linked, and whether the provider is its only way in
+  
+
+
+
+
+
+**Properties**
+
+| Name | Type | Go type | Required | Default | Description | Example |
+|------|------|---------|:--------:| ------- |-------------|---------|
+| admin | boolean| `bool` |  | | Indicates if the user has administrative privileges | `false` |
+| created_at | date-time (formatted string)| `strfmt.DateTime` |  | | Timestamp when the user account was created | `2021-01-01T00:00:00Z` |
+| disabled | boolean| `bool` |  | | Indicates if the user account is currently disabled | `false` |
+| disabled_by_admin | boolean| `bool` |  | | The administrator's lock: the account is disabled because an administrator said so, not because its registration is waiting for its verification link. A link does not enable such an account | `false` |
+| email | email (formatted string)| `strfmt.Email` |  | | User's email address | `john.doe@example.com` |
+| first_name | string (formatted string)| `string` |  | | User's first name | `John` |
+| id | uuid (formatted string)| `strfmt.UUID` |  | | Unique identifier for the user | `019b4b0d-a682-7e82-a25a-b0671dc354c2` |
+| last_name | string (formatted string)| `string` |  | | User's last name | `Doe` |
+| linked_at | date-time (formatted string)| `strfmt.DateTime` |  | | When the account was linked to the provider | `2021-01-01T00:00:00Z` |
+| local_account | boolean| `bool` |  | | Indicates if this is a locally managed account (vs SSO/federated) | `true` |
+| only_way_in | boolean| `bool` |  | | True when the account has no password and an identity at no other provider, enabled or not (the delete's rule): one of the accounts that keep the provider from being deleted (409). Delete it, or make it a local account, first | `false` |
+| updated_at | date-time (formatted string)| `strfmt.DateTime` |  | | Timestamp when the user account was last updated | `2021-01-01T00:00:00Z` |
+| verified | boolean| `bool` |  | | Indicates if the email address has been verified (by the verification link, by an identity provider, or by the administrator who created the account) | `true` |
+
+
+
 ### <span id="payload-id-p-available-response"></span> payload.IDPAvailableResponse
 
 
@@ -10289,6 +10423,25 @@ Status: Internal Server Error
 | Name | Type | Go type | Required | Default | Description | Example |
 |------|------|---------|:--------:| ------- |-------------|---------|
 | user_ids | []array (formatted string)| `[]string` | ✓ | | Array of user IDs to assign to the role | `["019b4b0d-a682-7e34-a20c-c71a7147d7e7","019b4b0d-a682-7e38-b235-3dfcb59f4d9e"]` |
+
+
+
+### <span id="payload-list-id-p-accounts-response"></span> payload.ListIDPAccountsResponse
+
+
+> Paginated list of the accounts linked to an identity provider
+  
+
+
+
+
+
+**Properties**
+
+| Name | Type | Go type | Required | Default | Description | Example |
+|------|------|---------|:--------:| ------- |-------------|---------|
+| items | [][PayloadIDPAccountResponse](#payload-id-p-account-response)| `[]*PayloadIDPAccountResponse` |  | | The accounts linked to the provider |  |
+| paginator | [PayloadListIDPAccountsResponse](#payload-list-id-p-accounts-response)| `PayloadListIDPAccountsResponse` |  | | Pagination information including total count and page details |  |
 
 
 

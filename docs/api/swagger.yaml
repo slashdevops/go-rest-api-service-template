@@ -704,6 +704,76 @@ definitions:
         format: string
         type: boolean
     type: object
+  payload.IDPAccountResponse:
+    description: 'An account linked to an identity provider: the account, when it
+      was linked, and whether the provider is its only way in'
+    properties:
+      admin:
+        description: Indicates if the user has administrative privileges
+        example: false
+        type: boolean
+      created_at:
+        description: Timestamp when the user account was created
+        example: "2021-01-01T00:00:00Z"
+        format: date-time
+        type: string
+      disabled:
+        description: Indicates if the user account is currently disabled
+        example: false
+        type: boolean
+      disabled_by_admin:
+        description: 'The administrator''s lock: the account is disabled because an
+          administrator said so, not because its registration is waiting for its verification
+          link. A link does not enable such an account'
+        example: false
+        type: boolean
+      email:
+        description: User's email address
+        example: john.doe@example.com
+        format: email
+        type: string
+      first_name:
+        description: User's first name
+        example: John
+        format: string
+        type: string
+      id:
+        description: Unique identifier for the user
+        example: 019b4b0d-a682-7e82-a25a-b0671dc354c2
+        format: uuid
+        type: string
+      last_name:
+        description: User's last name
+        example: Doe
+        format: string
+        type: string
+      linked_at:
+        description: When the account was linked to the provider
+        example: "2021-01-01T00:00:00Z"
+        format: date-time
+        type: string
+      local_account:
+        description: Indicates if this is a locally managed account (vs SSO/federated)
+        example: true
+        type: boolean
+      only_way_in:
+        description: 'True when the account has no password and an identity at no
+          other provider, enabled or not (the delete''s rule): one of the accounts
+          that keep the provider from being deleted (409). Delete it, or make it a
+          local account, first'
+        example: false
+        type: boolean
+      updated_at:
+        description: Timestamp when the user account was last updated
+        example: "2021-01-01T00:00:00Z"
+        format: date-time
+        type: string
+      verified:
+        description: Indicates if the email address has been verified (by the verification
+          link, by an identity provider, or by the administrator who created the account)
+        example: true
+        type: boolean
+    type: object
   payload.IDPAvailableResponse:
     description: Available identity provider information including type and branding
       details
@@ -1025,6 +1095,19 @@ definitions:
         type: array
     required:
     - user_ids
+    type: object
+  payload.ListIDPAccountsResponse:
+    description: Paginated list of the accounts linked to an identity provider
+    properties:
+      items:
+        description: The accounts linked to the provider
+        items:
+          $ref: '#/definitions/payload.IDPAccountResponse'
+        type: array
+      paginator:
+        allOf:
+        - $ref: '#/definitions/domain.Paginator'
+        description: Pagination information including total count and page details
     type: object
   payload.ListIDPAvailableResponse:
     description: List of identity providers available for configuration in the system
@@ -3109,6 +3192,86 @@ paths:
       tags:
       - Authentication
       - Identity Providers (IDPs)
+  /auth/idps/{idp_id}/identities:
+    get:
+      description: 'Retrieve paginated list of the accounts linked to an Identity
+        Provider, each with when it was linked and only_way_in: true for the accounts
+        with no password and an identity at no other provider, which keep it from
+        being deleted (409). The subject is not shown.'
+      operationId: 01a15479-0c52-7737-a03d-3910bf262442
+      parameters:
+      - description: Identity Provider UUID
+        format: uuid
+        in: path
+        name: idp_id
+        required: true
+        type: string
+      - description: 'Sort fields of the account (comma-separated). Example: first_name
+          ASC, created_at DESC'
+        in: query
+        name: sort
+        type: string
+      - description: 'Filter expression on the account''s fields. Example: first_name=''John''
+          AND disabled=false'
+        in: query
+        name: filter
+        type: string
+      - description: 'The account''s fields to return (comma-separated); linked_at
+          and only_way_in are always returned. Example: id,email'
+        in: query
+        name: fields
+        type: string
+      - description: Next page cursor for pagination
+        in: query
+        name: next_token
+        type: string
+      - description: Previous page cursor for pagination
+        in: query
+        name: prev_token
+        type: string
+      - description: Maximum number of results per page
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Paginated list of the accounts linked to the provider
+          schema:
+            $ref: '#/definitions/payload.ListIDPAccountsResponse'
+        "400":
+          description: Invalid provider ID or query parameters
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "401":
+          description: Missing or invalid authentication token
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "403":
+          description: Insufficient permissions
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "404":
+          description: IDP not found
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "429":
+          description: Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE
+            the limiter's own store
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+        "500":
+          description: Internal server error
+          schema:
+            $ref: '#/definitions/payload.HTTPMessage'
+      security:
+      - AccessToken: []
+      summary: List a provider's accounts
+      tags:
+      - Authentication
+      - Identity Providers (IDPs)
+      - Users
   /auth/login:
     post:
       consumes:

@@ -56,6 +56,9 @@ type Users interface {
 	// system role, whose delete is refused whoever asks.
 	SelectAdministratorsHolding(ctx context.Context, roleID uuid.UUID) ([]uuid.UUID, error)
 	SelectByRoleID(ctx context.Context, roleID uuid.UUID, input *domain.ListUsersInput) (*domain.ListUsersOutput, error)
+	// SelectByIDPID is a page of the accounts linked to an identity
+	// provider; a provider that is not there is an IDPNotFoundError.
+	SelectByIDPID(ctx context.Context, idpID uuid.UUID, input *domain.ListUsersInput) (*domain.SelectIDPAccountsOutput, error)
 	SelectByProjectID(ctx context.Context, projectID uuid.UUID, input *domain.SelectUsersInput) (*domain.SelectUsersOutput, error)
 	Select(ctx context.Context, input *domain.SelectUsersInput) (*domain.SelectUsersOutput, error)
 

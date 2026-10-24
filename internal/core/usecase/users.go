@@ -1254,6 +1254,40 @@ func (ref *UsersService) ListByRoleID(ctx context.Context, roleID uuid.UUID, inp
 	return out, nil
 }
 
+// ListByIDPID returns a page of the accounts linked to an identity provider,
+// each with whether the provider is its only way in: the accounts a 409 on
+// the provider's delete is about.
+func (ref *UsersService) ListByIDPID(ctx context.Context, idpID uuid.UUID, input *domain.ListUsersInput) (*domain.SelectIDPAccountsOutput, error) {
+	start := time.Now()
+	ctx, span, attrs := o11y.SetupTrace(ctx, ref.ot.Traces.Tracer, ref.metricsMetadata, "ListByIDPID")
+	defer span.End()
+
+	span.SetAttributes(attribute.String("idp.id", idpID.String()))
+
+	if idpID == uuid.Nil() {
+		return nil, o11y.RecordError(ctx, span, start, &domain.InvalidInputError{Field: "idp_id", Message: "invalid idp ID"}, ref.metrics, attrs)
+	}
+
+	if input == nil {
+		return nil, o11y.RecordError(ctx, span, start, &domain.InvalidInputError{Message: "input is nil"}, ref.metrics, attrs)
+	}
+
+	if err := input.Validate(); err != nil {
+		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	out, err := ref.repository.SelectByIDPID(ctx, idpID, input)
+	if err != nil {
+		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "a provider's accounts listed",
+		attribute.String("idp.id", idpID.String()),
+		attribute.Int("count", len(out.Items)))
+
+	return out, nil
+}
+
 // ListByProjectID returns a list of users by project ID
 func (ref *UsersService) ListByProjectID(ctx context.Context, projectID uuid.UUID, input *domain.ListUsersInput) (*domain.ListUsersOutput, error) {
 	start := time.Now()

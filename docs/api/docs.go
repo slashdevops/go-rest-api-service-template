@@ -959,6 +959,116 @@ const docTemplate = `{
                 }
             }
         },
+        "/auth/idps/{idp_id}/identities": {
+            "get": {
+                "security": [
+                    {
+                        "AccessToken": []
+                    }
+                ],
+                "description": "Retrieve paginated list of the accounts linked to an Identity Provider, each with when it was linked and only_way_in: true for the accounts with no password and an identity at no other provider, which keep it from being deleted (409). The subject is not shown.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Authentication",
+                    "Identity Providers (IDPs)",
+                    "Users"
+                ],
+                "summary": "List a provider's accounts",
+                "operationId": "01a15479-0c52-7737-a03d-3910bf262442",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "Identity Provider UUID",
+                        "name": "idp_id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Sort fields of the account (comma-separated). Example: first_name ASC, created_at DESC",
+                        "name": "sort",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter expression on the account's fields. Example: first_name='John' AND disabled=false",
+                        "name": "filter",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "The account's fields to return (comma-separated); linked_at and only_way_in are always returned. Example: id,email",
+                        "name": "fields",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Next page cursor for pagination",
+                        "name": "next_token",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Previous page cursor for pagination",
+                        "name": "prev_token",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Maximum number of results per page",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Paginated list of the accounts linked to the provider",
+                        "schema": {
+                            "$ref": "#/definitions/payload.ListIDPAccountsResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid provider ID or query parameters",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "401": {
+                        "description": "Missing or invalid authentication token",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "403": {
+                        "description": "Insufficient permissions",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "404": {
+                        "description": "IDP not found",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "429": {
+                        "description": "Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal server error",
+                        "schema": {
+                            "$ref": "#/definitions/payload.HTTPMessage"
+                        }
+                    }
+                }
+            }
+        },
         "/auth/login": {
             "post": {
                 "description": "Authenticate with email and password to obtain access and refresh tokens.",
@@ -8284,6 +8394,84 @@ const docTemplate = `{
                 }
             }
         },
+        "payload.IDPAccountResponse": {
+            "description": "An account linked to an identity provider: the account, when it was linked, and whether the provider is its only way in",
+            "type": "object",
+            "properties": {
+                "admin": {
+                    "description": "Indicates if the user has administrative privileges",
+                    "type": "boolean",
+                    "example": false
+                },
+                "created_at": {
+                    "description": "Timestamp when the user account was created",
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2021-01-01T00:00:00Z"
+                },
+                "disabled": {
+                    "description": "Indicates if the user account is currently disabled",
+                    "type": "boolean",
+                    "example": false
+                },
+                "disabled_by_admin": {
+                    "description": "The administrator's lock: the account is disabled because an administrator said so, not because its registration is waiting for its verification link. A link does not enable such an account",
+                    "type": "boolean",
+                    "example": false
+                },
+                "email": {
+                    "description": "User's email address",
+                    "type": "string",
+                    "format": "email",
+                    "example": "john.doe@example.com"
+                },
+                "first_name": {
+                    "description": "User's first name",
+                    "type": "string",
+                    "format": "string",
+                    "example": "John"
+                },
+                "id": {
+                    "description": "Unique identifier for the user",
+                    "type": "string",
+                    "format": "uuid",
+                    "example": "019b4b0d-a682-7e82-a25a-b0671dc354c2"
+                },
+                "last_name": {
+                    "description": "User's last name",
+                    "type": "string",
+                    "format": "string",
+                    "example": "Doe"
+                },
+                "linked_at": {
+                    "description": "When the account was linked to the provider",
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2021-01-01T00:00:00Z"
+                },
+                "local_account": {
+                    "description": "Indicates if this is a locally managed account (vs SSO/federated)",
+                    "type": "boolean",
+                    "example": true
+                },
+                "only_way_in": {
+                    "description": "True when the account has no password and an identity at no other provider, enabled or not (the delete's rule): one of the accounts that keep the provider from being deleted (409). Delete it, or make it a local account, first",
+                    "type": "boolean",
+                    "example": false
+                },
+                "updated_at": {
+                    "description": "Timestamp when the user account was last updated",
+                    "type": "string",
+                    "format": "date-time",
+                    "example": "2021-01-01T00:00:00Z"
+                },
+                "verified": {
+                    "description": "Indicates if the email address has been verified (by the verification link, by an identity provider, or by the administrator who created the account)",
+                    "type": "boolean",
+                    "example": true
+                }
+            }
+        },
         "payload.IDPAvailableResponse": {
             "description": "Available identity provider information including type and branding details",
             "type": "object",
@@ -8687,6 +8875,27 @@ const docTemplate = `{
                     "example": [
                         "019b4b0d-a682-7e34-a20c-c71a7147d7e7",
                         "019b4b0d-a682-7e38-b235-3dfcb59f4d9e"
+                    ]
+                }
+            }
+        },
+        "payload.ListIDPAccountsResponse": {
+            "description": "Paginated list of the accounts linked to an identity provider",
+            "type": "object",
+            "properties": {
+                "items": {
+                    "description": "The accounts linked to the provider",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/payload.IDPAccountResponse"
+                    }
+                },
+                "paginator": {
+                    "description": "Pagination information including total count and page details",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/domain.Paginator"
+                        }
                     ]
                 }
             }
