@@ -2218,7 +2218,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter conditions (e.g., 'name LIKE policy%')",
+                        "description": "Filter conditions (e.g., name LIKE 'policy%')",
                         "name": "filter",
                         "in": "query"
                     },
@@ -4029,7 +4029,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter expression. Example: id=1 AND first_name='John'",
+                        "description": "Filter expression. Example: first_name='John' AND disabled=false",
                         "name": "filter",
                         "in": "query"
                     },
@@ -5672,7 +5672,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter conditions (e.g., 'name LIKE policy%')",
+                        "description": "Filter conditions (e.g., name LIKE 'policy%')",
                         "name": "filter",
                         "in": "query"
                     },
@@ -5971,7 +5971,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter expression. Example: id=1 AND first_name='John'",
+                        "description": "Filter expression. Example: first_name='John' AND disabled=false",
                         "name": "filter",
                         "in": "query"
                     },
@@ -6255,7 +6255,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Filter expression. Example: id=1 AND first_name='John'",
+                        "description": "Filter expression. Example: first_name='John' AND disabled=false",
                         "name": "filter",
                         "in": "query"
                     },

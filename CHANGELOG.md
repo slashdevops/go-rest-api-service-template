@@ -372,6 +372,13 @@ Since `v0.0.3`.
 
 ### Fixed
 
+- **The contract's filter examples are filters the API accepts.** Five
+  `filter` descriptions gave an example a client copies and the API
+  refuses: `id=1 AND first_name='John'` on the three user lists (a number
+  for a uuid column) and `'name LIKE policy%'` on the two policy lists (the
+  value unquoted). They read `first_name='John' AND disabled=false` and
+  `name LIKE 'policy%'`, and a test sends every example in the contract to
+  a list that documents it. ([#175](https://github.com/slashdevops/go-rest-api-service-template/pull/175))
 - **A failure carries its detail, and the one line about it says it.** A
   sign-in is refused, and a provider that cannot be used is answered, in
   fixed words on purpose; the reason was a second line at WARN beside the

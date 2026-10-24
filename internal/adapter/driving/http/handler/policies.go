@@ -472,7 +472,7 @@ func (ref *PoliciesHandler) deleteByID(w http.ResponseWriter, r *http.Request) {
 //	@Accept			json
 //	@Produce		json
 //	@Param			sort		query		string							false	"Sort by fields (e.g., 'name ASC, created_at DESC')"
-//	@Param			filter		query		string							false	"Filter conditions (e.g., 'name LIKE policy%')"
+//	@Param			filter		query		string							false	"Filter conditions (e.g., name LIKE 'policy%')"
 //	@Param			fields		query		string							false	"Comma-separated fields to return (e.g., 'id,name,description')"
 //	@Param			next_token	query		string							false	"Token for next page of results"
 //	@Param			prev_token	query		string							false	"Token for previous page of results"
@@ -752,7 +752,7 @@ func (ref *PoliciesHandler) unlinkRoles(w http.ResponseWriter, r *http.Request) 
 //	@Produce		json
 //	@Param			role_id		path		string							true	"Unique role identifier"	Format(uuid)
 //	@Param			sort		query		string							false	"Sort by fields (e.g., 'name ASC, created_at DESC')"
-//	@Param			filter		query		string							false	"Filter conditions (e.g., 'name LIKE policy%')"
+//	@Param			filter		query		string							false	"Filter conditions (e.g., name LIKE 'policy%')"
 //	@Param			fields		query		string							false	"Comma-separated fields to return (e.g., 'id,name,description')"
 //	@Param			next_token	query		string							false	"Token for next page of results"
 //	@Param			prev_token	query		string							false	"Token for previous page of results"
