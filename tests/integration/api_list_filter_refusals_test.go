@@ -77,6 +77,13 @@ func TestAFilterIsRefusedInTheServicesWords(t *testing.T) {
 		{name: "a_pattern_that_is_not_one", filter: "first_name ~ '('", status: http.StatusBadRequest, says: "a pattern is not a valid regular expression or LIKE pattern"},
 		{name: "a_text_field_used_as_a_boolean", filter: "first_name IS TRUE", status: http.StatusBadRequest, says: "a value has the wrong type for its field"},
 		{name: "a_value_of_the_right_type_lists", filter: "first_name = 'nobody-is-called-this'", status: http.StatusOK, says: `"items"`},
+		// The ESCAPE clause, since qfv v1.1.0: PostgreSQL 18 runs it, and the
+		// parser refused it until then. What PostgreSQL refuses of it, the
+		// parser refuses too, in the service's words.
+		{name: "an_escape_clause_lists", filter: "first_name LIKE 'nobody!_is!_called!_this' ESCAPE '!'", status: http.StatusOK, says: `"items"`},
+		{name: "an_empty_escape_lists", filter: "first_name LIKE 'nobody%' ESCAPE ''", status: http.StatusOK, says: `"items"`},
+		{name: "an_escape_of_two_characters", filter: "first_name LIKE 'x' ESCAPE '!!'", status: http.StatusBadRequest, says: "is not a valid filter expression"},
+		{name: "an_escape_after_the_operator", filter: "first_name ~~ 'x' ESCAPE '!'", status: http.StatusBadRequest, says: "is not a valid filter expression"},
 		{name: "a_well_formed_id_lists", filter: "id = '" + admin.UserID.String() + "'", status: http.StatusOK, says: admin.UserID.String()},
 	} {
 		t.Run(c.name, func(t *testing.T) {

@@ -20,6 +20,12 @@ Reporting a vulnerability: [`SECURITY.md`](./SECURITY.md).
 
 ### Changed
 
+- **qfv v1.1.1: a filter can carry an `ESCAPE` clause.**
+  `first_name LIKE 'a!_b' ESCAPE '!'` lists, where it was a `400`; what
+  PostgreSQL refuses of the clause (two characters, the clause after `~~`)
+  is refused as an invalid expression. The filter grammar is PostgreSQL 18's,
+  qfv's default dialect and the service's database.
+  ([#180](https://github.com/slashdevops/go-rest-api-service-template/pull/180))
 - **`successful` is removed from `app_calls_total` and
   `app_call_duration_seconds`**, and from the cache's and the mail's mirrors
   of them. `app.outcome` (`ok`, `refused`, `failed`) replaced it in `v0.0.4`.
