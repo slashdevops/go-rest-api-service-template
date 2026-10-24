@@ -5,6 +5,7 @@ package handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -54,6 +55,40 @@ func testTelemetry(t *testing.T) (*o11y.OpenTelemetry, *o11y.LayerMetrics) {
 	}
 
 	return ot, metrics
+}
+
+// TestTheIDPCallbackOfACallerWhoWentAwayIsNotA500: the tab was closed while
+// the code was being exchanged. The adapter does not blame the provider for
+// it and returns the context's own error; the callback answered it as any
+// error no arm names, a 500 counted failed, with an ERROR access line. It is
+// the caller's side: 499, nothing written for nobody to read, counted
+// refused.
+func TestTheIDPCallbackOfACallerWhoWentAwayIsNotA500(t *testing.T) {
+	t.Parallel()
+
+	ot, metrics := testTelemetry(t)
+	_, span := ot.Traces.Tracer.Start(t.Context(), "test")
+	defer span.End()
+
+	gone := fmt.Errorf("exchanging the code: %w", context.Canceled)
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/auth/idp/x/callback", nil)
+
+	(&AuthnIDPsHandler{metrics: metrics}).writeCallbackError(rec, req, span, time.Now(), nil, gone)
+
+	if rec.Code != respond.StatusClientClosedRequest {
+		t.Fatalf("status = %d, want %d. Body: %s", rec.Code, respond.StatusClientClosedRequest, rec.Body.String())
+	}
+
+	agrees(t, gone, rec.Code)
+
+	if rec.Body.Len() != 0 {
+		t.Errorf("an answer nobody receives has a body: %s", rec.Body.String())
+	}
 }
 
 // TestTheIDPCallbackDoesNotPrintTheAccountID: the account a link was started

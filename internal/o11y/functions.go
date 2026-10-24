@@ -282,6 +282,13 @@ func errorType(err error) string {
 	for {
 		unwrapped := errors.Unwrap(err)
 		if unwrapped == nil {
+			// The context's sentinel is an *errors.errorString, as any
+			// errors.New is: the type would name nothing. A request its
+			// caller abandoned says what it was.
+			if errors.Is(err, context.Canceled) {
+				return "context.Canceled"
+			}
+
 			return fmt.Sprintf("%T", err)
 		}
 

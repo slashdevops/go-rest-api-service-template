@@ -165,6 +165,12 @@ func (ref *HealthHandler) getStatus(w http.ResponseWriter, r *http.Request) {
 	outResponse, err := ref.service.HealthCheck(ctxWithTimeout)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+
+		// A probe that hung up is answered nothing.
+		if respond.WriteCallerGone(w, r, e) {
+			return
+		}
+
 		slog.ErrorContext(r.Context(), "health status check failed", "error", e)
 		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, healthCheckFailedMessage)
 		return
@@ -226,6 +232,12 @@ func (ref *HealthHandler) getDetailedHealth(w http.ResponseWriter, r *http.Reque
 	outResponse, err := ref.service.GetDetailedHealth(ctxWithTimeout)
 	if err != nil {
 		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+
+		// A probe that hung up is answered nothing.
+		if respond.WriteCallerGone(w, r, e) {
+			return
+		}
+
 		slog.ErrorContext(r.Context(), "detailed health check failed", "error", e)
 		respond.WriteJSONMessage(w, r, http.StatusInternalServerError, healthCheckFailedMessage)
 		return

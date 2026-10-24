@@ -17,6 +17,7 @@ import (
 
 	"uuid"
 
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 
 	"github.com/slashdevops/go-rest-api-service-template/internal/adapter/driving/http/respond"
@@ -579,5 +580,55 @@ func TestTheLineAboutAFailureCarriesItsDetail(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestACallerWhoWentAwayIsNotAnError: the client closed the connection
+// before the request was answered -- a tab closed during a sign-in's code
+// exchange. Nobody did anything wrong and nobody reads the answer. The
+// access line said 500 at ERROR; it says 499 at INFO, with what ended the
+// request named, and the server span is not red.
+func TestACallerWhoWentAwayIsNotAnError(t *testing.T) {
+	tracer, spans := recorder(t)
+	records := recordLogs(t)
+
+	gone := fmt.Errorf("exchanging the code: %w", context.Canceled)
+
+	mux := http.NewServeMux()
+	mux.Handle("GET /things", through(tracer, gone, func(w http.ResponseWriter, r *http.Request, err error) {
+		respond.WriteError(w, r, err)
+	}))
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	rec := httptest.NewRecorder()
+	chain(t, tracer, mux).ServeHTTP(rec, httptest.NewRequestWithContext(ctx, http.MethodGet, "/things", nil))
+
+	if rec.Code != respond.StatusClientClosedRequest {
+		t.Fatalf("status = %d, want %d", rec.Code, respond.StatusClientClosedRequest)
+	}
+
+	if loud := atOrAbove(*records, slog.LevelWarn); len(loud) != 0 {
+		t.Fatalf("a request its caller abandoned wrote %d line(s) at WARN or above: %+v", len(loud), loud)
+	}
+
+	info := atOrAbove(*records, slog.LevelInfo)
+	if len(info) != 1 || info[0].message != "request" {
+		t.Fatalf("want exactly one INFO line, the access line; got %+v", info)
+	}
+
+	if got := info[0].attrs["status"]; got != "499" {
+		t.Errorf("the access line says status=%s, want 499", got)
+	}
+
+	if got := info[0].attrs["error_type"]; got != "context.Canceled" {
+		t.Errorf("the access line says error_type=%q, want context.Canceled", got)
+	}
+
+	for _, s := range spans.Ended() {
+		if s.SpanKind() == trace.SpanKindServer && s.Status().Code == codes.Error {
+			t.Errorf("the server span %q is marked Error for a request its caller abandoned", s.Name())
+		}
 	}
 }
