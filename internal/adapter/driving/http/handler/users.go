@@ -108,6 +108,7 @@ func (ref *UsersHandler) RegisterRoutes(mux *http.ServeMux, middlewares ...middl
 
 	// list users by role
 	mux.Handle("GET /roles/{role_id}/users", mdw.ThenFunc(ref.listByRoleID))
+	mux.Handle("GET /auth/idps/{idp_id}/identities", mdw.ThenFunc(ref.listByIDPID))
 
 	// list users by project
 	mux.Handle("GET /projects/{project_id}/users", mdw.ThenFunc(ref.listByProjectID))
@@ -709,6 +710,125 @@ func (ref *UsersHandler) listByRoleID(w http.ResponseWriter, r *http.Request) {
 	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "List users by role ID",
 		attribute.Int("users.count", len(outResponse.Items)),
 		attribute.String("role.id", roleID.String()))
+}
+
+// listByIDPID List the accounts linked to an identity provider
+//
+//	@ID				01a15479-0c52-7737-a03d-3910bf262442
+//	@Summary		List a provider's accounts
+//	@Description	Retrieve paginated list of the accounts linked to an Identity Provider, each with when it was linked and only_way_in: true for the accounts with no password and an identity at no other provider, which keep it from being deleted (409). The subject is not shown.
+//	@Tags			Identity Providers (IDPs),Users
+//	@Produce		json
+//	@Param			idp_id		path		string							true	"Identity Provider UUID"	Format(uuid)
+//	@Param			sort		query		string							false	"Sort fields of the account (comma-separated). Example: first_name ASC, created_at DESC"
+//	@Param			filter		query		string							false	"Filter expression on the account's fields. Example: first_name='John' AND disabled=false"
+//	@Param			fields		query		string							false	"The account's fields to return (comma-separated); linked_at and only_way_in are always returned. Example: id,email"
+//	@Param			next_token	query		string							false	"Next page cursor for pagination"
+//	@Param			prev_token	query		string							false	"Previous page cursor for pagination"
+//	@Param			limit		query		int								false	"Maximum number of results per page"
+//	@Success		200			{object}	payload.ListIDPAccountsResponse	"Paginated list of the accounts linked to the provider"
+//	@Failure		400			{object}	payload.HTTPMessage				"Invalid provider ID or query parameters"
+//	@Failure		401			{object}	payload.HTTPMessage				"Missing or invalid authentication token"
+//	@Failure		403			{object}	payload.HTTPMessage				"Insufficient permissions"
+//	@Failure		404			{object}	payload.HTTPMessage				"IDP not found"
+//	@Failure		429			{object}	payload.HTTPMessage				"Too many requests -- RATE_LIMIT_EXCEEDED is the budget, RATE_LIMIT_UNAVAILABLE the limiter's own store"
+//	@Failure		500			{object}	payload.HTTPMessage				"Internal server error"
+//	@Router			/auth/idps/{idp_id}/identities [get]
+//	@Security		AccessToken
+func (ref *UsersHandler) listByIDPID(w http.ResponseWriter, r *http.Request) {
+	start := time.Now()
+	ctx, span, attrs := o11y.SetupTraceHTTP(r, ref.ot.Traces.Tracer, ref.metricsMetadata, "listByIDPID")
+	defer span.End()
+
+	idpID, err := parseUUIDQueryParams(r.PathValue("idp_id"))
+	if err != nil {
+		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		return
+	}
+
+	// parse the query parameters
+	params := map[string]any{
+		"sort":      r.URL.Query().Get("sort"),
+		"filter":    r.URL.Query().Get("filter"),
+		"fields":    r.URL.Query().Get("fields"),
+		"nextToken": r.URL.Query().Get("next_token"),
+		"prevToken": r.URL.Query().Get("prev_token"),
+		"limit":     r.URL.Query().Get("limit"),
+	}
+
+	sort, filter, fields, nextToken, prevToken, limit, err := parseListQueryParams(params)
+	if err != nil {
+		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		respond.WriteJSONMessage(w, r, http.StatusBadRequest, e.Error())
+		return
+	}
+
+	span.SetAttributes(attribute.String("idp.id", idpID.String()))
+
+	input := &domain.ListUsersInput{
+		Sort:   sort,
+		Filter: filter,
+		Fields: fields,
+		Paginator: domain.Paginator{
+			NextToken: nextToken,
+			PrevToken: prevToken,
+			Limit:     limit,
+		},
+	}
+
+	outList, err := ref.service.ListByIDPID(ctx, idpID, input)
+	if err != nil {
+		// A provider that is not there is a 404, which the lists' own
+		// writeListError does not know: a read of what a parent holds says
+		// when there is no parent.
+		if isErr[*domain.IDPNotFoundError](err) {
+			e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+			respond.WriteJSONMessage(w, r, http.StatusNotFound, e.Error())
+			return
+		}
+
+		writeListError(w, r, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs))
+		return
+	}
+
+	outResponse := &payload.ListIDPAccountsResponse{
+		Items:     make([]payload.IDPAccountResponse, len(outList.Items)),
+		Paginator: outList.Paginator,
+	}
+
+	for i, account := range outList.Items {
+		user := account.User
+		outResponse.Items[i] = payload.IDPAccountResponse{
+			ID:              user.ID,
+			CreatedAt:       user.CreatedAt,
+			UpdatedAt:       user.UpdatedAt,
+			Disabled:        user.Disabled,
+			DisabledByAdmin: user.DisabledByAdmin,
+			Verified:        user.Verified,
+			Admin:           user.Admin,
+			LocalAccount:    user.LocalAccount,
+			FirstName:       user.FirstName,
+			LastName:        user.LastName,
+			Email:           user.Email,
+			LinkedAt:        account.LinkedAt,
+			OnlyWayIn:       account.OnlyWayIn,
+		}
+	}
+
+	// Generate the next and previous pages
+	location := fmt.Sprintf("http://%s%s", r.Host, r.URL.Path)
+	outResponse.Paginator.GeneratePages(location)
+
+	if err := respond.WriteJSONData(w, http.StatusOK, outResponse); err != nil {
+		e := o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+		respond.WriteInternalError(w, r, e)
+		return
+	}
+
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "a provider's accounts listed",
+		attribute.Int("accounts.count", len(outResponse.Items)),
+		attribute.String("idp.id", idpID.String()))
 }
 
 // listByProjectID List the users linked to a project

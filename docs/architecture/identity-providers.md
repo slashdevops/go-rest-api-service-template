@@ -453,6 +453,7 @@ flowchart TD
     S -- "nothing was deleted" --> R{"is the provider there?"}
     R -- no --> N["404"]
     R -- yes --> C["409 IDPInUseError:<br/>still used by at least one account<br/>that has no other way to sign in"]
+    C -.-> L["GET /auth/idps/{idp_id}/identities:<br/>the accounts, only_way_in true<br/>for the ones the 409 is about"]
     U["PUT /auth/idps/{idp_id}<br/>enabled: false, on an enabled provider"] --> A2{"keepsAnAdministrator"}
     A2 -- no --> P2["403 IDPProtectedError"]
     A2 -- yes --> W["the update is written:<br/>sign-ins through it stop until it is enabled again"]
@@ -469,10 +470,24 @@ flowchart TD
   state.
 - **What an administrator does instead**: disables the provider. Or deletes
   those accounts, or makes them local accounts (`local_account: true`), which
-  lets recovery mail them a link to choose a password; but no route lists
-  the accounts that sign in through a provider, so with more than one
-  provider those accounts are found in the database, and the disable is the
-  practical answer.
+  lets recovery mail them a link to choose a password. Which accounts those
+  are is a list of its own, below.
+- **Which accounts the 409 is about is a list of its own**
+  (`GET /auth/idps/{idp_id}/identities`). The 409 says to delete those
+  accounts or make them local first, and nothing listed them: the only
+  listing of identities was `/me/identities`, and the users list cannot say
+  which hang off a provider. The provider's identities list answers the
+  accounts linked to it, each with when it was linked and `only_way_in`,
+  the delete's own rule (no password, no identity at another provider; held
+  to `queryDeleteIDP` by `TestAProvidersAccountsAreMarkedByTheDeletesRule`),
+  under the users' sort, filter and fields, a missing provider a 404. The
+  subject is not shown. `only_way_in` is the delete's rule and not the
+  unlink's: an identity at another provider counts whether that provider is
+  enabled or not. The Administrator role's `Allow all` reaches the route,
+  and so does the `ReadOnly` role's read of every endpoint, which already
+  lists every account through `GET /users`; what it adds is which accounts
+  are linked where. `TestAProvidersAccountsAreListed` lists, filters, pages,
+  and then removes what it names and deletes the provider.
 - **A disable is not held to that rule.** It takes away nothing that enabling
   does not give back, and it is the way out of the 409. It is held to one
   thing: an administrator account must be left that can sign in.

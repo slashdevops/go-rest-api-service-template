@@ -247,6 +247,21 @@ func (mr *MockUsersMockRecorder) SelectByID(ctx, id any) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SelectByID", reflect.TypeOf((*MockUsers)(nil).SelectByID), ctx, id)
 }
 
+// SelectByIDPID mocks base method.
+func (m *MockUsers) SelectByIDPID(ctx context.Context, idpID uuid.UUID, input *domain.ListUsersInput) (*domain.SelectIDPAccountsOutput, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "SelectByIDPID", ctx, idpID, input)
+	ret0, _ := ret[0].(*domain.SelectIDPAccountsOutput)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// SelectByIDPID indicates an expected call of SelectByIDPID.
+func (mr *MockUsersMockRecorder) SelectByIDPID(ctx, idpID, input any) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SelectByIDPID", reflect.TypeOf((*MockUsers)(nil).SelectByIDPID), ctx, idpID, input)
+}
+
 // SelectByProjectID mocks base method.
 func (m *MockUsers) SelectByProjectID(ctx context.Context, projectID uuid.UUID, input *domain.SelectUsersInput) (*domain.SelectUsersOutput, error) {
 	m.ctrl.T.Helper()

@@ -84,7 +84,11 @@ func TestEveryFilterExampleIsAccepted(t *testing.T) {
 	project := createProjectInDB(t, generateRandomName(t, "filter-examples"), "a project for the filter examples")
 	t.Cleanup(func() { deleteProjectByIDFromDB(t, project.ID) })
 
-	ids := map[string]string{"{project_id}": project.ID.String()}
+	// A provider, for the list under one; none is seeded.
+	idp := createIDPInDB(t, getIDPTypeFromDBByName(t, "Google").ID, generateRandomName(t, "filter-examples"), "a provider for the filter examples")
+	t.Cleanup(func() { deleteIDPByIDFromDB(t, idp.ID) })
+
+	ids := map[string]string{"{project_id}": project.ID.String(), "{idp_id}": idp.ID.String()}
 	for slug, list := range map[string]string{"{policy_id}": "/policies", "{role_id}": "/roles", "{user_id}": "/users"} {
 		ids[slug] = firstID(t, list, headers)
 	}

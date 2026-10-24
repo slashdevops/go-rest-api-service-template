@@ -36,6 +36,25 @@ type ListUsersResponse struct {
 	Paginator domain.Paginator `json:"paginator"` // Pagination information including total count and page details
 }
 
+// IDPAccountResponse is an account linked to an identity provider.
+//
+//	@Description	An account linked to an identity provider: the account, when it was linked, and whether the provider is its only way in
+type IDPAccountResponse struct {
+	LinkedAt time.Time `json:"linked_at" example:"2021-01-01T00:00:00Z" format:"date-time"` // When the account was linked to the provider
+	UserResponse
+	// True when the account has no password and an identity at no other provider, enabled or not (the delete's rule): one of the accounts that keep the provider from being deleted (409). Delete it, or make it a local account, first
+	OnlyWayIn bool `json:"only_way_in" example:"false"`
+}
+
+// ListIDPAccountsResponse is a page of the accounts linked to an identity
+// provider.
+//
+//	@Description	Paginated list of the accounts linked to an identity provider
+type ListIDPAccountsResponse struct {
+	Items     []IDPAccountResponse `json:"items"`     // The accounts linked to the provider
+	Paginator domain.Paginator     `json:"paginator"` // Pagination information including total count and page details
+}
+
 // CreateUserRequest represents the input for the CreateUser method.
 //
 //	@Description	Request payload for creating a new user account

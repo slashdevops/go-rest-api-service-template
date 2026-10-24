@@ -1091,6 +1091,225 @@ func (ref *UsersRepository) SelectByRoleID(ctx context.Context, roleID uuid.UUID
 	return ret, nil
 }
 
+// idpAccountColumns follows a provider's accounts' user columns: when the
+// account was linked, and whether the provider is its only way in, which is
+// the provider's delete's own rule (queryDeleteIDP): no password, and no
+// identity at another provider. The accounts it is true for are the ones a
+// 409 on the delete is about.
+const idpAccountColumns = `, ui.linked_at, (usrs.local_account IS NOT TRUE AND NOT EXISTS (
+                    SELECT 1 FROM users_identities AS other
+                    WHERE other.users_id = usrs.id AND other.idps_id <> ui.idps_id
+                )) AS only_way_in`
+
+// SelectByIDPID implements [repository.Users]: a page of the accounts linked
+// to an identity provider, under the users' own sort, filter and fields. A
+// provider that is not there is a 404, not an empty page: a read of what a
+// parent holds says when there is no parent.
+func (ref *UsersRepository) SelectByIDPID(ctx context.Context, idpID uuid.UUID, input *domain.ListUsersInput) (*domain.SelectIDPAccountsOutput, error) {
+	start := time.Now()
+	ctx, span, attrs, cancel := o11y.SetupTraceWithTimeout(ctx, ref.ot.Traces.Tracer, ref.maxQueryTimeout, ref.metricsMetadata, "SelectByIDPID")
+	defer cancel()
+	defer span.End()
+
+	if input == nil {
+		errorValue := &domain.InvalidInputError{Message: "input is nil"}
+		return nil, o11y.RecordError(ctx, span, start, errorValue, ref.metrics, attrs)
+	}
+
+	if idpID == uuid.Nil() {
+		invalidErr := &domain.InvalidInputError{Field: "idp_id", Message: "invalid idp ID"}
+		return nil, o11y.RecordError(ctx, span, start, invalidErr, ref.metrics, attrs)
+	}
+
+	if err := input.Validate(); err != nil {
+		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	var there bool
+
+	cslog.Trace(ctx, "sql", "query", prettyPrint(queryIDPExists, idpID.String()))
+
+	if err := ref.db.QueryRow(ctx, queryIDPExists, idpID).Scan(&there); err != nil {
+		return nil, o11y.RecordError(ctx, span, start, ref.handlePgError(err, nil), ref.metrics, attrs)
+	}
+
+	if !there {
+		return nil, o11y.RecordError(ctx, span, start, &domain.IDPNotFoundError{ID: idpID}, ref.metrics, attrs)
+	}
+
+	// if no fields are provided, select all fields
+	sqlFieldsPrefix := "usrs."
+	fieldsArray := []string{
+		"id",
+		"first_name",
+		"last_name",
+		"email",
+		"password_hash",
+		"disabled",
+		"disabled_by_admin",
+		"verified",
+		"local_account",
+		"created_at",
+		"updated_at",
+		"serial_id",
+	}
+
+	fieldsStr := buildFieldSelection(sqlFieldsPrefix, fieldsArray, input.Fields) + idpAccountColumns
+
+	var filterQuery string
+	if input.Filter != "" {
+		filterSentence := injectPrefixToFields(sqlFieldsPrefix, input.Filter, domain.UsersFilterFields)
+		filterQuery = fmt.Sprintf("AND (%s)", filterSentence)
+	}
+
+	var sortQuery string
+	if input.Sort == "" {
+		sortQuery = "usrs.serial_id DESC, usrs.id DESC"
+	} else {
+		sortQuery = injectPrefixToSortFields(sqlFieldsPrefix, input.Sort, domain.UsersSortFields)
+	}
+
+	// query template
+	queryTemplate := `
+        WITH usrs AS (
+            SELECT
+                {{.QueryColumns}}
+            FROM users AS usrs
+                JOIN users_identities AS ui ON ui.users_id = usrs.id
+            WHERE ui.idps_id = $1
+            {{ .QueryWhere }}
+            ORDER BY {{.QueryInternalSort}}
+            LIMIT {{.QueryLimit}}
+        ) SELECT * FROM usrs ORDER BY {{.QueryExternalSort}}
+    `
+
+	// struct to hold the query values
+	var queryValues struct {
+		QueryColumns      template.HTML
+		QueryWhere        template.HTML
+		QueryInternalSort string
+		QueryExternalSort string
+		QueryLimit        int
+	}
+
+	// default values
+	queryValues.QueryColumns = template.HTML(fieldsStr)
+	queryValues.QueryWhere = template.HTML(filterQuery)
+	queryValues.QueryLimit = input.Paginator.Limit + 1 // Fetch one extra item
+	queryValues.QueryInternalSort = "usrs.serial_id DESC, usrs.id DESC"
+	queryValues.QueryExternalSort = sortQuery
+
+	tokenDirection, id, serial, err := domain.GetPaginatorDirection(input.Paginator.NextToken, input.Paginator.PrevToken)
+	if err != nil {
+		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	queryValues.QueryWhere, queryValues.QueryInternalSort = buildPaginationCriteria("usrs", tokenDirection, id, serial, filterQuery, true)
+
+	// render the template on query variable
+	var tpl bytes.Buffer
+	t := template.Must(template.New("query").Parse(queryTemplate))
+	err = t.Execute(&tpl, queryValues)
+	if err != nil {
+		return nil, o11y.RecordError(ctx, span, start, err, ref.metrics, attrs)
+	}
+
+	query := tpl.String()
+	cslog.Trace(ctx, "sql", "query", prettyPrint(query, idpID.String()))
+
+	// execute the query
+	rows, err := ref.db.Query(ctx, query, idpID)
+	if err != nil {
+		return nil, o11y.RecordError(ctx, span, start, ref.handlePgError(filterRefusal(filterQuery, query, err), nil), ref.metrics, attrs)
+	}
+	defer rows.Close()
+
+	var fetchedItems []domain.IDPAccount
+	for rows.Next() {
+		var item domain.IDPAccount
+
+		scanFields := append(ref.buildScanFields(&item.User, input.Fields), &item.LinkedAt, &item.OnlyWayIn)
+
+		if err := rows.Scan(scanFields...); err != nil {
+			return nil, o11y.RecordError(ctx, span, start, ref.handlePgError(err, nil), ref.metrics, attrs)
+		}
+
+		fetchedItems = append(fetchedItems, item)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, o11y.RecordError(ctx, span, start, ref.handlePgError(filterRefusal(filterQuery, query, err), nil), ref.metrics, attrs)
+	}
+
+	hasMore := len(fetchedItems) > input.Paginator.Limit
+	displayItems := fetchedItems
+	if hasMore {
+		displayItems = fetchedItems[:input.Paginator.Limit]
+	}
+
+	outLen := len(displayItems)
+	if outLen == 0 {
+		return &domain.SelectIDPAccountsOutput{
+			Items:     make([]domain.IDPAccount, 0),
+			Paginator: domain.Paginator{},
+		}, nil
+	}
+
+	repoFoundMoreForNextQuery := false
+	repoFoundMoreForPrevQuery := false
+
+	switch tokenDirection {
+	case domain.TokenDirectionNext: // Used 'next' token to get current page
+		repoFoundMoreForPrevQuery = true // Came from a previous page
+		repoFoundMoreForNextQuery = hasMore
+	case domain.TokenDirectionPrev: // Used 'prev' token to get current page
+		repoFoundMoreForNextQuery = true // Came from a next page
+		repoFoundMoreForPrevQuery = hasMore
+	default: // Initial load (tokenDirection == domain.TokenDirectionInvalid)
+		repoFoundMoreForNextQuery = hasMore
+		// repoFoundMoreForPrevQuery remains false, GetTokens will handle it
+	}
+
+	// Calculate min/max serial_id from entire result set to ensure correct pagination boundaries
+	// regardless of external sorting order (e.g., "first_name ASC")
+	minSerialItem := displayItems[0].User
+	maxSerialItem := displayItems[0].User
+
+	for _, item := range displayItems {
+		if item.User.SerialID < minSerialItem.SerialID {
+			minSerialItem = item.User
+		}
+		if item.User.SerialID > maxSerialItem.SerialID {
+			maxSerialItem = item.User
+		}
+	}
+
+	nextToken, prevToken := domain.GetTokens(
+		outLen,
+		maxSerialItem.ID, // Use item with MAX serial for prev token
+		maxSerialItem.SerialID,
+		minSerialItem.ID, // Use item with MIN serial for next token
+		minSerialItem.SerialID,
+		tokenDirection,
+		repoFoundMoreForNextQuery,
+		repoFoundMoreForPrevQuery,
+	)
+
+	ret := &domain.SelectIDPAccountsOutput{
+		Items: displayItems,
+		Paginator: domain.Paginator{
+			Size:      outLen,
+			Limit:     input.Paginator.Limit,
+			NextToken: nextToken,
+			PrevToken: prevToken,
+		},
+	}
+
+	o11y.RecordSuccess(ctx, span, start, ref.metrics, attrs, "a provider's accounts selected")
+
+	return ret, nil
+}
+
 func (ref *UsersRepository) SelectByProjectID(ctx context.Context, projectID uuid.UUID, input *domain.SelectUsersInput) (*domain.SelectUsersOutput, error) {
 	start := time.Now()
 	ctx, span, attrs, cancel := o11y.SetupTraceWithTimeout(ctx, ref.ot.Traces.Tracer, ref.maxQueryTimeout, ref.metricsMetadata, "SelectByProjectID")
