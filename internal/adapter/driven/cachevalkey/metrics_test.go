@@ -64,10 +64,9 @@ func TestTheCacheLayerSaysHowACallEnded(t *testing.T) {
 				outcome, _ := point.Attributes.Value(o11y.AttrOutcome)
 				got[outcome.AsString()] += point.Value
 
-				// successful, kept for one release, says the same.
-				successful, _ := point.Attributes.Value(o11y.AttrSuccessful)
-				if successful.AsBool() != (outcome.AsString() == o11y.OutcomeOK) {
-					t.Errorf("a %s call is successful=%v", outcome.AsString(), successful.AsBool())
+				// successful was kept for one release (v0.0.4) and is gone.
+				if _, kept := point.Attributes.Value("successful"); kept {
+					t.Errorf("a %s call still carries successful", outcome.AsString())
 				}
 			}
 		}

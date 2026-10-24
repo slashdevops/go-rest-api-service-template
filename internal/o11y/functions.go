@@ -18,10 +18,9 @@ import (
 )
 
 const (
-	AttrLayer      = "app.layer"
-	AttrDomain     = "app.domain"
-	AttrAction     = "app.action"
-	AttrSuccessful = "successful"
+	AttrLayer  = "app.layer"
+	AttrDomain = "app.domain"
+	AttrAction = "app.action"
 )
 
 // Metadata holds the 3-level architecture context
@@ -416,13 +415,10 @@ func RecordResult(
 		span.SetStatus(codes.Ok, mgs)
 	}
 
-	// How the call ended, and for one more release the boolean it replaces:
-	// `successful` cannot tell a refusal from a failure, and the dashboards
-	// read `app.outcome` now (see SetRefusalClassifier).
-	finalAttrs = append(finalAttrs,
-		attribute.String(AttrOutcome, outcome),
-		attribute.Bool(AttrSuccessful, err == nil),
-	)
+	// How the call ended (see SetRefusalClassifier). The boolean it replaced,
+	// `successful`, could not tell a refusal from a failure; it was kept for
+	// one release (v0.0.4) and is gone.
+	finalAttrs = append(finalAttrs, attribute.String(AttrOutcome, outcome))
 
 	// 3. Record Metrics
 	if metrics != nil {

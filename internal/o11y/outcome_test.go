@@ -70,8 +70,16 @@ func outcomes(t *testing.T, errs ...error) map[string]map[string]int64 {
 		}
 
 		outcome, _ := set.Value(AttrOutcome)
-		successful, _ := set.Value(AttrSuccessful)
-		got[name][fmt.Sprintf("%s/successful=%v", outcome.AsString(), successful.AsBool())] += n
+		series := outcome.AsString()
+
+		// The boolean app.outcome replaced was kept for one release
+		// (v0.0.4) and is gone: a point that still carries it is a series
+		// of its own here, and fails the comparison.
+		if _, kept := set.Value("successful"); kept {
+			series += "/successful"
+		}
+
+		got[name][series] += n
 	}
 
 	for _, scope := range collected.ScopeMetrics {
@@ -112,9 +120,9 @@ func TestACallSaysHowItEnded(t *testing.T) {
 	)
 
 	want := map[string]int64{
-		"ok/successful=true":       3,
-		"refused/successful=false": 3,
-		"failed/successful=false":  2,
+		"ok":      3,
+		"refused": 3,
+		"failed":  2,
 	}
 
 	for _, instrument := range []string{MetricCalls, MetricCallDuration} {
@@ -146,7 +154,7 @@ func TestWithNoClassifierEveryErrorIsAFailure(t *testing.T) {
 	}
 
 	got := outcomes(t, &errRefusal{what: "no such thing"})
-	if got[MetricCalls]["failed/successful=false"] != 1 {
+	if got[MetricCalls]["failed"] != 1 {
 		t.Errorf("recorded %v, want one failed call", got[MetricCalls])
 	}
 }
