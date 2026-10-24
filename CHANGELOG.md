@@ -11,7 +11,11 @@ Reporting a vulnerability: [`SECURITY.md`](./SECURITY.md).
 
 ## [Unreleased]
 
-Since `v0.0.3`.
+## [0.0.4] - 2026-10-24
+
+Since `v0.0.3`. The fixes listed under Security are the ones advisory
+[GHSA-m74g-rxpq-57hr](https://github.com/slashdevops/go-rest-api-service-template/security/advisories/GHSA-m74g-rxpq-57hr)
+is about.
 
 ### Security
 
@@ -677,5 +681,6 @@ Since `v0.0.3`.
 This file starts after this release. What it contains is in
 [its release notes](https://github.com/slashdevops/go-rest-api-service-template/releases/tag/v0.0.3).
 
-[Unreleased]: https://github.com/slashdevops/go-rest-api-service-template/compare/v0.0.3...HEAD
+[Unreleased]: https://github.com/slashdevops/go-rest-api-service-template/compare/v0.0.4...HEAD
+[0.0.4]: https://github.com/slashdevops/go-rest-api-service-template/compare/v0.0.3...v0.0.4
 [0.0.3]: https://github.com/slashdevops/go-rest-api-service-template/releases/tag/v0.0.3
