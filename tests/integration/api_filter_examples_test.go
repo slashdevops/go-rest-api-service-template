@@ -5,10 +5,10 @@ package integration
 import (
 	"encoding/json"
 	"net/http"
-	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,17 +16,23 @@ import (
 )
 
 // filterExample is the example a filter parameter's description gives, after
-// "e.g." or "Example:".
-var filterExample = regexp.MustCompile(`(?:e\.g\.,?|Example:)\s*(.+?)\)?$`)
+// "e.g." or "Example:", to the end of the description.
+var filterExample = regexp.MustCompile(`(?:e\.g\.,?|Example:)\s*(.+)$`)
+
+// filterWithoutExample are the lists whose filter description gives no
+// example. Every other list's must give one the pattern above reads: an
+// example phrased another way is not skipped, it fails here.
+var filterWithoutExample = []string{"/auth/idp_types", "/rate_limits", "/resources_limits"}
 
 // TestEveryFilterExampleIsAccepted: the contract's filter descriptions give
 // an example, and a client copies it. Five were filters the API refuses:
 // `id=1` on a uuid column (the three user lists) and `'name LIKE policy%'`,
 // the value unquoted (the two policy lists). Every example in the contract
-// is sent to a list that documents it, and must list.
+// is sent to every list that documents it, its path ids filled as the list
+// fields sweep fills them, and must list.
+//
+// Not parallel: the suite shares one per-address rate-limit budget.
 func TestEveryFilterExampleIsAccepted(t *testing.T) {
-	t.Parallel()
-
 	raw, err := os.ReadFile(filepath.Join("..", "..", "docs", "api", "swagger.json"))
 	require.NoError(t, err)
 
@@ -40,10 +46,10 @@ func TestEveryFilterExampleIsAccepted(t *testing.T) {
 	}
 	require.NoError(t, json.Unmarshal(raw, &contract))
 
-	// example -> the routes without path parameters that document it
-	examples := map[string][]string{}
+	// route -> the example its filter description gives
+	examples := map[string]string{}
 
-	for path, methods := range contract.Paths {
+	for route, methods := range contract.Paths {
 		for _, p := range methods["get"].Parameters {
 			if p.Name != "filter" {
 				continue
@@ -51,44 +57,63 @@ func TestEveryFilterExampleIsAccepted(t *testing.T) {
 
 			m := filterExample.FindStringSubmatch(p.Description)
 			if m == nil {
+				require.Contains(t, filterWithoutExample, route, "%s's filter description gives no example the test can read: %q", route, p.Description)
+
 				continue
 			}
 
+			require.NotContains(t, filterWithoutExample, route, "%s gives an example now: take it out of filterWithoutExample", route)
+
+			// "(e.g., x)": the parenthesis the description opened, not the example's.
 			example := strings.TrimSpace(m[1])
-			if _, ok := examples[example]; !ok {
-				examples[example] = nil
+			if strings.Count(example, ")") > strings.Count(example, "(") {
+				example = strings.TrimSuffix(example, ")")
 			}
 
-			if !strings.Contains(path, "{") {
-				examples[example] = append(examples[example], path)
-			}
+			examples[route] = example
 		}
 	}
 
-	require.NotEmpty(t, examples, "the contract gives no filter example: this would test nothing")
+	require.GreaterOrEqual(t, len(examples), 10, "the contract lost its filter examples: this would test nothing")
 
 	admin := getAdminUserTokens(t)
 	headers := map[string]string{"Authorization": "Bearer " + admin.AccessToken}
 
 	t.Cleanup(func() { deleteUserByIDFromDB(t, admin.UserID) })
 
-	for example, paths := range examples {
-		if len(paths) == 0 {
-			t.Errorf("the example %q is documented only on routes with path parameters: send it from a list that has none", example)
+	project := createProjectInDB(t, generateRandomName(t, "filter-examples"), "a project for the filter examples")
+	t.Cleanup(func() { deleteProjectByIDFromDB(t, project.ID) })
 
-			continue
-		}
+	ids := map[string]string{"{project_id}": project.ID.String()}
+	for slug, list := range map[string]string{"{policy_id}": "/policies", "{role_id}": "/roles", "{user_id}": "/users"} {
+		ids[slug] = firstID(t, list, headers)
+	}
 
-		for _, path := range paths {
-			t.Run(path+"?filter="+example, func(t *testing.T) {
-				ep := newAPIEndpoint(http.MethodGet, path)
-				ep.requestURL.RawQuery = url.Values{"filter": {example}}.Encode()
+	routes := make([]string, 0, len(examples))
+	for route := range examples {
+		routes = append(routes, route)
+	}
 
-				status, body := getRetryingTooManyRequests(t, ep, headers)
-				if status != http.StatusOK {
-					t.Errorf("the contract's example %q is refused by %s: %d %s", example, path, status, body)
-				}
-			})
-		}
+	slices.Sort(routes)
+
+	for _, route := range routes {
+		example := examples[route]
+
+		t.Run(route+"?filter="+example, func(t *testing.T) {
+			path := route
+			for slug, id := range ids {
+				path = strings.ReplaceAll(path, slug, id)
+			}
+
+			require.NotContains(t, path, "{", "%s has a path parameter the test does not fill: add it to ids", route)
+
+			ep := newAPIEndpoint(http.MethodGet, path)
+			ep.SetQueryParam("filter", example)
+
+			status, body := getRetryingTooManyRequests(t, ep, headers)
+			if status != http.StatusOK {
+				t.Errorf("the contract's example %q is refused by %s: %d %s", example, route, status, body)
+			}
+		})
 	}
 }
