@@ -117,8 +117,8 @@ github.com/ncruces/go-strftime v1.1.0 h1:vtPmPWMkb539RGV9WpWT9EwJGvrOCKvMNI4obWL
 github.com/ncruces/go-strftime v1.1.0/go.mod h1:yVaq7iwCN09vHRrKBrrflXT0M9tTMG2KmZ9Fj7xeG/g=
 github.com/onsi/gomega v1.42.1 h1:iN1rCUX+44NZ1Dc97MPoeFYbFR0vh8zxoxMFwKdyZ6I=
 github.com/onsi/gomega v1.42.1/go.mod h1:REff/hsDsodHoKlWsP2mAPhu1+5/6hVYNf9rIEBpeSg=
-github.com/open-policy-agent/opa v1.21.3 h1:dLKnsisFIuICZAWDvG3Us2k/TjGkxOCJ7fWINcnwKHM=
-github.com/open-policy-agent/opa v1.21.3/go.mod h1:mHDS61rXyiZ+9bLINSK634BcbPZcsZChPvSwFVMj88g=
+github.com/open-policy-agent/opa v1.21.4 h1:zTVuy8yd8BM715t8WxMzAIkIX4w1x3MMHEv99IGUY2w=
+github.com/open-policy-agent/opa v1.21.4/go.mod h1:mHDS61rXyiZ+9bLINSK634BcbPZcsZChPvSwFVMj88g=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/pressly/goose/v3 v3.29.0 h1:dtEnBCT7CqkHIUCdgrXsrmeisaN8gFkRU4Y5OEwif4o=
 github.com/pressly/goose/v3 v3.29.0/go.mod h1:plA4aP4+u+Q3FMTgbFbhF8TuAWpAdfWpoFGkJsIFWh0=
@@ -128,8 +128,8 @@ github.com/prometheus/client_model v0.6.3 h1:O0jaTVAYNxTHYInEPFJt5I3+sN8zqBtVMPT
 github.com/prometheus/client_model v0.6.3/go.mod h1:gpN5P9S7Rr6Yr92PiQ+Ixvhf6JZEkF1dnxsYL2aPBEM=
 github.com/prometheus/common v0.72.1 h1:ZAiQed/nk8IIcsdzb2TlJu23NEUDyDLQ9TXTN2WRK6Y=
 github.com/prometheus/common v0.72.1/go.mod h1:1IoBY4IRaJnhs2ESjNzjilP1cJ/P8pimGoomq7zRXrA=
-github.com/prometheus/procfs v0.22.0 h1:6q9+/JL9IKAPbCmBrv9n5O5Ty3NKnciV5X7YGw0oics=
-github.com/prometheus/procfs v0.22.0/go.mod h1:CvmFr/GVhIjIvWJZW3tgkODBQMRIf0EyWMQLHCHab58=
+github.com/prometheus/procfs v0.23.0 h1:ad+S6FTkzwaMgacKLM5h6bNKExS+DMH0YiUwXItH/o4=
+github.com/prometheus/procfs v0.23.0/go.mod h1:3AVXO0FqLafyYFU/V/IQRZlC8Rgqz8Dm/x6pKLK+RIk=
 github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9 h1:bsUq1dX0N8AOIL7EB/X911+m4EHsnWEHeJ0c+3TTBrg=
 github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9/go.mod h1:bCqnVzQkZxMG4s8nGwiZ5l3QUCyqpo9Y+/ZMZ9VjZe4=
 github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec h1:W09IVJc94icq4NjY3clb7Lk8O1qJ8BdBEF8z0ibU0rE=
@@ -148,8 +148,8 @@ github.com/slashdevops/httpx v0.0.5 h1:luTWEX6UvmMcG10J8CrnqsRQR6/SdeoPlHVZSCVSk
 github.com/slashdevops/httpx v0.0.5/go.mod h1:xu6LscPtsKYePySTE5pC8FUcAQa9XTR4QqO6MV0KDpk=
 github.com/slashdevops/mailer v1.1.0 h1:Wi95t2Uh9QRX7SHJUVdif02gSz5oL+vCUA9HQW95b2Q=
 github.com/slashdevops/mailer v1.1.0/go.mod h1:07wQltf9+Uv2uJpfpkeDmWxq7Co3+mb0VnzdZzYuxVk=
-github.com/slashdevops/qfv v1.1.1 h1:M7Lmd+/WdjlBAjjH3ohRjeH69PjTWf+wex1EFL1C2hY=
-github.com/slashdevops/qfv v1.1.1/go.mod h1:oynAQIotVhOl4/eS2s4KY5GaivElrVv7FGe6+Yj9+GQ=
+github.com/slashdevops/qfv v1.2.0 h1:oKYJPu4LT5WAsGXQcVr3WmgGh3zxlzJzhAT2GkCaRyw=
+github.com/slashdevops/qfv v1.2.0/go.mod h1:oynAQIotVhOl4/eS2s4KY5GaivElrVv7FGe6+Yj9+GQ=
 github.com/slashdevops/ratelimiter v1.2.0 h1:HRGr+X5Shr4SouR1N2GTSPkyM0+JhOqSGZXxArh7aAU=
 github.com/slashdevops/ratelimiter v1.2.0/go.mod h1:gYNMIv1CYctSk6luxH470LKq4wRi7x9Xf2cYp/Fzick=
 github.com/stretchr/objx v0.1.0/go.mod h1:HFkY916IF+rwdDfMAkV7OtwuqBVzrE8GR6GFx+wExME=
