@@ -171,6 +171,7 @@ The ordinary credential: `Bearer <access_token>`, from `POST /auth/login` or `PO
 | POST | /auth/password/recover | [01991917 2720 7589 971b cce23bf8a74b](#01991917-2720-7589-971b-cce23bf8a74b) | Initiate password recovery |
 | POST | /auth/password/reset | [01991917 2720 758d 8104 94a0368acecb](#01991917-2720-758d-8104-94a0368acecb) | Reset password |
 | POST | /auth/verify/confirm | [01a02dbb bc41 7287 9cfd 7ac08bf882ae](#01a02dbb-bc41-7287-9cfd-7ac08bf882ae) | Confirm email verification |
+| GET | /auth/idps/{idp_id}/identities | [01a15479 0c52 7737 a03d 3910bf262442](#01a15479-0c52-7737-a03d-3910bf262442) | List a provider's accounts |
   
 
 
@@ -202,14 +203,6 @@ The ordinary credential: `Bearer <access_token>`, from `POST /auth/login` or `PO
 | GET | /health/status | [01982303 f0f9 7eec 8bf3 84f51fd09b73](#01982303-f0f9-7eec-8bf3-84f51fd09b73) | Health summary (diagnostic, not a probe) |
 | GET | /health/detailed | [01982304 a1b2 7eec 8bf3 84f51fd09b74](#01982304-a1b2-7eec-8bf3-84f51fd09b74) | Readiness probe and detailed health |
 | GET | /health/live | [01a02ec9 ac6c 77c2 81ad d6e2f23bcd92](#01a02ec9-ac6c-77c2-81ad-d6e2f23bcd92) | Liveness probe |
-  
-
-
-###  identity_providers_id_ps
-
-| Method  | URI     | Name   | Summary |
-|---------|---------|--------|---------|
-| GET | /auth/idps/{idp_id}/identities | [01a15479 0c52 7737 a03d 3910bf262442](#01a15479-0c52-7737-a03d-3910bf262442) | List a provider's accounts |
   
 
 

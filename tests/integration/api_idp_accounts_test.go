@@ -94,6 +94,7 @@ func TestAProvidersAccountsAreListed(t *testing.T) {
 
 		assert.Equal(t, map[uuid.UUID]bool{onlyHere: true, alsoElsewhere: false, withAPassword: false}, got)
 		assert.NotContains(t, text, "subject", "a subject is not shown")
+		assert.NotContains(t, text, "sub-", "a subject is not shown, under any key")
 	})
 
 	t.Run("filtered_and_narrowed_by_the_accounts_fields", func(t *testing.T) {

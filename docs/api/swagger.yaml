@@ -3269,6 +3269,7 @@ paths:
       - AccessToken: []
       summary: List a provider's accounts
       tags:
+      - Authentication
       - Identity Providers (IDPs)
       - Users
   /auth/login:

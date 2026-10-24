@@ -717,7 +717,7 @@ func (ref *UsersHandler) listByRoleID(w http.ResponseWriter, r *http.Request) {
 //	@ID				01a15479-0c52-7737-a03d-3910bf262442
 //	@Summary		List a provider's accounts
 //	@Description	Retrieve paginated list of the accounts linked to an Identity Provider, each with when it was linked and only_way_in: true for the accounts with no password and an identity at no other provider, which keep it from being deleted (409). The subject is not shown.
-//	@Tags			Identity Providers (IDPs),Users
+//	@Tags			Authentication,Identity Providers (IDPs),Users
 //	@Produce		json
 //	@Param			idp_id		path		string							true	"Identity Provider UUID"	Format(uuid)
 //	@Param			sort		query		string							false	"Sort fields of the account (comma-separated). Example: first_name ASC, created_at DESC"

@@ -971,6 +971,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
+                    "Authentication",
                     "Identity Providers (IDPs)",
                     "Users"
                 ],
