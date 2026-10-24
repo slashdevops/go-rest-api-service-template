@@ -126,7 +126,9 @@ flowchart TD
     S -- "no: a test, a tool" --> F["app.outcome = failed"]
     S -- "yes: respond.IsRefusal" --> D{"a body that could not be decoded?<br/>(respond.DecodeError in the chain)"}
     D -- yes --> R["app.outcome = refused"]
-    D -- no --> T{"respond.StatusFor(err) < 500?<br/>any error in the chain"}
+    D -- no --> G{"the caller went away?<br/>(context.Canceled in the chain)"}
+    G -- yes --> R
+    G -- no --> T{"respond.StatusFor(err) < 500?<br/>any error in the chain"}
     T -- "yes: 400, 401, 403, 404, 409, 429" --> R
     T -- "no: 503, or an error the table<br/>does not know (the driver's, an untyped one)" --> F
     OK --> M["app_calls_total and app_call_duration_seconds,<br/>with successful kept beside it for one release"]
@@ -152,6 +154,48 @@ flowchart TD
   request" in place of the decoder's error, record the decoder's: a login
   body cut by the size bound was a 400 with that sentence, where every other
   route answers 413 (`TestNoHandlerReplacesTheDecodersError`).
+- **A request its caller abandoned is a refusal, and is in no table either**
+  The client closed the connection before the request was answered:
+  a tab closed while a sign-in's code was being exchanged, a client that
+  gave up on its side. Every layer returns the request's own
+  `context.Canceled` on the way up, and it was a 500, counted `failed`, with
+  an ERROR access line, for something nobody did wrong and nobody receives.
+  `IsRefusal` knows the sentinel, and `respond.WriteCallerGone` answers it
+  `499` with no body when the request's context is the one cancelled.
+  Every site that answers an error with a 500 asks it first:
+  `WriteInternalError` (and so `WriteError`), and the three that write a
+  sentence of their own (`CheckAuthz` and the two health checks) -- `TestEvery500AsksWhetherTheCallerWentAway` reads the HTTP
+  adapter for a 500 written without it. So the status and the outcome agree.
+  The access line is INFO, as every 4xx, with `error_type`
+  `context.Canceled` (`errorType` names the sentinel, an `*errors.errorString`
+  like any `errors.New`), and the server span is not red.
+  `context.DeadlineExceeded` is not matched: a cache read past its timeout, a
+  generation past `llm.generate.timeout`, is something slow, and a failure.
+  No route declares 499: nobody receives it.
+  `TestACallerWhoWentAwayIsNotAnError` holds the line, and
+  `TestACallerWhoWentAwayIsAnsweredNothing` the writer and the classifier.
+
+  What it does not change, and what it can hide:
+
+  - **The cache counts its own.** c3e records the `cache` layer itself, and
+    a read whose request was cancelled is neither a timeout nor a miss to
+    it: `failed` on `app.layer=cache`, and a WARN line of the library's own,
+    as before. Every other layer is counted `refused`.
+  - **Slowness behind a proxy reads as callers leaving.** A proxy or load
+    balancer that gives up before this service does closes the connection,
+    and what was slow -- a saturated pool waiting in `Acquire`, a slow query
+    -- ends as `context.Canceled`: 499, `refused`, INFO, where it was a
+    500, `failed`, ERROR. nginx's 499 has the same ambiguity. The error
+    ratio does not see it; the duration histogram does, and a rise of 499
+    on the Logs dashboard's "Requests by status" is the sign to look there.
+  - **A write timeout over HTTP/2 is the service's own cancel.** With
+    `http.server.write.timeout` set (off by default), Go's HTTP/2 server resets the stream at the deadline, which
+    cancels the request's context: the service's deadline, read as the
+    caller leaving.
+  - **The classifier sees the error, not the request.** A
+    `context.Canceled` raised while the caller is still there would be
+    answered 500 and counted `refused`. Nothing in the request path cancels
+    a context of its own.
 - **Decided per call, not when the request ends.** The log line waits for the
   HTTP status because it is one line per request. A metric is one count per
   call at a layer, recorded when the call returns. A first sign-in through an

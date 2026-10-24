@@ -691,6 +691,11 @@ func CheckAuthz(authz *usecase.AuthzService) Middleware {
 				// ERROR for the 500 below, carries it with where it arose.
 				// A second ERROR line here said the same thing again. It is
 				// written only when there is no access line to carry it.
+				// A caller who went away is answered nothing.
+				if respond.WriteCallerGone(w, r, err) {
+					return
+				}
+
 				if !noteFailure(r.Context(), err) {
 					slog.ErrorContext(r.Context(), "authorization service error",
 						"error", err,

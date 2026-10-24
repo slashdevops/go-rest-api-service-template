@@ -206,6 +206,14 @@ Since `v0.0.3`.
 
 ### Upgrade notes
 
+- **A request its caller abandoned is answered 499 and counted
+  `refused`.** The access line of a request whose client closed the
+  connection before it was answered says `status` 499 at INFO with
+  `error_type` `context.Canceled`, where it said 500 at ERROR, and its calls
+  leave the `app_outcome="failed"` error ratio. A dashboard or alert that
+  counted those 500s counts 499s now. Slowness behind a proxy that gives up
+  before the service does reads the same way; the duration histogram still
+  shows it. (#177)
 - **A new route, `GET /auth/idps/{idp_id}/identities`, has its `resources`
   row** in `00008_roles_policies_tables_upsert.sql`, edited in place. A
   database created from an earlier version does not list it among the
@@ -310,6 +318,16 @@ Since `v0.0.3`.
 
 ### Changed
 
+- **A request its caller abandoned is not a 500.** A sign-in whose tab was
+  closed while the code was being exchanged was a 500 at the callback,
+  counted `failed` at every layer, with an ERROR access line: nobody did
+  anything wrong and nobody receives the answer. `respond.IsRefusal` knows
+  `context.Canceled`; `respond.WriteCallerGone` answers 499 with no body when
+  the request's own context is the one cancelled, and is asked first by
+  `WriteInternalError` and by every site that writes a 500 of its own
+  (`TestEvery500AsksWhetherTheCallerWentAway`); `error_type` names
+  `context.Canceled`. A deadline (`context.DeadlineExceeded`) stays a
+  failure. ([#177](https://github.com/slashdevops/go-rest-api-service-template/pull/177))
 - **The integration suite waits a rate limiter's refusal out.** The suite
   is one address. Every request goes through `sendHTTPRequest`, which now
   sends a request the limiter refused with `RATE_LIMIT_EXCEEDED` again after

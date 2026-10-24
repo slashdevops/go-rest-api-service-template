@@ -617,6 +617,11 @@ func TestErrorTypeIsTheCauseNotTheWrapper(t *testing.T) {
 		{"wrapped twice", fmt.Errorf("a: %w", fmt.Errorf("b: %w", sentinel)), "*errors.errorString"},
 		{"typed", &net.AddrError{Err: "x", Addr: "y"}, "*net.AddrError"},
 		{"typed and wrapped", fmt.Errorf("dialling: %w", &net.AddrError{Err: "x"}), "*net.AddrError"},
+
+		// The context's sentinel is an *errors.errorString like any
+		// errors.New: a request its caller abandoned is named.
+		{"the caller went away", fmt.Errorf("exchanging the code: %w", context.Canceled), "context.Canceled"},
+		{"a deadline is its own type", fmt.Errorf("reading: %w", context.DeadlineExceeded), "context.deadlineExceededError"},
 	}
 
 	for _, tt := range tests {
