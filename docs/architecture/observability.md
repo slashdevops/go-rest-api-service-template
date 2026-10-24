@@ -131,7 +131,7 @@ flowchart TD
     G -- no --> T{"respond.StatusFor(err) < 500?<br/>any error in the chain"}
     T -- "yes: 400, 401, 403, 404, 409, 429" --> R
     T -- "no: 503, or an error the table<br/>does not know (the driver's, an untyped one)" --> F
-    OK --> M["app_calls_total and app_call_duration_seconds,<br/>with successful kept beside it for one release"]
+    OK --> M["app_calls_total and app_call_duration_seconds,<br/>with app.outcome beside layer, domain and action"]
     R --> M
     F --> M
     OK --> SO["span: status Ok"]
@@ -216,10 +216,12 @@ flowchart TD
 - **Unset, every error is a failure.** A test or a tool that serves no
   request never sets a classifier, and calling an error a refusal needs a
   reason.
-- **`successful` stays for one release**, on the same series, so a saved
-  query or an alert outside this repository does not go blank at the swap.
-  The dashboards here read `app_outcome`; `TestErrorPanelsCountFailuresNotRefusals`
-  fails on a panel that goes back.
+- **`successful` stayed for one release** (`v0.0.4`), on the same series, so
+  a saved query or an alert outside this repository did not go blank at the
+  swap, and is gone since: a query that still reads it matches nothing. The
+  dashboards here read `app_outcome`; `TestErrorPanelsCountFailuresNotRefusals`
+  fails on a panel that goes back, and `TestACallSaysHowItEnded` on a point
+  that carries `successful` again.
 - **`cache` and `mail` say it themselves.** They mirror their operations onto
   the shared pair in their own code, not through `o11y`'s recorder, so each
   sets `app.outcome` there: `ok`, or `failed` for an error (and, for the

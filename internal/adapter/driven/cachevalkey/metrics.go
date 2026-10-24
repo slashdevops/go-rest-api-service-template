@@ -183,9 +183,7 @@ func (i *Instruments) record(ctx context.Context, operation, entity, result stri
 // collapsed to the outcome the shared instruments carry (layerOutcome: an
 // error or a timeout is failed, anything else ok), because that is the only
 // outcome every layer has in common. Anything finer is on the cache
-// instruments, where it means something. The `successful` flag kept beside it
-// for one release follows the outcome: false for an error and for a timeout,
-// so the two series do not disagree about a cache that is not answering.
+// instruments, where it means something.
 func (i *Instruments) recordLayer(ctx context.Context, operation, entity, result string, took time.Duration) {
 	if i.layer == nil {
 		return
@@ -196,7 +194,6 @@ func (i *Instruments) recordLayer(ctx context.Context, operation, entity, result
 		attribute.String(o11y.AttrDomain, entity),
 		attribute.String(o11y.AttrAction, operation),
 		attribute.String(o11y.AttrOutcome, layerOutcome(result)),
-		attribute.Bool(o11y.AttrSuccessful, layerOutcome(result) != o11y.OutcomeFailed),
 	}
 
 	if i.layer.Counter != nil {

@@ -11,6 +11,20 @@ Reporting a vulnerability: [`SECURITY.md`](./SECURITY.md).
 
 ## [Unreleased]
 
+### Upgrade notes
+
+- **The layer instruments no longer carry `successful`.** It was kept beside
+  `app.outcome` for one release (`v0.0.4`), so that a saved query or an alert
+  could move. A query or an alert that still reads `successful` matches
+  nothing: read `app_outcome` (`failed` for an error ratio). (#179)
+
+### Changed
+
+- **`successful` is removed from `app_calls_total` and
+  `app_call_duration_seconds`**, and from the cache's and the mail's mirrors
+  of them. `app.outcome` (`ok`, `refused`, `failed`) replaced it in `v0.0.4`.
+  ([#179](https://github.com/slashdevops/go-rest-api-service-template/pull/179))
+
 ## [0.0.4] - 2026-10-24
 
 Since `v0.0.3`. The fixes listed under Security are the ones advisory

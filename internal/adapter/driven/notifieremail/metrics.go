@@ -91,7 +91,6 @@ func recordLayer(ctx context.Context, layer *o11y.LayerMetrics, action, domainNa
 		attribute.String(o11y.AttrDomain, domainName),
 		attribute.String(o11y.AttrAction, action),
 		attribute.String(o11y.AttrOutcome, layerOutcome(result)),
-		attribute.Bool(o11y.AttrSuccessful, result != resultError),
 	}
 
 	if layer.Counter != nil {

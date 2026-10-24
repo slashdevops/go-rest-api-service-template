@@ -519,7 +519,7 @@ func TestRecordResult_preserves_base_attrs(t *testing.T) {
 
 	originalLen := len(baseAttrs)
 
-	// Call RecordResult which appends "successful" attr internally
+	// Call RecordResult, which appends the outcome attr internally
 	_ = RecordResult(ctx, span, time.Now(), nil, baseAttrs, nil)
 	span.End()
 
