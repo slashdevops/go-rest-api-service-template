@@ -963,7 +963,7 @@ Retrieve paginated list of users with optional filtering and sorting.
 | Name | Source | Type | Go type | Separator | Required | Default | Description |
 |------|--------|------|---------|-----------| :------: |---------|-------------|
 | fields | `query` | string | `string` |  |  |  | Fields to return (comma-separated). Example: id,first_name,last_name |
-| filter | `query` | string | `string` |  |  |  | Filter expression. Example: id=1 AND first_name='John' |
+| filter | `query` | string | `string` |  |  |  | Filter expression. Example: first_name='John' AND disabled=false |
 | limit | `query` | integer | `int64` |  |  |  | Maximum number of results per page |
 | next_token | `query` | string | `string` |  |  |  | Next page cursor for pagination |
 | prev_token | `query` | string | `string` |  |  |  | Previous page cursor for pagination |
@@ -4254,7 +4254,7 @@ Retrieve a paginated list of all authorization policies in the system
 | Name | Source | Type | Go type | Separator | Required | Default | Description |
 |------|--------|------|---------|-----------| :------: |---------|-------------|
 | fields | `query` | string | `string` |  |  |  | Comma-separated fields to return (e.g., 'id,name,description') |
-| filter | `query` | string | `string` |  |  |  | Filter conditions (e.g., 'name LIKE policy%') |
+| filter | `query` | string | `string` |  |  |  | Filter conditions (e.g., name LIKE 'policy%') |
 | limit | `query` | integer | `int64` |  |  |  | Maximum number of items per page |
 | next_token | `query` | string | `string` |  |  |  | Token for next page of results |
 | prev_token | `query` | string | `string` |  |  |  | Token for previous page of results |
@@ -5190,7 +5190,7 @@ Retrieve paginated list of users assigned to specific role.
 |------|--------|------|---------|-----------| :------: |---------|-------------|
 | role_id | `path` | uuid (formatted string) | `strfmt.UUID` |  | ✓ |  | Role unique identifier |
 | fields | `query` | string | `string` |  |  |  | Fields to return (comma-separated). Example: id,first_name,last_name |
-| filter | `query` | string | `string` |  |  |  | Filter expression. Example: id=1 AND first_name='John' |
+| filter | `query` | string | `string` |  |  |  | Filter expression. Example: first_name='John' AND disabled=false |
 | limit | `query` | integer | `int64` |  |  |  | Maximum number of results per page |
 | next_token | `query` | string | `string` |  |  |  | Next page cursor for pagination |
 | prev_token | `query` | string | `string` |  |  |  | Previous page cursor for pagination |
@@ -5286,7 +5286,7 @@ Retrieve a paginated list of policies associated with a specific role
 |------|--------|------|---------|-----------| :------: |---------|-------------|
 | role_id | `path` | uuid (formatted string) | `strfmt.UUID` |  | ✓ |  | Unique role identifier |
 | fields | `query` | string | `string` |  |  |  | Comma-separated fields to return (e.g., 'id,name,description') |
-| filter | `query` | string | `string` |  |  |  | Filter conditions (e.g., 'name LIKE policy%') |
+| filter | `query` | string | `string` |  |  |  | Filter conditions (e.g., name LIKE 'policy%') |
 | limit | `query` | integer | `int64` |  |  |  | Maximum number of items per page |
 | next_token | `query` | string | `string` |  |  |  | Token for next page of results |
 | prev_token | `query` | string | `string` |  |  |  | Token for previous page of results |
@@ -6176,7 +6176,7 @@ Retrieve paginated list of users assigned to specific project.
 |------|--------|------|---------|-----------| :------: |---------|-------------|
 | project_id | `path` | uuid (formatted string) | `strfmt.UUID` |  | ✓ |  | Project unique identifier |
 | fields | `query` | string | `string` |  |  |  | Fields to return (comma-separated). Example: id,first_name,last_name |
-| filter | `query` | string | `string` |  |  |  | Filter expression. Example: id=1 AND first_name='John' |
+| filter | `query` | string | `string` |  |  |  | Filter expression. Example: first_name='John' AND disabled=false |
 | limit | `query` | integer | `int64` |  |  |  | Maximum number of results per page |
 | next_token | `query` | string | `string` |  |  |  | Next page cursor for pagination |
 | prev_token | `query` | string | `string` |  |  |  | Previous page cursor for pagination |

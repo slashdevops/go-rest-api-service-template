@@ -517,7 +517,7 @@ func (ref *UsersHandler) deleteByID(w http.ResponseWriter, r *http.Request) {
 //	@Tags			Users
 //	@Produce		json
 //	@Param			sort		query		string						false	"Sort fields (comma-separated). Example: first_name ASC, created_at DESC"
-//	@Param			filter		query		string						false	"Filter expression. Example: id=1 AND first_name='John'"
+//	@Param			filter		query		string						false	"Filter expression. Example: first_name='John' AND disabled=false"
 //	@Param			fields		query		string						false	"Fields to return (comma-separated). Example: id,first_name,last_name"
 //	@Param			next_token	query		string						false	"Next page cursor for pagination"
 //	@Param			prev_token	query		string						false	"Previous page cursor for pagination"
@@ -613,7 +613,7 @@ func (ref *UsersHandler) list(w http.ResponseWriter, r *http.Request) {
 //	@Produce		json
 //	@Param			role_id		path		string						true	"Role unique identifier"	Format(uuid)
 //	@Param			sort		query		string						false	"Sort fields (comma-separated). Example: first_name ASC, created_at DESC"
-//	@Param			filter		query		string						false	"Filter expression. Example: id=1 AND first_name='John'"
+//	@Param			filter		query		string						false	"Filter expression. Example: first_name='John' AND disabled=false"
 //	@Param			fields		query		string						false	"Fields to return (comma-separated). Example: id,first_name,last_name"
 //	@Param			next_token	query		string						false	"Next page cursor for pagination"
 //	@Param			prev_token	query		string						false	"Previous page cursor for pagination"
@@ -720,7 +720,7 @@ func (ref *UsersHandler) listByRoleID(w http.ResponseWriter, r *http.Request) {
 //	@Produce		json
 //	@Param			project_id	path		string						true	"Project unique identifier"	Format(uuid)
 //	@Param			sort		query		string						false	"Sort fields (comma-separated). Example: first_name ASC, created_at DESC"
-//	@Param			filter		query		string						false	"Filter expression. Example: id=1 AND first_name='John'"
+//	@Param			filter		query		string						false	"Filter expression. Example: first_name='John' AND disabled=false"
 //	@Param			fields		query		string						false	"Fields to return (comma-separated). Example: id,first_name,last_name"
 //	@Param			next_token	query		string						false	"Next page cursor for pagination"
 //	@Param			prev_token	query		string						false	"Previous page cursor for pagination"

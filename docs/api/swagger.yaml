@@ -4005,7 +4005,7 @@ paths:
         in: query
         name: sort
         type: string
-      - description: Filter conditions (e.g., 'name LIKE policy%')
+      - description: Filter conditions (e.g., name LIKE 'policy%')
         in: query
         name: filter
         type: string
@@ -5290,7 +5290,7 @@ paths:
         in: query
         name: sort
         type: string
-      - description: 'Filter expression. Example: id=1 AND first_name=''John'''
+      - description: 'Filter expression. Example: first_name=''John'' AND disabled=false'
         in: query
         name: filter
         type: string
@@ -6406,7 +6406,7 @@ paths:
         in: query
         name: sort
         type: string
-      - description: Filter conditions (e.g., 'name LIKE policy%')
+      - description: Filter conditions (e.g., name LIKE 'policy%')
         in: query
         name: filter
         type: string
@@ -6611,7 +6611,7 @@ paths:
         in: query
         name: sort
         type: string
-      - description: 'Filter expression. Example: id=1 AND first_name=''John'''
+      - description: 'Filter expression. Example: first_name=''John'' AND disabled=false'
         in: query
         name: filter
         type: string
@@ -6739,7 +6739,7 @@ paths:
         in: query
         name: sort
         type: string
-      - description: 'Filter expression. Example: id=1 AND first_name=''John'''
+      - description: 'Filter expression. Example: first_name=''John'' AND disabled=false'
         in: query
         name: filter
         type: string
