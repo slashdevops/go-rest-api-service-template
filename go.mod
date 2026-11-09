@@ -7,8 +7,8 @@ tool go.uber.org/mock/mockgen
 require (
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
-	github.com/jackc/pgx/v5 v5.11.0
-	github.com/open-policy-agent/opa v1.21.4
+	github.com/jackc/pgx/v5 v5.12.0
+	github.com/open-policy-agent/opa v1.22.2
 	github.com/pressly/goose/v3 v3.29.0
 	github.com/slashdevops/c3e v0.0.3
 	github.com/slashdevops/httpx v0.0.5
@@ -80,12 +80,10 @@ require (
 	github.com/prometheus/client_golang v1.25.0 // indirect
 	github.com/prometheus/common v0.72.1 // indirect
 	github.com/prometheus/procfs v0.23.0 // indirect
-	github.com/rcrowley/go-metrics v0.0.0-20250401214520-65e299d6c5c9 // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/sethvargo/go-retry v0.5.0 // indirect
 	github.com/sirupsen/logrus v1.10.2 // indirect
 	github.com/swaggo/files/v2 v2.0.2 // indirect
-	github.com/tchap/go-patricia/v2 v2.3.3 // indirect
 	github.com/valyala/fastjson v1.6.10 // indirect
 	github.com/vektah/gqlparser/v2 v2.5.64 // indirect
 	github.com/xeipuuv/gojsonpointer v0.0.0-20190905194746-02993c407bfb // indirect
